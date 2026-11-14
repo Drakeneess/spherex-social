@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Observation, Post, User
-from .posts import PostOut
+from .posts import PostOut, counts_by_post, serialize
 
 router = APIRouter(prefix='/v1', tags=['social'])
 
@@ -53,10 +53,8 @@ def feed(
         .order_by(Post.created_at.desc(), Post.id.desc())
         .limit(limit).offset(offset)
     ).all()
-    return [PostOut(id=p.id, username=username, caption=p.caption,
-                    observation_id=p.observation_id, visibility=p.visibility,
-                    created_at=p.created_at)
-            for p, username in rows]
+    counts = counts_by_post(db, [post.id for post, _ in rows])
+    return [serialize(post, username, counts) for post, username in rows]
 
 
 @router.get('/observations/{observation_id}', response_model=ObservationOut)
