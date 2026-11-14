@@ -185,7 +185,7 @@ export default function SearchProgress({
         {timing.remote_execution_ms != null &&
           <><dt>Ejecución según IRSA</dt><dd>{duration(timing.remote_execution_ms)}</dd></>}
         <dt>Metadatos de ejecución UWS</dt><dd>{timing.job_info_status ?? 'No disponibles'}</dd>
-        {timing.job_info_ms != null && <><dt>Lectura de metadatos UWS</dt><dd>{duration(timing.job_info_ms)}</dd></>
+        {timing.job_info_ms != null && <><dt>Lectura de metadatos UWS</dt><dd>{duration(timing.job_info_ms)}</dd></>}
         {timing.result_fetch_ms !== null && <><dt>Recuperar tabla</dt><dd>{duration(timing.result_fetch_ms)}</dd></>}
         {timing.result_parse_ms !== null && <><dt>Validar y preparar observaciones</dt><dd>{duration(timing.result_parse_ms)}</dd></>}
         <dt>Sondeos fallidos</dt><dd>{timing.poll_errors} / {timing.poll_count}</dd>
