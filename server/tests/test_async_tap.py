@@ -156,7 +156,7 @@ def test_transient_502_poll_retries_without_deleting_remote_job(harness, monkeyp
             raise value
         return value
 
-    monkeypatch.setattr(FakeRemoteJob, "phase", property(flaky_phase))
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(flaky_phase), raising=False)
     failed_poll = client.get(f"/api/search/jobs/{ticket}")
     assert failed_poll.status_code == 200
     state = failed_poll.json()
@@ -186,7 +186,7 @@ def test_persistent_502_poll_fails_after_bounded_retries(harness, monkeypatch):
     def always_unavailable(_self):
         raise DALServiceError("Proxy Error", code=502)
 
-    monkeypatch.setattr(FakeRemoteJob, "phase", property(always_unavailable))
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(always_unavailable), raising=False)
     job = explorer.get_tap_job(ticket)
     for n in range(explorer.MAX_CONSECUTIVE_TAP_ERRORS):
         job.retry_at = 0
@@ -208,7 +208,7 @@ def test_nonretryable_remote_phase_failure_is_not_masked(harness, monkeypatch):
     def bad_job(_self):
         raise DALServiceError("Invalid job", code=404)
 
-    monkeypatch.setattr(FakeRemoteJob, "phase", property(bad_job))
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(bad_job), raising=False)
     result = client.get(f"/api/search/jobs/{ticket}")
     assert result.status_code == 502
     assert explorer.get_tap_job(ticket).consecutive_errors == 0
