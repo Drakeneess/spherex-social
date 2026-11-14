@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, MessageCircle, Orbit, Rocket, Share2, Trash2 } from 'lucide-react';
+import { Bookmark, Heart, MessageCircle, Orbit, Rocket, Share2 } from 'lucide-react';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import { SkyPreview } from './SkyPreview';
 
