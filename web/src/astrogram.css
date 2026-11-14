@@ -375,3 +375,103 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .stats{gap:12px}
   .app-footer{padding:16px 12px}
 }
+
+
+/* Auth screen: match INT.html's two-column composition while preventing
+   min-content overflow when the browser zoom is 125–150%. */
+html,body,#root{min-width:0;max-width:100%}
+.auth{
+  display:grid;
+  width:100%;
+  max-width:100%;
+  min-height:100dvh;
+  grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);
+  align-items:center;
+  overflow-x:clip;
+}
+.auth>.hero{
+  position:relative;
+  min-width:0;
+  width:100%;
+  max-width:100%;
+  height:100dvh;
+  min-height:620px;
+  overflow:hidden;
+  background:#04060d;
+}
+.auth .auth-starfield{
+  position:absolute;
+  inset:0;
+  display:block;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+}
+.auth .hero .txt{
+  position:absolute;
+  left:8%;
+  right:8%;
+  bottom:14%;
+  z-index:1;
+  width:auto;
+  min-width:0;
+  max-width:84%;
+  overflow-wrap:break-word;
+}
+.auth .hero .logo{margin-bottom:22px}
+.auth .hero h1{
+  margin-bottom:14px;
+  font-size:clamp(2rem,4.2vw,3.4rem);
+  line-height:1.05;
+}
+.auth .hero p{
+  max-width:430px;
+  line-height:1.5;
+  color:var(--muted);
+}
+.auth>.authbox{
+  box-sizing:border-box;
+  width:min(400px,calc(100% - 40px));
+  min-width:0;
+  max-width:100%;
+  justify-self:center;
+  align-self:center;
+  margin:0;
+  padding:24px 0;
+}
+.authbox .tabs{width:100%;min-width:0}
+.authbox .tabs button{min-width:0}
+.authbox form,.authbox .field,.authbox .pw{width:100%;min-width:0}
+.authbox .field input,
+.authbox .field select,
+.authbox .field textarea{display:block;width:100%;max-width:100%;min-width:0}
+.authbox .btn.full{width:100%}
+.authbox .conn{max-width:100%;overflow-wrap:break-word}
+
+/* Keep the two columns balanced on mid-size screens. */
+@media(max-width:1100px) and (min-width:861px){
+  .auth{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .auth .hero h1{font-size:clamp(1.85rem,4vw,3rem)}
+}
+
+/* Same single-column auth layout as the original mockup. */
+@media(max-width:860px){
+  .auth{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100dvh;
+    padding:24px 0;
+  }
+  .auth>.hero{display:none}
+  .auth>.authbox{
+    width:min(400px,calc(100% - 40px));
+    padding:16px 0;
+  }
+  .auth-logo{display:flex}
+}
+@media(max-height:740px) and (min-width:861px){
+  .auth>.hero{min-height:0}
+  .auth>.authbox{padding:18px 0}
+  .auth .hero .txt{bottom:8%}
+}

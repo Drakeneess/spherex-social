@@ -4,6 +4,7 @@ import { api, hasToken, type ObservationParams, type Post, type Profile, type Us
 import PostCard, { Avatar } from './components/PostCard';
 import ExplorerPage from './pages/ExplorerPage';
 import GamePage from './pages/GamePage';
+import HeroStarfield from './components/HeroStarfield';
 
 type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
 const quick = [
@@ -51,20 +52,19 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
     }catch(e){setError(message(e));}finally{setBusy(false);}
   }
   return <div className="auth">
-    <div className="hero"><div className="hero-stars" aria-hidden="true"/><div className="txt">
+    <div className="hero"><HeroStarfield/><div className="txt">
       <div className="logo"><span className="orb"/><span>AstroGram</span></div>
       <h1>Mira cómo se <span className="grad">mueve</span> el universo.</h1>
-      <p>Explora el cielo con datos SPHEREx, compara épocas y comparte tus observaciones con una comunidad de personas curiosas.</p>
-      <div className="hero-small">NASA Space Apps Challenge · Proyecto independiente</div>
+      <p>Compara imágenes del cielo tomadas por la misión SPHEREx, encuentra lo que cambió y comparte tu hallazgo con otros astrónomos.</p>
     </div></div>
     <section className="authbox">
       <div className="logo auth-logo"><span className="orb"/><span>AstroGram</span></div>
-      <h2>{mode==='register'?'Crea tu cuenta':'Bienvenido de vuelta'}</h2>
+      <h2>{mode==='register'?'Crea tu cuenta':'Bienvenida de vuelta'}</h2>
       <div className="tabs"><button type="button" className={mode==='register'?'on':''} onClick={()=>{setMode('register');setError('')}}>Registrarse</button>
         <button type="button" className={mode==='login'?'on':''} onClick={()=>{setMode('login');setError('')}}>Entrar</button></div>
       {error&&<p className="form-error" role="alert">{error}</p>}
       <form onSubmit={e=>void submit(e)}>
-        {mode==='register'&&<><div className="field"><label htmlFor="username">Usuario</label><input id="username" autoComplete="username" maxLength={32} value={username} onChange={e=>setUsername(e.target.value)} placeholder="luna_07" required/></div>
+        {mode==='register'&&<><div className="field"><label htmlFor="username">Nombre de usuario</label><input id="username" autoComplete="username" maxLength={32} value={username} onChange={e=>setUsername(e.target.value)} placeholder="luna_07" required/></div>
           <div className="field"><label htmlFor="displayName">Nombre para mostrar</label><input id="displayName" maxLength={80} value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Luna Ríos" required/></div></>}
         <div className="field"><label htmlFor="email">Correo</label><input id="email" type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" required/></div>
         <div className="field"><label htmlFor="password">Contraseña{mode==='register'?' (mínimo 10 caracteres)':''}</label>
@@ -72,7 +72,7 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
             minLength={mode==='register'?10:undefined} value={password} onChange={e=>setPassword(e.target.value)} required/>
             <button type="button" onClick={()=>setShow(v=>!v)}>{show?'ocultar':'ver'}</button></div>
           {mode==='register'&&<div className="meter"><i style={{width:`${Math.min(100,password.length*7)}%`,background:password.length<10?'#ff6b7a':'#7ce38b'}}/></div>}</div>
-        {mode==='register'&&<div className="field"><label htmlFor="confirm">Repetir contraseña</label><input id="confirm" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/></div>}
+        {mode==='register'&&<div className="field"><label htmlFor="confirm">Repite la contraseña</label><input id="confirm" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/></div>}
         <button type="submit" className="btn p full" disabled={busy}>{busy?'Conectando…':mode==='register'?'Crear cuenta':'Entrar'}</button>
       </form>
       <button type="button" className="auth-explore" onClick={onExplore}>Explorar el cielo sin cuenta →</button>
@@ -247,6 +247,8 @@ export default function App(){
   const [search,setSearch]=useState('');
   const [toast,setToast]=useState('');
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
+  // Previous route state must never leave the auth page panned horizontally.
+  useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
   useEffect(()=>{if(!hasToken()){setChecking(false);return;}let active=true;
     api.me().then(p=>{if(active)setUser(p)}).catch(()=>{if(active){api.logout();setUser(null)}}).finally(()=>{if(active)setChecking(false)});
     return()=>{active=false};},[]);
