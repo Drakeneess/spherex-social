@@ -90,7 +90,7 @@ export default function SearchProgress({
     UNKNOWN: 'Desconocido (observado)',
     COMPLETED: 'Completado, incluida recuperación',
   };
-  const frameStageLabels: {key:keyof FrameTiming;name:string}[] = [
+  const frameStageLabels: {key:keyof Pick<FrameTiming, 'apertura_fits' | 'lectura_pixeles' | 'reproyeccion' | 'metadatos' | 'png'>;name:string}[] = [
     {key:'apertura_fits',name:'Abrir FITS'},
     {key:'lectura_pixeles',name:'Leer píxeles'},
     {key:'reproyeccion',name:'Reproyectar'},
