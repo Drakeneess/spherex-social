@@ -8,8 +8,9 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Migración versionada en `server/alembic/versions/` y tests sociales básicos.
 - ✅ Lecturas: `/v1/health`, `/v1/ready`, `/v1/feed`, `/v1/observations/{id}`.
 - ✅ Visor original: `/api/health`, `/api/search`, `/api/frame/{search_id}/{index}`.
-- ⏳ Autenticación, escrituras sociales, subida a S3 y workers de astronomía: **no implementados**.
-- ⏳ Despliegue de API: servicio Railway creado y configurado, **sin source** hasta conectar el repositorio GitHub.
+- ✅ Auth v1: registro, login, JWT HS256 de 30 minutos, Argon2id, perfil propio y público.
+- ⏳ Escrituras sociales, subida a S3, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
 
@@ -58,6 +59,16 @@ npm run dev
 
 Las rutas del visor original se mantienen en `/api`. El frontend Vite sigue siendo el prototipo astronómico inicial; la UI social será el siguiente módulo.
 
+## Autenticación (Auth v1)
+
+- `POST /v1/auth/register` recibe JSON con `username`, `display_name`, `email`, `password` (mínimo 10 caracteres); devuelve perfil privado, sin hash.
+- `POST /v1/auth/login` recibe JSON con `email`, `password`; devuelve `access_token`, `token_type=bearer`, `expires_in=1800`.
+- `GET /v1/users/me` y `PATCH /v1/users/me` requieren `Authorization: Bearer <token>`.
+- `GET /v1/users/{username}` es público y no revela correo.
+- El token se firma con HS256, incluye `sub`, `aud`, `iss`, `iat`, `nbf`, `exp` y `jti`; expira en 30 minutos de forma predeterminada. No existe refresh ni revocación en esta fase.
+- Swagger: `/docs` → primero registra una cuenta, haz login, copia `access_token`, pulsa **Authorize** y pega solamente el token.
+- Para un lanzamiento público deben agregarse **rate limiting distribuido**, verificación de correo y flujo de recuperación de contraseña. No guardar tokens en logs ni en Git.
+
 ## Tests y migraciones
 
 ```powershell
@@ -81,7 +92,9 @@ Proyecto existente: [`spherex-social`](https://railway.com/project/1c8bda97-096f
 - Variables: `APP_ENV=production`, `APP_NAME=SPHEREx Social API`, `DATABASE_URL=${{Postgres.DATABASE_URL}}` (referencia privada, no contraseña), `PYTHONUNBUFFERED=1`, `LOG_LEVEL=INFO`
 - El Dockerfile instala dependencias y ejecuta `alembic upgrade head` **antes de** levantar Uvicorn.
 
-**Paso pendiente:** crear un repositorio en GitHub, subir este código y vincular la rama `main` como source del servicio `api`. Railway no tendrá deploy de API hasta entonces. Tras conectar el repo, el backend deberá migrar la BD y superar `/v1/health` y `/v1/ready`.
+**GitHub:** [Drakeneess/spherex-social](https://github.com/Drakeneess/spherex-social), rama `main`, auto deploy a Railway.
+
+**Auth v1:** antes de desplegar, configurar en el servicio `api` un `AUTH_JWT_SECRET` aleatorio de al menos 32 caracteres. No ponerlo en Git. El inicio en producción falla intencionalmente si falta. `JWT_ACCESS_MINUTES` es opcional (30 por defecto).
 
 **Credenciales:** Railway gestiona la contraseña de PostgreSQL. Nunca copiar credenciales al README o al repositorio. Habilitar un dominio público para la API solo cuando se quiera acceso externo.
 
