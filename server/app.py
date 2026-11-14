@@ -10,11 +10,17 @@ import io
 import logging
 import math
 import secrets
+import socket
 import threading
 import time
+import xml.etree.ElementTree as ET
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
+from urllib.error import HTTPError as UrlHTTPError, URLError as UrlURLError
+
+import requests
 
 import numpy as np
 from astropy import units as u
@@ -75,6 +81,10 @@ TAP_JOB_SECONDS = 1800
 MAX_TAP_JOBS = 12
 MAX_CONSECUTIVE_TAP_ERRORS = 8
 RETRYABLE_TAP_HTTP_STATUSES = frozenset((429, 500, 502, 503, 504))
+MAX_FITS_ATTEMPTS = 3
+FITS_RETRY_DELAYS = (1.0, 2.0)
+UWS_PHASES = frozenset(('PENDING', 'QUEUED', 'EXECUTING', 'COMPLETED', 'ERROR',
+                        'ABORTED', 'HELD', 'SUSPENDED', 'UNKNOWN', 'ARCHIVED'))
 
 
 @dataclass
@@ -99,6 +109,13 @@ class TapSearchJob:
     result_parse_ms: int | None = None
     finished_at: float | None = None
     phase_events: list[dict] = field(default_factory=lambda: [{"phase": "QUEUED", "at_ms": 0}])
+    phase_method: str = "unknown"
+    phase_endpoint_unavailable: bool = False
+    remote_start_time: str | None = None
+    remote_end_time: str | None = None
+    remote_execution_ms: int | None = None
+    job_info_ms: int | None = None
+    job_info_status: str = "not_requested"
 
 
 _tap_jobs: dict[str, TapSearchJob] = {}
@@ -267,12 +284,41 @@ def generate_demo(index: int, total: int) -> dict:
             "pixel_flags_nonzero_fraction": None, "mode": "simulated"}
 
 
-class FrameProcessingError(Exception):
-    """Sanitized error classification for an IRSA cutout request."""
+def remote_http_status(exc: Exception) -> int | None:
+    """Read status without including a FITS URL or remote error message."""
+    value = getattr(exc, "code", None)
+    if value is None:
+        value = getattr(getattr(exc, "response", None), "status_code", None)
+    try:
+        return int(value) if value is not None else None
+    except (ValueError, TypeError):
+        return None
 
-    def __init__(self, stage: str, original_type: str):
+
+def is_temporary_fits_error(exc: Exception, http_status: int | None) -> bool:
+    """Retry only known transient HTTP statuses or transport interruptions."""
+    if http_status is not None:
+        return http_status in RETRYABLE_TAP_HTTP_STATUSES
+    if isinstance(exc, (RequestsTimeout, RequestsConnectionError,
+                        TimeoutError, ConnectionError, socket.timeout)):
+        return True
+    if isinstance(exc, UrlURLError):
+        reason = exc.reason
+        return isinstance(reason, (TimeoutError, ConnectionError, socket.timeout)) or (
+            isinstance(reason, str) and ("timed out" in reason.lower()
+                                        or "connection reset" in reason.lower()))
+    return False
+
+
+class FrameProcessingError(Exception):
+    """Sanitized FITS failure, safe for client diagnostics and bounded retries."""
+
+    def __init__(self, stage: str, original_type: str,
+                 http_status: int | None = None, transient: bool = False):
         self.stage = stage
         self.original_type = original_type
+        self.http_status = http_status
+        self.transient = transient
         super().__init__(f"{stage}: {original_type}")
 
 
@@ -339,7 +385,11 @@ def render_real(session: Session, record: dict) -> dict:
                 "timing_ms": times,
             }
     except Exception as exc:
-        raise FrameProcessingError(step, type(exc).__name__) from exc
+        status = remote_http_status(exc)
+        raise FrameProcessingError(
+            step, type(exc).__name__, status,
+            step == "apertura_fits" and is_temporary_fits_error(exc, status),
+        ) from exc
 
 
 @app.get("/api/health")
@@ -397,6 +447,12 @@ def tap_timing(job: TapSearchJob) -> dict:
             "phase_http_ms": job.phase_http_ms,
             "result_fetch_ms": job.result_fetch_ms,
             "result_parse_ms": job.result_parse_ms,
+            "phase_method": job.phase_method,
+            "remote_start_time": job.remote_start_time,
+            "remote_end_time": job.remote_end_time,
+            "remote_execution_ms": job.remote_execution_ms,
+            "job_info_ms": job.job_info_ms,
+            "job_info_status": job.job_info_status,
         }
 
 
@@ -408,6 +464,86 @@ def observe_tap_phase(job: TapSearchJob, phase: str) -> None:
             logger.info("TAP phase transition: %s at %sms", phase, at_ms)
 
 
+def validate_uws_job_url(remote: Any) -> str | None:
+    """Use only PyVO's known IRSA TAP job URL, never an arbitrary remote host."""
+    raw = getattr(remote, "url", None)
+    if not raw:
+        return None  # Enables test doubles / legacy PyVO compatibility.
+    parsed = urlparse(raw)
+    if (parsed.scheme != "https" or parsed.hostname != "irsa.ipac.caltech.edu"
+            or parsed.port is not None or parsed.username is not None
+            or not parsed.path.startswith("/TAP/async/")
+            or parsed.query or parsed.fragment):
+        raise ValueError("Unexpected IRSA TAP job URL")
+    return raw.rstrip("/")
+
+
+def job_http_get(remote: Any, url: str):
+    """Reuse PyVO's HTTP session (cookies/config) when available."""
+    session = getattr(remote, "_session", None)
+    client = session if session is not None else requests
+    return client.get(url, timeout=(5, 15), allow_redirects=False)
+
+
+def read_tap_phase(job: TapSearchJob) -> str:
+    """Poll the small UWS /phase resource; fall back on unsupported servers."""
+    remote = job.remote
+    url = validate_uws_job_url(remote)
+    if url and not job.phase_endpoint_unavailable:
+        response = job_http_get(remote, f"{url}/phase")
+        if response.status_code == 200:
+            value = response.text.strip().upper()
+            if value in UWS_PHASES:
+                job.phase_method = "phase_endpoint"
+                return value
+            # Some services respond with an XML job instead of plain text.
+            job.phase_endpoint_unavailable = True
+        elif response.status_code in (303, 404, 405, 406, 501):
+            job.phase_endpoint_unavailable = True
+        else:
+            response.raise_for_status()
+            raise ValueError("Unexpected IRSA /phase response")
+    job.phase_method = "full_job_fallback"
+    return str(remote.phase).strip().upper()
+
+
+def read_tap_remote_times(job: TapSearchJob) -> None:
+    """Best-effort single UWS job XML fetch; not a prerequisite for results."""
+    if job.job_info_status != "not_requested":
+        return
+    job.job_info_status = "unavailable"
+    start = time.monotonic()
+    try:
+        url = validate_uws_job_url(job.remote)
+        if not url:
+            job.job_info_status = "no_url"
+            return
+        response = job_http_get(job.remote, url)
+        response.raise_for_status()
+        content = response.content
+        if len(content) > 262144:
+            raise ValueError("UWS job document too large")
+        root = ET.fromstring(content)
+        found = {}
+        for node in root.iter():
+            tag = node.tag.rsplit("}", 1)[-1]
+            if tag in ("startTime", "endTime") and node.text and node.text.strip():
+                found[tag] = node.text.strip()
+        job.remote_start_time = found.get("startTime")
+        job.remote_end_time = found.get("endTime")
+        job.job_info_status = "available" if found else "missing_timestamps"
+        if job.remote_start_time and job.remote_end_time:
+            a = datetime.fromisoformat(job.remote_start_time.replace("Z", "+00:00"))
+            b = datetime.fromisoformat(job.remote_end_time.replace("Z", "+00:00"))
+            if a.tzinfo and b.tzinfo:
+                job.remote_execution_ms = max(0, round((b - a).total_seconds() * 1000))
+    except Exception as exc:
+        job.job_info_status = f"unavailable:{type(exc).__name__}"
+        logger.warning("UWS job timing metadata unavailable (%s)", type(exc).__name__)
+    finally:
+        job.job_info_ms = elapsed_ms(start)
+
+
 def is_temporary_tap_error(exc: Exception) -> bool:
     """Retry transport failures and HTTP 429/5xx, not invalid queries/jobs."""
     cause = getattr(exc, "cause", None)
@@ -417,7 +553,10 @@ def is_temporary_tap_error(exc: Exception) -> bool:
         return True
     code = getattr(exc, "code", None)
     if code is None:
-        code = getattr(getattr(cause, "response", None), "status_code", None)
+        response = getattr(exc, "response", None)
+        if response is None:
+            response = getattr(cause, "response", None)
+        code = getattr(response, "status_code", None)
     try:
         return int(code) in RETRYABLE_TAP_HTTP_STATUSES
     except (TypeError, ValueError):
@@ -563,7 +702,7 @@ def poll_search_job(ticket: str):
 
     requested_at = time.monotonic()
     try:
-        phase = str(job.remote.phase).upper()
+        phase = read_tap_phase(job)
     except Exception as exc:
         with _lock:
             job.poll_count += 1
@@ -602,6 +741,7 @@ def poll_search_job(ticket: str):
     except Exception as exc:
         return tap_retry_response(job, exc, "descarga del catálogo")
     clear_tap_errors(job)
+    read_tap_remote_times(job)
     with _lock:
         if job.result is None:
             job.result = result
@@ -634,19 +774,41 @@ def frame(search_id: str, index: int):
     with _lock:
         if index in session.frames:
             return session.frames[index]
-    try:
-        rendered = (generate_demo(index, len(session.records)) if session.source == "simulated"
-                    else render_real(session, session.records[index]))
-    except FrameProcessingError as exc:
-        logger.warning("FITS frame error index=%s stage=%s type=%s", index, exc.stage, exc.original_type)
-        raise HTTPException(
-            status_code=502,
-            detail=f"FITS falló en {exc.stage}: {exc.original_type}",
-        ) from exc
-    except Exception as exc:
-        logger.warning("FITS frame error index=%s stage=desconocida type=%s",
-                       index, type(exc).__name__)
-        raise HTTPException(status_code=502, detail=f"FITS falló: {type(exc).__name__}") from exc
+    # GET FITS cutouts are idempotent. Retry only known transient errors
+    # at the remote-open stage; never retry 404/403 or local WCS/PNG failures.
+    max_attempts = MAX_FITS_ATTEMPTS if session.source == "irsa" else 1
+    started_at = time.monotonic()
+    rendered: dict = {}
+    attempts = 0
+    for attempt in range(1, max_attempts + 1):
+        attempts = attempt
+        try:
+            rendered = (generate_demo(index, len(session.records)) if session.source == "simulated"
+                        else render_real(session, session.records[index]))
+            break
+        except FrameProcessingError as exc:
+            logger.warning(
+                "FITS frame index=%s attempt=%s stage=%s type=%s remote_http=%s transient=%s",
+                index, attempt, exc.stage, exc.original_type, exc.http_status, exc.transient,
+            )
+            if exc.transient and attempt < max_attempts:
+                time.sleep(FITS_RETRY_DELAYS[attempt - 1])
+                continue
+            suffix = f" HTTP {exc.http_status}" if exc.http_status is not None else ""
+            raise HTTPException(
+                status_code=502,
+                detail=f"FITS falló en {exc.stage}: {exc.original_type}{suffix}"
+                       f" ({attempt} intento{'s' if attempt != 1 else ''})",
+            ) from exc
+        except Exception as exc:
+            logger.warning("FITS frame error index=%s stage=desconocida type=%s",
+                           index, type(exc).__name__)
+            raise HTTPException(status_code=502, detail=f"FITS falló: {type(exc).__name__}") from exc
+    if "timing_ms" in rendered:
+        rendered["timing_ms"] = {
+            **rendered["timing_ms"], "attempts": attempts,
+            "total_with_retries": elapsed_ms(started_at),
+        }
     result = {**rendered, "index": index, "date": session.records[index]["date"],
               "release": session.records[index]["release"]}
     with _lock:

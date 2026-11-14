@@ -47,6 +47,12 @@ export type TapTiming = {
   phase_http_ms: number;
   result_fetch_ms: number | null;
   result_parse_ms: number | null;
+  phase_method?: 'phase_endpoint' | 'full_job_fallback' | 'unknown';
+  remote_start_time?: string | null;
+  remote_end_time?: string | null;
+  remote_execution_ms?: number | null;
+  job_info_ms?: number | null;
+  job_info_status?: string;
 };
 export type FrameTiming = {
   apertura_fits: number;
@@ -55,6 +61,8 @@ export type FrameTiming = {
   metadatos: number;
   png: number;
   total: number;
+  attempts?: number;
+  total_with_retries?: number;
 };
 export type SkyFrame = {
   image: string; index: number; date: string; release: string; mode: 'real' | 'simulated';

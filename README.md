@@ -309,3 +309,29 @@ El diagnóstico es de observabilidad: **no modifica la consulta ADQL, no acelera
 IRSA y no cambia el comportamiento de las imágenes**. Para pruebas locales, iniciar
 FastAPI y Vite desde la misma rama; las métricas de TAP no aparecen en el modo demo.
 Los tests simulan fases y errores sin enviar trabajos a IRSA.
+
+## Diagnóstico TAP /phase y reintentos FITS (14/11/2026)
+
+**Seguimiento TAP:** GET /api/search/jobs/{ticket} consulta el recurso ligero
+UWS GET {remote-job-url}/phase (texto), usando la sesión HTTP de PyVO cuando
+está disponible. Si el servidor no soporta /phase (303/404/405/406/501
+o una respuesta inesperada), recurre a la propiedad remota job.phase.
+Los errores transitorios 429/500/502/503/504 conservan el backoff del GET,
+sin crear nuevos trabajos remotos.
+
+Al finalizar el catálogo se consulta una vez el documento completo del job UWS
+para extraer startTime y endTime. Las métricas remote_start_time, remote_end_time,
+remote_execution_ms, job_info_status, job_info_ms y phase_method quedan
+disponibles en el campo timing. Si IRSA no envía esas fechas o la lectura falla,
+la búsqueda continúa; las horas no se inventan. Los intervalos QUEUED y
+EXECUTING siguen siendo estimaciones de sondeos, no tiempos precisos de CPU.
+
+**FITS:** los errores incluyen el código HTTP remoto cuando está disponible
+(p. ej. HTTP 404 frente a HTTP 502), nunca la URL de descarga completa.
+Los GET de apertura FITS se reintentan solo ante 429/500/502/503/504 o
+fallos de transporte claramente transitorios, con máximo 3 intentos y pausas
+de 1 y 2 segundos. No reintentar HTTP 400/401/403/404 ni errores WCS/PNG.
+Las imágenes válidas exponen timing_ms.attempts y timing_ms.total_with_retries.
+
+Los tests usan dobles UWS/FITS sin acceso externo, e incluyen fallback,
+tiempos UWS, errores HTTP y reintentos con límites. El flujo ADQL es idéntico.

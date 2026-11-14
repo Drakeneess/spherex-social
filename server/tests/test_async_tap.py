@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from requests.exceptions import HTTPError as RequestsHTTPError
+from urllib.error import HTTPError as UrlHTTPError
 from pyvo.dal import DALServiceError
 from fastapi.testclient import TestClient
 
@@ -378,4 +380,196 @@ def test_frame_response_preserves_internal_per_stage_timing(harness, monkeypatch
     })
     response = client.get(f"/api/frame/{token}/0")
     assert response.status_code == 200
-    assert response.json()["timing_ms"] == stages
+
+    result = response.json()["timing_ms"]
+    assert all(result[key] == value for key, value in stages.items())
+    assert result["attempts"] == 1
+    assert result["total_with_retries"] >= 0
+
+
+class FakeUwsResponse:
+    def __init__(self, status=200, text="QUEUED"):
+        self.status_code = status
+        self.text = text
+        self.content = text.encode("utf-8")
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RequestsHTTPError(f"status {self.status_code}", response=self)
+
+
+class FakeUwsSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    def get(self, url, timeout, allow_redirects):
+        self.requests.append((url, timeout, allow_redirects))
+        return self.responses.pop(0)
+
+
+def use_uws_job(job, responses):
+    job.url = "https://irsa.ipac.caltech.edu/TAP/async/test123"
+    job._session = FakeUwsSession(responses)
+    return job._session
+
+
+def test_phase_endpoint_is_polled_without_fetching_full_job_each_time(harness):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    document = ('<uws:job xmlns:uws="http://www.ivoa.net/xml/UWS/v1.0">'
+                '<uws:startTime>2026-11-14T22:00:00Z</uws:startTime>'
+                '<uws:endTime>2026-11-14T22:00:02Z</uws:endTime>'
+                '</uws:job>')
+    session = use_uws_job(tap.jobs[0], [
+        FakeUwsResponse(text="QUEUED"),
+        FakeUwsResponse(text="EXECUTING"),
+        FakeUwsResponse(text="COMPLETED"),
+        FakeUwsResponse(text=document),
+    ])
+    assert client.get(f"/api/search/jobs/{ticket}").json()["phase"] == "QUEUED"
+    assert client.get(f"/api/search/jobs/{ticket}").json()["phase"] == "EXECUTING"
+    complete = client.get(f"/api/search/jobs/{ticket}").json()
+    assert complete["phase"] == "COMPLETED"
+    timing = complete["timing"]
+    assert timing["phase_method"] == "phase_endpoint"
+    assert timing["remote_start_time"] == "2026-11-14T22:00:00Z"
+    assert timing["remote_end_time"] == "2026-11-14T22:00:02Z"
+    assert timing["remote_execution_ms"] == 2000
+    assert timing["job_info_status"] == "available"
+    assert len(session.requests) == 4
+    assert [url.rsplit("/", 1)[-1] for url, _, _ in session.requests] == [
+        "phase", "phase", "phase", "test123"
+    ]
+    assert all(not redirects for _, _, redirects in session.requests)
+
+
+def test_phase_endpoint_unsupported_falls_back_to_pyvo_property(harness):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    session = use_uws_job(tap.jobs[0], [FakeUwsResponse(status=404)])
+    first = client.get(f"/api/search/jobs/{ticket}").json()
+    assert first["phase"] == "QUEUED"
+    assert first["timing"]["phase_method"] == "full_job_fallback"
+    assert client.get(f"/api/search/jobs/{ticket}").json()["phase"] == "QUEUED"
+    assert len(session.requests) == 1
+
+
+def test_phase_endpoint_502_is_retried_without_fallback(harness):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    session = use_uws_job(tap.jobs[0], [
+        FakeUwsResponse(status=502), FakeUwsResponse(text="EXECUTING")
+    ])
+    first = client.get(f"/api/search/jobs/{ticket}").json()
+    assert first["phase"] == "RETRYING"
+    assert first["timing"]["poll_errors"] == 1
+    assert first["attempt"] == 1
+    explorer.get_tap_job(ticket).retry_at = 0
+    second = client.get(f"/api/search/jobs/{ticket}").json()
+    assert second["phase"] == "EXECUTING"
+    assert second["timing"]["phase_method"] == "phase_endpoint"
+    assert len(session.requests) == 2
+
+
+def test_remote_metadata_failure_does_not_lose_completed_catalog(harness):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    use_uws_job(tap.jobs[0], [
+        FakeUwsResponse(text="COMPLETED"), FakeUwsResponse(status=503)
+    ])
+    result = client.get(f"/api/search/jobs/{ticket}").json()
+    assert result["phase"] == "COMPLETED"
+    assert result["result"]["source"] == "irsa"
+    assert result["timing"]["remote_execution_ms"] is None
+    assert result["timing"]["job_info_status"].startswith("unavailable")
+
+
+def _fake_frame_session():
+    record = {
+        "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/test.fits?center=1,2d&size=0.1",
+        "mjd": 60810.0, "date": "2025-01-01T00:00:00", "release": "DR1"
+    }
+    return explorer.register_session(explorer.Session(1, 2, 6, 2, [record], "irsa"))
+
+
+def test_fits_http_502_retry_then_success(harness, monkeypatch):
+    client, _ = harness
+    token = _fake_frame_session()
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(explorer.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    def flaky(_session, _record):
+        calls.append(1)
+        if len(calls) == 1:
+            raise explorer.FrameProcessingError("apertura_fits", "HTTPError", 502, True)
+        return {
+            "image": "data:image/png;base64,AAAA", "wavelength_um": None,
+            "bandwidth_um": None, "pixel_flags_nonzero_fraction": None,
+            "mode": "real", "timing_ms": {"total": 7}
+        }
+
+    monkeypatch.setattr(explorer, "render_real", flaky)
+    result = client.get(f"/api/frame/{token}/0")
+    assert result.status_code == 200
+    assert result.json()["timing_ms"]["attempts"] == 2
+    assert result.json()["timing_ms"]["total_with_retries"] >= 0
+    assert sleeps == [1.0]
+    assert len(calls) == 2
+
+
+def test_fits_http_404_not_retried_and_status_displayed(harness, monkeypatch):
+    client, _ = harness
+    token = _fake_frame_session()
+    calls = []
+    monkeypatch.setattr(explorer.time, "sleep", lambda seconds: pytest.fail("unexpected retry"))
+
+    def missing(*args, **kwargs):
+        calls.append(1)
+        raise UrlHTTPError("https://irsa.ipac.caltech.edu/private/example.fits", 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(explorer.fits, "open", missing)
+    result = client.get(f"/api/frame/{token}/0")
+    assert result.status_code == 502
+    assert "HTTP 404" in result.json()["detail"]
+    assert "1 intento" in result.json()["detail"]
+    assert "private/example" not in result.json()["detail"]
+    assert len(calls) == 1
+
+
+def test_fits_persistent_http_503_stops_at_three_attempts(harness, monkeypatch):
+    client, _ = harness
+    token = _fake_frame_session()
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(explorer.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    def unavailable(_session, _record):
+        calls.append(1)
+        raise explorer.FrameProcessingError("apertura_fits", "HTTPError", 503, True)
+
+    monkeypatch.setattr(explorer, "render_real", unavailable)
+    result = client.get(f"/api/frame/{token}/0")
+    assert result.status_code == 502
+    assert "HTTP 503" in result.json()["detail"]
+    assert "3 intentos" in result.json()["detail"]
+    assert len(calls) == 3
+    assert sleeps == [1.0, 2.0]
+
+
+def test_fits_processing_error_never_retried(harness, monkeypatch):
+    client, _ = harness
+    token = _fake_frame_session()
+    calls = []
+    monkeypatch.setattr(explorer.time, "sleep", lambda seconds: pytest.fail("unexpected retry"))
+
+    def broken(_session, _record):
+        calls.append(1)
+        raise explorer.FrameProcessingError("reproyeccion", "ValueError", None, False)
+
+    monkeypatch.setattr(explorer, "render_real", broken)
+    result = client.get(f"/api/frame/{token}/0")
+    assert result.status_code == 502
+    assert "reproyeccion" in result.json()["detail"]
+    assert len(calls) == 1

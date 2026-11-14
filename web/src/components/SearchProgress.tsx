@@ -176,7 +176,16 @@ export default function SearchProgress({
           key={phase} className="irsa-timing-pair">
           <dt>{phaseLabels[phase] ?? `${phase} (observado)`}</dt><dd>{duration(ms)}</dd>
         </div>)}
+        <dt>Método de seguimiento</dt><dd>{timing.phase_method === 'phase_endpoint'
+          ? '/phase (ligero)' : timing.phase_method === 'full_job_fallback'
+            ? 'Documento UWS completo (respaldo)' : 'No determinado'}</dd>
         <dt>Red: consulta de estado (acumulado)</dt><dd>{duration(timing.phase_http_ms)}</dd>
+        {timing.remote_start_time && <><dt>Inicio registrado por IRSA</dt><dd>{timing.remote_start_time}</dd></>}
+        {timing.remote_end_time && <><dt>Fin registrado por IRSA</dt><dd>{timing.remote_end_time}</dd></>}
+        {timing.remote_execution_ms != null &&
+          <><dt>Ejecución según IRSA</dt><dd>{duration(timing.remote_execution_ms)}</dd></>}
+        <dt>Metadatos de ejecución UWS</dt><dd>{timing.job_info_status ?? 'No disponibles'}</dd>
+        {timing.job_info_ms != null && <><dt>Lectura de metadatos UWS</dt><dd>{duration(timing.job_info_ms)}</dd></>
         {timing.result_fetch_ms !== null && <><dt>Recuperar tabla</dt><dd>{duration(timing.result_fetch_ms)}</dd></>}
         {timing.result_parse_ms !== null && <><dt>Validar y preparar observaciones</dt><dd>{duration(timing.result_parse_ms)}</dd></>}
         <dt>Sondeos fallidos</dt><dd>{timing.poll_errors} / {timing.poll_count}</dd>
@@ -204,7 +213,10 @@ export default function SearchProgress({
             frame.startedAt ? duration(Math.max(0, now - frame.startedAt)) : '—'}</span>
           {frame.error && <span className="irsa-frame-error" title={frame.error}><AlertCircle size={12}/> {frame.error}</span>}
           {frame.serverTiming && <span className="irsa-frame-server">
-            Servidor: {duration(frame.serverTiming.total)} · {frameStageLabels.map(
+            Servidor: {duration(frame.serverTiming.total_with_retries ?? frame.serverTiming.total)}
+            {frame.serverTiming.attempts && frame.serverTiming.attempts > 1
+              ? ` · ${frame.serverTiming.attempts} intentos` : ''}
+            {' · '}{frameStageLabels.map(
               ({key, name}) => `${name}: ${duration(frame.serverTiming![key])}`
             ).join(' · ')}
           </span>}
