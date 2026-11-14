@@ -20,6 +20,8 @@ export type SearchTrace = {
   catalogError?: string;
   finishedAt?: number;
   remotePhase?: string;
+  remoteWarning?: string;
+  retryAfterSeconds?: number;
 };
 
 function duration(ms: number): string {
@@ -86,7 +88,11 @@ export default function SearchProgress({
         <Marker done={catalogDone} bad={catalogBad} active={catalogActive}/>
         <div>
           <b>1. Catálogo {trace.source === 'irsa' ? 'NASA/IPAC IRSA' : 'de demostración'}</b>
-          <p>{catalogActive ? (trace.remotePhase ? `Trabajo TAP asíncrono: ${trace.remotePhase}. Consultando IRSA cada 2,5 s.` : 'Enviando consulta al catálogo TAP…') :
+          <p>{catalogActive ? (trace.remotePhase === 'RETRYING'
+              ? `${trace.remoteWarning ?? 'El servidor IRSA no respondió.'} Reintento en ${trace.retryAfterSeconds ?? '?'} s; el trabajo sigue conservado.`
+              : trace.remotePhase
+                ? `Trabajo TAP asíncrono: ${trace.remotePhase}. Consultando IRSA cada 2,5 s.`
+                : 'Enviando consulta al catálogo TAP…') :
             catalogBad ? (trace.catalogError ?? 'La consulta no devolvió resultados válidos.') :
             catalogDone ? `${trace.totalMatches ?? 0} coincidencias encontradas · ${duration(trace.catalogMs!)}` :
             'Pendiente'}</p>

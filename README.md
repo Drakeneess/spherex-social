@@ -252,3 +252,14 @@ Debe mostrar `True`. En Vite, abrir `http://127.0.0.1:5173/#/explore`. Si el pro
 
 > La búsqueda real utiliza internet desde tu backend local hacia IRSA. No hay garantía de que un trabajo TAP termine rápidamente; el panel ahora muestra el estado remoto sin sujetar una conexión HTTP abierta durante cinco minutos.
 
+
+### Recuperación ante errores de proxy de IRSA (14/11/2026)
+
+La creación del trabajo TAP puede responder `202 Accepted` y las primeras consultas de estado devolver `200`, pero IRSA puede responder ocasionalmente `502 Proxy Error` al recuperar la fase (p. ej. `/TAP/async/{job}`). Esto **no prueba** que el trabajo científico haya fallado.
+
+- El backend reconoce `429`, `500`, `502`, `503`, `504` y errores transitorios de conexión/timeout al consultar la fase o descargar el resultado.
+- Ante esos errores responde **`200 {"phase":"RETRYING", "warning":"...", "retry_after_seconds":N, "attempt":N}`** sin borrar el ticket ni cancelar el trabajo remoto.
+- El frontend respeta el intervalo de reintento y muestra la advertencia en `Estado de la consulta`. El backoff empieza en 3 s, crece hasta 30 s y, si hay más de 8 errores consecutivos, termina en `503` con un mensaje explícito.
+- Un estado `ERROR`/`ABORTED` real, o una respuesta HTTP no reintentable (p. ej. 404 del trabajo remoto), no se transforma en una falsa recuperación.
+- El resultado de la consulta TAP y sus recortes siguen sin persistirse; los trabajos están en memoria local por proceso.
+- Las pruebas unitarias usan `pyvo.dal.DALServiceError(code=502)` y verifican recuperación, límite de errores y fallos no reintentables. **No garantizan la disponibilidad de IRSA**.

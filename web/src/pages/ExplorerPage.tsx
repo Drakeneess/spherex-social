@@ -122,7 +122,12 @@ export default function ExplorerPage({
           if (request.signal.aborted) return;
           const snapshot = await api.pollSkyJob(started.job_id, request.signal);
           if (request.signal.aborted) return;
-          updateTrace(old => ({ ...old, remotePhase: snapshot.phase }));
+          updateTrace(old => ({
+            ...old,
+            remotePhase: snapshot.phase,
+            remoteWarning: snapshot.warning,
+            retryAfterSeconds: snapshot.retry_after_seconds,
+          }));
           if (snapshot.phase === 'COMPLETED') {
             if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
             search = snapshot.result;
@@ -143,7 +148,7 @@ export default function ExplorerPage({
             const timer = window.setTimeout(() => {
               request.signal.removeEventListener('abort', onAbort);
               resolve();
-            }, 2500);
+            }, Math.max(2500, (snapshot.retry_after_seconds ?? 0) * 1000));
             const onAbort = () => {
               window.clearTimeout(timer);
               request.signal.removeEventListener('abort', onAbort);
@@ -416,6 +421,8 @@ export default function ExplorerPage({
     client_progress: trace && {
       phase: trace.phase,
       remote_phase: trace.remotePhase,
+      remote_warning: trace.remoteWarning,
+      retry_after_seconds: trace.retryAfterSeconds,
       catalog_ms: trace.catalogMs,
       count: trace.count,
       frames: trace.frames,

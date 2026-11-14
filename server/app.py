@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw
 from reproject import reproject_interp
+from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout as RequestsTimeout
 
 logger = logging.getLogger("astrogram.irsa")
 
@@ -72,6 +73,8 @@ _lock = threading.RLock()
 
 TAP_JOB_SECONDS = 1800
 MAX_TAP_JOBS = 12
+MAX_CONSECUTIVE_TAP_ERRORS = 8
+RETRYABLE_TAP_HTTP_STATUSES = frozenset((429, 500, 502, 503, 504))
 
 
 @dataclass
@@ -84,6 +87,9 @@ class TapSearchJob:
     remote: Any
     created_at: float = field(default_factory=time.monotonic)
     result: dict | None = None
+    consecutive_errors: int = 0
+    retry_at: float = 0.0
+    last_error_stage: str = ''
 
 
 _tap_jobs: dict[str, TapSearchJob] = {}
@@ -317,6 +323,77 @@ def get_tap_job(ticket: str) -> TapSearchJob:
     return job
 
 
+def is_temporary_tap_error(exc: Exception) -> bool:
+    """Retry transport failures and HTTP 429/5xx, not invalid queries/jobs."""
+    cause = getattr(exc, "cause", None)
+    if isinstance(exc, (RequestsConnectionError, RequestsTimeout)) or isinstance(
+        cause, (RequestsConnectionError, RequestsTimeout)
+    ):
+        return True
+    code = getattr(exc, "code", None)
+    if code is None:
+        code = getattr(getattr(cause, "response", None), "status_code", None)
+    try:
+        return int(code) in RETRYABLE_TAP_HTTP_STATUSES
+    except (TypeError, ValueError):
+        return False
+
+
+def tap_retry_response(job: TapSearchJob, exc: Exception, stage: str):
+    """Keep remote TAP job alive when IRSA's proxy temporarily rejects a poll."""
+    if not is_temporary_tap_error(exc):
+        logger.exception("IRSA TAP %s failed permanently", stage)
+        raise HTTPException(
+            status_code=502, detail=f"IRSA TAP {stage} failed: {type(exc).__name__}"
+        ) from exc
+
+    with _lock:
+        job.consecutive_errors += 1
+        attempts = job.consecutive_errors
+        job.last_error_stage = stage
+        delay = min(30, 3 * (2 ** min(attempts - 1, 4)))
+        job.retry_at = time.monotonic() + delay
+
+    if attempts > MAX_CONSECUTIVE_TAP_ERRORS:
+        logger.error("IRSA TAP %s unavailable after %s consecutive transient failures",
+                     stage, attempts)
+        raise HTTPException(
+            status_code=503,
+            detail=f"IRSA sigue rechazando consultas de {stage} tras {attempts} intentos. "
+                   "Intenta una nueva búsqueda más tarde.",
+        ) from exc
+
+    logger.warning("IRSA TAP %s temporarily unavailable (%s), retry %s in %ss",
+                   stage, type(exc).__name__, attempts, delay)
+    return JSONResponse({
+        "phase": "RETRYING",
+        "warning": f"IRSA no respondió al consultar {stage}. "
+                   "Conservamos el trabajo e intentaremos de nuevo.",
+        "retry_after_seconds": delay,
+        "attempt": attempts,
+    }, headers={"Cache-Control": "no-store"})
+
+
+def tap_wait_response(job: TapSearchJob):
+    with _lock:
+        seconds = max(0, job.retry_at - time.monotonic())
+        count = job.consecutive_errors
+        stage = job.last_error_stage
+    return JSONResponse({
+        "phase": "RETRYING",
+        "warning": f"Esperando antes de reintentar {stage}.",
+        "retry_after_seconds": max(1, math.ceil(seconds)),
+        "attempt": count,
+    }, headers={"Cache-Control": "no-store"})
+
+
+def clear_tap_errors(job: TapSearchJob):
+    with _lock:
+        job.consecutive_errors = 0
+        job.retry_at = 0.0
+        job.last_error_stage = ""
+
+
 @app.post("/api/search/jobs", status_code=202)
 def start_search_job(params: SearchStart):
     """Submit IRSA TAP /async, not the five-minute synchronous endpoint."""
@@ -349,11 +426,18 @@ def poll_search_job(ticket: str):
     with _lock:
         if job.result is not None:
             return {"phase": "COMPLETED", "result": job.result}
+        waiting = job.retry_at > time.monotonic()
+    if waiting:
+        return tap_wait_response(job)
+
     try:
         phase = str(job.remote.phase).upper()
     except Exception as exc:
-        logger.exception("IRSA TAP async phase check failed")
-        raise HTTPException(status_code=502, detail=f"IRSA TAP phase check failed: {type(exc).__name__}") from exc
+        return tap_retry_response(job, exc, "estado del trabajo")
+    # Preserve the consecutive-error counter while the remote job is
+    # complete but the result payload itself is repeatedly failing.
+    if phase != "COMPLETED" or job.last_error_stage != "descarga del catálogo":
+        clear_tap_errors(job)
     if phase in ("PENDING", "QUEUED", "EXECUTING", "HELD", "SUSPENDED", "UNKNOWN"):
         return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
     if phase in ("ERROR", "ABORTED"):
@@ -366,8 +450,8 @@ def poll_search_job(ticket: str):
         result = make_search_result(job.ra, job.dec, job.size_arcmin,
                                     job.detector, job.max_frames, "irsa", records)
     except Exception as exc:
-        logger.exception("IRSA TAP async result retrieval failed")
-        raise HTTPException(status_code=502, detail=f"IRSA TAP result retrieval failed: {type(exc).__name__}") from exc
+        return tap_retry_response(job, exc, "descarga del catálogo")
+    clear_tap_errors(job)
     with _lock:
         if job.result is None:
             job.result = result

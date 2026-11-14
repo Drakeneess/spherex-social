@@ -139,7 +139,7 @@ export const api = {
         detector:data.detector,max_frames:data.frames}),
     },false,signal),
   pollSkyJob: (id:string,signal?:AbortSignal) =>
-    get<{phase:string;result?:SkySearch;error?:string}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
+    get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
   cancelSkyJob: (id:string) =>
     request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
   frame: (id:string,index:number,signal?:AbortSignal) =>

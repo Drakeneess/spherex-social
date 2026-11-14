@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from pyvo.dal import DALServiceError
 from fastapi.testclient import TestClient
 
 import app as explorer
@@ -141,3 +142,101 @@ def test_demo_legacy_is_still_available(harness):
     assert r.json()["source"] == "simulated"
     assert r.json()["count"] == 12
     assert not tap.jobs
+
+
+def test_transient_502_poll_retries_without_deleting_remote_job(harness, monkeypatch):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    remote = tap.jobs[0]
+    outcomes = [DALServiceError("Proxy Error", code=502), "EXECUTING"]
+
+    def flaky_phase(_self):
+        value = outcomes.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(flaky_phase))
+    failed_poll = client.get(f"/api/search/jobs/{ticket}")
+    assert failed_poll.status_code == 200
+    state = failed_poll.json()
+    assert state["phase"] == "RETRYING"
+    assert state["retry_after_seconds"] >= 3
+    assert state["attempt"] == 1
+    assert not remote.aborted
+    assert not remote.deleted
+
+    # The API does not hit IRSA again until the retry window is over.
+    waiting = client.get(f"/api/search/jobs/{ticket}")
+    assert waiting.status_code == 200
+    assert waiting.json()["phase"] == "RETRYING"
+    assert len(outcomes) == 1
+
+    explorer.get_tap_job(ticket).retry_at = 0
+    recovered = client.get(f"/api/search/jobs/{ticket}")
+    assert recovered.status_code == 200
+    assert recovered.json()["phase"] == "EXECUTING"
+    assert explorer.get_tap_job(ticket).consecutive_errors == 0
+
+
+def test_persistent_502_poll_fails_after_bounded_retries(harness, monkeypatch):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+
+    def always_unavailable(_self):
+        raise DALServiceError("Proxy Error", code=502)
+
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(always_unavailable))
+    job = explorer.get_tap_job(ticket)
+    for n in range(explorer.MAX_CONSECUTIVE_TAP_ERRORS):
+        job.retry_at = 0
+        result = client.get(f"/api/search/jobs/{ticket}")
+        assert result.status_code == 200
+        assert result.json()["phase"] == "RETRYING"
+        assert result.json()["attempt"] == n + 1
+
+    job.retry_at = 0
+    final = client.get(f"/api/search/jobs/{ticket}")
+    assert final.status_code == 503
+    assert "IRSA" in final.json()["detail"]
+
+
+def test_nonretryable_remote_phase_failure_is_not_masked(harness, monkeypatch):
+    client, _tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+
+    def bad_job(_self):
+        raise DALServiceError("Invalid job", code=404)
+
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(bad_job))
+    result = client.get(f"/api/search/jobs/{ticket}")
+    assert result.status_code == 502
+    assert explorer.get_tap_job(ticket).consecutive_errors == 0
+
+
+def test_result_502_does_not_reset_error_counter_on_each_successful_phase(harness, monkeypatch):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    remote = tap.jobs[0]
+    remote.phase = "COMPLETED"
+    original = remote.fetch_result
+    calls = 0
+
+    def temporary_result_failure():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise DALServiceError("Proxy Error", code=502)
+        return original()
+
+    monkeypatch.setattr(remote, "fetch_result", temporary_result_failure)
+    first = client.get(f"/api/search/jobs/{ticket}")
+    assert first.status_code == 200
+    assert first.json()["phase"] == "RETRYING"
+    assert explorer.get_tap_job(ticket).consecutive_errors == 1
+
+    explorer.get_tap_job(ticket).retry_at = 0
+    second = client.get(f"/api/search/jobs/{ticket}")
+    assert second.status_code == 200
+    assert second.json()["phase"] == "COMPLETED"
+    assert calls == 2
