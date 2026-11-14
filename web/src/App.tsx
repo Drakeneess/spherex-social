@@ -1,220 +1,298 @@
-import { useEffect, useRef, useState } from 'react';
-import CommunityFeed from './CommunityFeed';
-import { Activity, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, Layers, LoaderCircle, Pause, Play, Search, Sparkles } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Bell, Bookmark, Gamepad2, Home, LogOut, Plus, Settings, Sparkles, Telescope, UserRound, Users } from 'lucide-react';
+import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
+import PostCard, { Avatar } from './components/PostCard';
+import ExplorerPage from './pages/ExplorerPage';
+import GamePage from './pages/GamePage';
 
-type Observation = { index: number; date: string; release: string; mjd: number };
-type SearchResponse = {
-  search_id: string; source: 'simulated' | 'irsa'; total_matches: number;
-  count: number; ra: number; dec: number; detector: number; observations: Observation[];
-};
-type Frame = { image: string; wavelength_um: number | null; bandwidth_um: number | null; pixel_flags_nonzero_fraction: number | null; mode: 'real' | 'simulated'; index: number; date: string; release: string };
-const presets = [
-  { name: 'WISE 0855', description: 'Enana marrón de movimiento rápido', ra: 133.795129, dec: -7.245147 },
-  { name: "Estrella de Barnard", description: 'Alto movimiento propio', ra: 269.4521, dec: 4.6934 },
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
+const quick = [
+  {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
+  {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
+  {name:'Luhman 16',ra:162.299,dec:-53.318,desc:'Sistema de enanas marrones'},
 ];
-const API_ROOT = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
-const API = `${API_ROOT}/api`;
-const SOCIAL_API = `${API_ROOT}/v1`;
-type SavedRegion = {
-  id: string; ra_deg: number; dec_deg: number; fov_arcmin: number;
-  detector: number | null; viewer_path: string;
-};
-
-export default function App() {
-  const [ra, setRa] = useState('133.795129');
-  const [dec, setDec] = useState('-7.245147');
-  const [size, setSize] = useState('6');
-  const [detector, setDetector] = useState('2');
-  const [demo, setDemo] = useState(true);
-  const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
-  const [frames, setFrames] = useState<Record<number, Frame>>({});
-  const [selected, setSelected] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [blink, setBlink] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [openedObservationId, setOpenedObservationId] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
-
-  const count = searchResult?.count ?? 0;
-  const available = Object.keys(frames).map(Number).sort((a, b) => a - b);
-  const current = frames[selected];
-  const predecessor = frames[selected - 1];
-  const loaded = available.length;
-
-  useEffect(() => {
-    if (!playing || available.length < 2) return;
-    const interval = window.setInterval(() => {
-      setSelected((prev) => {
-        const pos = available.indexOf(prev);
-        return available[(pos + 1 + available.length) % available.length];
-      });
-    }, 600);
-    return () => window.clearInterval(interval);
-  }, [playing, loaded]);
-
-  useEffect(() => () => abort.current?.abort(), []);
-
-  // Deep links survive reloads and never depend on a server's temporary
-  // in-memory IRSA session. The frontend reconstructs the search from Postgres.
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get('observation_id');
-    if (id) void openSavedObservation(id, false);
-  }, []);
-
-  async function openSavedObservation(id: string, pushUrl = true) {
-    setError('');
-    try {
-      const result = await fetch(`${SOCIAL_API}/observations/${encodeURIComponent(id)}`);
-      const data: SavedRegion | { detail: string } = await result.json();
-      if (!result.ok) throw new Error('detail' in data ? data.detail : 'Observación no encontrada');
-      const saved = data as SavedRegion;
-      if (saved.detector == null) throw new Error('La observación no tiene detector seleccionado');
-      const params = {
-        ra: String(saved.ra_deg), dec: String(saved.dec_deg),
-        size: String(saved.fov_arcmin), detector: String(saved.detector), demo: false,
-      };
-      setRa(params.ra); setDec(params.dec); setSize(params.size);
-      setDetector(params.detector); setDemo(false); setOpenedObservationId(id);
-      if (pushUrl) window.history.pushState({}, '', `/?observation_id=${encodeURIComponent(id)}`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      await startSearch(params);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo abrir la región compartida');
-    }
+function parseRoute():Route {
+  const h=decodeURIComponent(window.location.hash.replace(/^#\/?/,''));
+  if(!h) {
+    const id=new URLSearchParams(window.location.search).get('observation_id');
+    return id ? {page:'explore',observationId:id} : {page:'home'};
   }
+  const [path,query] = h.split('?');
+  const parts=path.split('/');
+  const params=new URLSearchParams(query||'');
+  if(parts[0]==='explore')return {page:'explore',observationId:params.get('observation_id')||undefined,
+    ra:params.has('ra')?Number(params.get('ra')):undefined,
+    dec:params.has('dec')?Number(params.get('dec')):undefined};
+  if(parts[0]==='u'&&parts[1])return {page:'profile',username:parts[1]};
+  if(parts[0]==='settings'||parts[0]==='game'||parts[0]==='saved'||parts[0]==='activity')return {page:parts[0]};
+  return {page:'home'};
+}
+function go(path:string) { window.location.hash=`#/${path}`; }
+const message=(e:unknown) => e instanceof Error?e.message:'Ocurrió un error inesperado';
 
-  async function startSearch(override?: { ra: string; dec: string; size: string; detector: string; demo: boolean }) {
-    abort.current?.abort();
-    const controller = new AbortController();
-    abort.current = controller;
-    setLoading(true); setError(''); setSearchResult(null); setFrames({}); setSelected(0);
-    setPlaying(false); setBlink(false);
-    try {
-      const config = override ?? { ra, dec, size, detector, demo };
-      const q = new URLSearchParams({ ra: config.ra, dec: config.dec,
-        size_arcmin: config.size, detector: config.detector,
-        max_frames: '12', demo: String(config.demo) });
-      const result = await fetch(`${API}/search?${q}`, { signal: controller.signal });
-      const data = await result.json();
-      if (!result.ok) throw new Error(data.detail || 'No se pudo consultar IRSA');
-      const search: SearchResponse = data;
-      setSearchResult(search);
-      if (search.count === 0) { setLoading(false); return; }
-      // Bounded sequential download: respect IRSA and show frames progressively.
-      for (let i = 0; i < search.count; i++) {
-        if (controller.signal.aborted) break;
-        const response = await fetch(`${API}/frame/${encodeURIComponent(search.search_id)}/${i}`, { signal: controller.signal });
-        if (!response.ok) {
-          const failure = await response.json().catch(() => ({}));
-          throw new Error(`Fotograma ${i + 1}: ${failure.detail || 'Error al descargar FITS'}`);
-        }
-        const frame: Frame = await response.json();
-        setFrames(previous => ({ ...previous, [i]: frame }));
+function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplore:()=>void}){
+  const [mode,setMode]=useState<'register'|'login'>('register');
+  const [username,setUsername]=useState(''),[displayName,setDisplayName]=useState('');
+  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[confirm,setConfirm]=useState('');
+  const [show,setShow]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function submit(e:FormEvent<HTMLFormElement>){
+    e.preventDefault();setError('');
+    if(mode==='register'){
+      if(!/^[a-z][a-z0-9_]{2,31}$/i.test(username.trim())){setError('Usuario: 3–32 caracteres, empieza con una letra; usa letras, números y _.');return;}
+      if(!displayName.trim()){setError('Introduce un nombre para mostrar.');return;}
+      if(password.length<10){setError('La contraseña debe tener al menos 10 caracteres.');return;}
+      if(password!==confirm){setError('Las contraseñas no coinciden.');return;}
+    }
+    setBusy(true);
+    try{
+      if(mode==='register')await api.register({username:username.trim().toLowerCase(),display_name:displayName.trim(),email:email.trim(),password});
+      await api.login(email.trim(),password);
+      onSuccess(await api.me());
+    }catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  return <div className="auth">
+    <div className="hero"><div className="hero-stars" aria-hidden="true"/><div className="txt">
+      <div className="logo"><span className="orb"/><span>AstroGram</span></div>
+      <h1>Mira cómo se <span className="grad">mueve</span> el universo.</h1>
+      <p>Explora el cielo con datos SPHEREx, compara épocas y comparte tus observaciones con una comunidad de personas curiosas.</p>
+      <div className="hero-small">NASA Space Apps Challenge · Proyecto independiente</div>
+    </div></div>
+    <section className="authbox">
+      <div className="logo auth-logo"><span className="orb"/><span>AstroGram</span></div>
+      <h2>{mode==='register'?'Crea tu cuenta':'Bienvenido de vuelta'}</h2>
+      <div className="tabs"><button type="button" className={mode==='register'?'on':''} onClick={()=>{setMode('register');setError('')}}>Registrarse</button>
+        <button type="button" className={mode==='login'?'on':''} onClick={()=>{setMode('login');setError('')}}>Entrar</button></div>
+      {error&&<p className="form-error" role="alert">{error}</p>}
+      <form onSubmit={e=>void submit(e)}>
+        {mode==='register'&&<><div className="field"><label htmlFor="username">Usuario</label><input id="username" autoComplete="username" maxLength={32} value={username} onChange={e=>setUsername(e.target.value)} placeholder="luna_07" required/></div>
+          <div className="field"><label htmlFor="displayName">Nombre para mostrar</label><input id="displayName" maxLength={80} value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Luna Ríos" required/></div></>}
+        <div className="field"><label htmlFor="email">Correo</label><input id="email" type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" required/></div>
+        <div className="field"><label htmlFor="password">Contraseña{mode==='register'?' (mínimo 10 caracteres)':''}</label>
+          <div className="pw"><input id="password" type={show?'text':'password'} autoComplete={mode==='login'?'current-password':'new-password'}
+            minLength={mode==='register'?10:undefined} value={password} onChange={e=>setPassword(e.target.value)} required/>
+            <button type="button" onClick={()=>setShow(v=>!v)}>{show?'ocultar':'ver'}</button></div>
+          {mode==='register'&&<div className="meter"><i style={{width:`${Math.min(100,password.length*7)}%`,background:password.length<10?'#ff6b7a':'#7ce38b'}}/></div>}</div>
+        {mode==='register'&&<div className="field"><label htmlFor="confirm">Repetir contraseña</label><input id="confirm" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/></div>}
+        <button type="submit" className="btn p full" disabled={busy}>{busy?'Conectando…':mode==='register'?'Crear cuenta':'Entrar'}</button>
+      </form>
+      <button type="button" className="auth-explore" onClick={onExplore}>Explorar el cielo sin cuenta →</button>
+      <p className="conn"><b>● API AstroGram</b> · conectada a FastAPI y PostgreSQL</p>
+    </section>
+  </div>;
+}
+
+function PublishModal({region,onClose,onDone}:{region:ObservationParams|null;onClose:()=>void;onDone:()=>void}){
+  const [caption,setCaption]=useState(''),[visibility,setVisibility]=useState<Post['visibility']>('public');
+  const [attach,setAttach]=useState(Boolean(region)),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [savedId,setSavedId]=useState<string|null>(null);
+  async function submit(e:FormEvent){
+    e.preventDefault();
+    if(!caption.trim()){setError('Escribe algo acerca de tu observación.');return;}
+    setBusy(true);setError('');
+    try{
+      let observation_id:string|null=null;
+      if(attach&&region){
+        // Keep the created ID across retries if the post request fails.
+        observation_id=savedId??(await api.createObservation(region)).id;
+        setSavedId(observation_id);
       }
-    } catch (e) {
-      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Error inesperado');
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
+      await api.createPost({caption:caption.trim(),visibility,observation_id});
+      onDone();
+    }catch(e){setError(message(e));}finally{setBusy(false);}
   }
-
-  function showPrevious() {
-    if (count > 0) { setPlaying(false); setSelected(v => Math.max(0, v - 1)); }
-  }
-  function showNext() {
-    if (count > 0) { setPlaying(false); setSelected(v => Math.min(count - 1, v + 1)); }
-  }
-
-  return (
-    <div className="site-shell">
-      <header className="topbar">
-        <div className="brand"><div className="brand-icon"><Sparkles size={20}/></div>
-          <div><strong>SPHEREx</strong><span>TIME EXPLORER</span></div></div>
-        <div className="top-right"><span className="status-dot"/> NASA OPEN DATA <span className="header-divider"/> <span>PROTOTYPE / 0.1</span></div>
-      </header>
-
-      <main>
-        <section className="intro">
-          <div className="eyebrow"><Activity size={15}/> ASTRONOMICAL TIME DOMAIN EXPLORER</div>
-          <h1>El universo no está <em>quieto.</em></h1>
-          <p>Explora observaciones infrarrojas de SPHEREx a lo largo del tiempo. Busca coordenadas, reproduce imágenes del cielo y examina qué cambia.</p>
-        </section>
-
-        <div className="workspace">
-          <aside className="panel controls">
-            <div className="panel-heading"><Search size={16}/> <h2>Buscar región</h2></div>
-            <div className="field-pair">
-              <label>Ascensión recta (°)<input type="number" min="0" max="359.99999" step="any" value={ra} onChange={e => setRa(e.target.value)}/></label>
-              <label>Declinación (°)<input type="number" min="-90" max="90" step="any" value={dec} onChange={e => setDec(e.target.value)}/></label>
-            </div>
-            <div className="field-pair">
-              <label>Campo de visión<select value={size} onChange={e => setSize(e.target.value)}>
-                <option value="2">2 arcmin</option><option value="4">4 arcmin</option><option value="6">6 arcmin</option><option value="8">8 arcmin</option><option value="12">12 arcmin</option>
-              </select></label>
-              <label>Detector<select value={detector} onChange={e => setDetector(e.target.value)}>
-                {[1, 2, 3, 4, 5, 6].map(i => <option key={i} value={i}>SPHEREx-D{i}</option>)}
-              </select></label>
-            </div>
-            <div className="option-row"><div><strong>Modo de prueba</strong><span>Fotogramas sintéticos (sin datos NASA)</span></div><input type="checkbox" checked={demo} onChange={e => setDemo(e.target.checked)}/></div>
-            <button className="primary" onClick={() => void startSearch()} disabled={loading}>
-              {loading ? <LoaderCircle className="spin" size={17}/> : <Search size={17}/>} {loading ? 'Consultando y cargando…' : demo ? 'Probar animación' : 'Buscar en IRSA'}
-            </button>
-            <div className="section-separator"/>
-            <h3>OBJETOS DE PRUEBA</h3>
-            {presets.map(p => <button className="preset" key={p.name} onClick={() => {setRa(String(p.ra)); setDec(String(p.dec));}}>
-              <span className="preset-star">✦</span><span><strong>{p.name}</strong><small>{p.description}</small></span><ChevronRight size={16}/>
-            </button>)}
-            <p className="hint">Coordenadas ICRS/J2000 de referencia. Para objetos de alto movimiento propio conviene considerar su posición en la época observada.</p>
-          </aside>
-
-          <section className="panel viewer-panel">
-            <div className="viewer-heading"><div><span className="viewer-title">VISUALIZADOR CELESTE{openedObservationId ? ' · REGIÓN COMPARTIDA' : ''}</span><h2>{searchResult ? `${searchResult.ra.toFixed(5)}° / ${searchResult.dec.toFixed(5)}°` : 'Selecciona una región del cielo'}</h2></div>
-              <span className={`source-badge ${searchResult?.source === 'simulated' ? 'sim' : ''}`}>{!searchResult ? 'SIN DATOS' : searchResult.source === 'simulated' ? 'SIMULACIÓN' : 'IRSA · DR1/QR3'}</span>
-            </div>
-            <div className="sky-container">
-              <div className="crosshair crosshair-h"/><div className="crosshair crosshair-v"/>
-              {current ? <div className="image-frame">
-                {blink && predecessor && <img className="sky-image reference" src={predecessor.image} alt="Fotograma anterior superpuesto"/>}
-                <img className={`sky-image ${blink && predecessor ? 'overlay' : ''}`} src={current.image} alt={`Campo infrarrojo observado ${current.date}`}/>
-                {searchResult?.source === 'simulated' && <span className="watermark">SIMULATED DATA · NOT NASA</span>}
-              </div> : <div className="empty-state"><div className="empty-icon"><Layers size={34}/></div>
-                <strong>{loading ? 'Descargando observaciones…' : searchResult?.count === 0 ? 'No se encontraron observaciones' : 'Tu ventana al cielo'}</strong>
-                <span>{loading ? 'Los recortes FITS se procesan uno por uno.' : searchResult?.count === 0 ? 'Prueba otro detector o campo.' : 'Busca un objetivo o activa el modo de prueba.'}</span>
-              </div>}
-              <div className="compass"><span>N ↑</span><span>E ←</span></div>
-            </div>
-            <div className="playback">
-              <div className="player-top"><strong>SECUENCIA TEMPORAL</strong><span>{loaded} / {count} fotogramas cargados</span></div>
-              <input aria-label="Fotograma actual" type="range" min="0" max={Math.max(0, count - 1)} step="1" value={selected} disabled={count === 0} onChange={e => {setPlaying(false); setSelected(Number(e.target.value));}}/>
-              <div className="playback-bottom"><div className="transport">
-                <button aria-label="Anterior" onClick={showPrevious} disabled={selected <= 0}><ChevronLeft size={21}/></button>
-                <button aria-label={playing ? 'Pausar' : 'Reproducir'} className="play-button" onClick={() => setPlaying(v => !v)} disabled={available.length < 2}>{playing ? <Pause size={19}/> : <Play size={19}/>}</button>
-                <button aria-label="Siguiente" onClick={showNext} disabled={selected >= count - 1}><ChevronRight size={21}/></button>
-                <span className="timeline-date">{current?.date?.replace('T', ' ').slice(0, 19) || '—'}</span>
-              </div>
-                <button className={`blink-button ${blink ? 'active' : ''}`} disabled={!predecessor || !current} onClick={() => setBlink(v => !v)}><Layers size={15}/> Superponer anterior</button>
-              </div>
-            </div>
-          </section>
-
-          <aside className="panel metadata">
-            <div className="panel-heading"><Database size={16}/><h2>Información</h2></div>
-            <div className="metric"><span>FUENTE DE DATOS</span><strong>{searchResult ? searchResult.source === 'simulated' ? 'Datos sintéticos' : 'NASA/IPAC · IRSA' : '—'}</strong></div>
-            <div className="metric"><span>OBSERVACIONES ENCONTRADAS</span><strong>{searchResult?.total_matches ?? '—'}</strong></div>
-            <div className="metric"><span>PRODUCTO</span><strong>{current?.release ?? '—'}</strong></div>
-            <div className="metric"><span>DETECTOR</span><strong>{searchResult ? `D${searchResult.detector}` : '—'}</strong></div>
-            <div className="metric"><span>LONGITUD DE ONDA CENTRAL</span><strong>{current?.wavelength_um != null ? `${current.wavelength_um.toFixed(4)} μm` : '—'}</strong></div>
-            <div className="metric"><span>ANCHO DE BANDA</span><strong>{current?.bandwidth_um != null ? `${current.bandwidth_um.toFixed(4)} μm` : '—'}</strong></div>
-            <div className="metric"><span>FECHA DE OBSERVACIÓN</span><strong>{current?.date?.slice(0, 10) ?? '—'}</strong></div>
-            <div className="science-note"><CircleAlert size={18}/><div><strong>Importante</strong><p>Vista preliminar. La escala de brillo se ajusta por imagen y seleccionar un detector no garantiza la misma longitud de onda. No utilizar para afirmar variabilidad física sin calibración adicional.</p></div></div>
-            <a className="external-link" href="https://irsa.ipac.caltech.edu/Missions/spherex.html" target="_blank" rel="noopener noreferrer">Archivo oficial de SPHEREx <ExternalLink size={14}/></a>
-          </aside>
-        </div>
-        {error && <div className="error"><CircleAlert size={18}/>{error}</div>}
-        <CommunityFeed onOpenObservation={id => { void openSavedObservation(id); }} />
-        <footer>Visualización experimental independiente · Datos SPHEREx cortesía de NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>
-      </main>
+  return <div className="modal" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="mbox" role="dialog" aria-modal="true" aria-labelledby="publish-title">
+      <h2 id="publish-title">✦ Publicar en AstroGram</h2>
+      {error&&<p className="form-error" role="alert">{error}</p>}
+      <form onSubmit={e=>void submit(e)}>
+        <div className="field"><label htmlFor="caption">¿Qué observaste?</label>
+          <textarea id="caption" maxLength={3000} rows={5} required value={caption} onChange={e=>setCaption(e.target.value)}
+            placeholder="Entre dos observaciones parece que este punto cambió de posición…"/></div>
+        <div className="field"><label htmlFor="visibility">Visibilidad</label><select id="visibility" value={visibility} onChange={e=>setVisibility(e.target.value as Post['visibility'])}>
+          <option value="public">Pública — aparece en el feed</option><option value="unlisted">No listada — solo mediante enlace</option><option value="private">Privada — solo tú</option>
+        </select></div>
+        {region&&<label className="attach-observation"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/>
+          Adjuntar RA {region.ra_deg.toFixed(4)}° · Dec {region.dec_deg.toFixed(4)}° · D{region.detector}</label>}
+        {!region&&<p className="hint">Puedes publicar solo texto. Para adjuntar coordenadas, abre primero el explorador.</p>}
+        <p className="hint">Las coordenadas guardadas no constituyen un hallazgo astronómico confirmado.</p>
+        <div className="mrow"><button type="button" className="btn" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn p" disabled={busy}>{busy?'Publicando…':'Publicar'}</button></div>
+      </form>
     </div>
-  );
+  </div>;
+}
+
+function FeedPage({onProfile,onExplore,onLogin,onPublish}:{onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void}){
+  const [posts,setPosts]=useState<Post[]>([]),[loading,setLoading]=useState(true);
+  const [error,setError]=useState(''),[offset,setOffset]=useState(0),[more,setMore]=useState(true);
+  async function fetchFeed(reset=false){
+    setLoading(true);setError('');
+    try{
+      const nextOffset=reset?0:offset;
+      const data=await api.feed(10,nextOffset);
+      setPosts(prev=>reset?data:[...prev,...data.filter(p=>!prev.some(o=>o.id===p.id))]);
+      setOffset(nextOffset+data.length);setMore(data.length===10);
+    }catch(e){setError(message(e));}finally{setLoading(false);}
+  }
+  useEffect(()=>{void fetchFeed(true);},[]);
+  return <div className="wrap">
+    <section className="feed" aria-label="Feed AstroGram">
+      <div className="feed-heading"><div><span className="eyebrow"><Sparkles size={15}/> DESCUBRE EL UNIVERSO</span><h1>Inicio</h1>
+        <p>Explora lo que comparte la comunidad.</p></div>
+        <button type="button" className="btn p sm" onClick={onPublish}><Plus size={15}/> Publicar</button></div>
+      {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}/>)}
+      {posts.length===0&&!loading&&!error&&<div className="card empty">Aún no hay publicaciones públicas. ¡Comparte la primera observación!</div>}
+      {error&&<p className="form-error" role="alert">{error}</p>}
+      {loading&&<div className="card empty">Cargando publicaciones…</div>}
+      {!loading&&more&&<button type="button" className="btn more-posts" onClick={()=>void fetchFeed()}>Cargar más publicaciones</button>}
+      {!loading&&posts.length>0&&<button type="button" className="refresh-feed" onClick={()=>void fetchFeed(true)}>Actualizar feed</button>}
+    </section>
+    <aside className="side">
+      <div className="card"><div className="card-h">🔭 Regiones para explorar</div><ul className="trend">
+        {quick.map(item=><li key={item.name} onClick={()=>go(`explore?ra=${item.ra}&dec=${item.dec}`)} role="button" tabIndex={0}
+          onKeyDown={e=>{if(e.key==='Enter')go(`explore?ra=${item.ra}&dec=${item.dec}`);}}>
+          <Telescope size={24}/><div><b>{item.name}</b><small>{item.desc}</small></div></li>)}</ul></div>
+      <div className="card sec"><h3>Una publicación, una región</h3><p>Abre una observación desde el feed para investigar sus coordenadas, épocas y detectores. Las vistas ilustrativas no son fotografías científicas.</p></div>
+      <div className="card sec"><h3>NASA Space Apps Challenge</h3><p>AstroGram es un proyecto independiente; NASA no respalda esta herramienta.</p></div>
+    </aside>
+  </div>;
+}
+
+function ProfilePage({username,current,onExplore,onLogin}:{username:string;current:Profile|null;onExplore:(id:string)=>void;onLogin:()=>void}){
+  const [person,setPerson]=useState<Profile|null>(null),[stats,setStats]=useState<UserStats|null>(null);
+  const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const mine=current?.username===username;
+  useEffect(()=>{
+    let active=true;setPerson(null);setError('');
+    Promise.all([api.user(username),api.stats(username),api.userPosts(username)]).then(([p,s,items])=>{
+      if(active){setPerson(p);setStats(s);setPosts(items);}
+    }).catch(e=>{if(active)setError(message(e))});
+    return ()=>{active=false};
+  },[username,current?.username]);
+  async function follow(){
+    if(!hasToken()){onLogin();return;}
+    if(!stats)return;setBusy(true);
+    try{
+      if(stats.is_following)await api.unfollow(username);else await api.follow(username);
+      setStats(await api.stats(username));
+    }catch(e){setError(message(e))}finally{setBusy(false)}
+  }
+  return <main className="wrap single profile-layout">
+    {error&&<div className="form-error" role="alert">{error}</div>}
+    {!person?<div className="card empty">Cargando perfil…</div>:<>
+      <div className="card phead"><Avatar name={person.username} size={84}/><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
+        {person.bio&&<p>{person.bio}</p>}
+        <div className="stats"><span><b>{posts.length}</b> publicaciones listadas</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
+          <span><b>{stats?.following_count??0}</b> siguiendo</span></div>
+        <div className="profile-buttons">{mine?<button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button>:
+          <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
+      </div></div>
+      <h2 className="section-title">Publicaciones</h2>
+      <div className="profile-posts">{posts.map(p=><PostCard key={p.id} post={p} onProfile={u=>go(`u/${encodeURIComponent(u)}`)}
+        onExplore={onExplore} onRequireLogin={onLogin}/>)}{posts.length===0&&<div className="card empty">Sin publicaciones visibles.</div>}</div>
+    </>}
+  </main>;
+}
+
+function SavedPage({onExplore,onProfile,onLogin}:{onExplore:(id:string)=>void;onProfile:(u:string)=>void;onLogin:()=>void}){
+  const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+  useEffect(()=>{let active=true;api.bookmarks().then(data=>{if(active)setPosts(data)}).catch(e=>{if(active)setError(message(e))})
+    .finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
+  return <main className="wrap narrow saved-page"><h1><Bookmark size={24}/> Guardados</h1>
+    <p className="muted">Solo tú puedes consultar tus publicaciones guardadas.</p>
+    {error&&<p className="form-error">{error}</p>}
+    {loading?<div className="card empty">Cargando…</div>:posts.length===0?<div className="card empty">Todavía no guardaste publicaciones.</div>:posts.map(p=><PostCard key={p.id} post={p} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}/>)}
+  </main>;
+}
+
+function SettingsPage({user,onUpdate,onLogout}:{user:Profile;onUpdate:(p:Profile)=>void;onLogout:()=>void}){
+  const [name,setName]=useState(user.display_name),[bio,setBio]=useState(user.bio??'');
+  const [error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
+  async function update(event:FormEvent){
+    event.preventDefault();setSaved(false);setError('');setBusy(true);
+    try{const updated=await api.patchMe({display_name:name.trim(),bio:bio.trim()||null});onUpdate(updated);setSaved(true);}
+    catch(e){setError(message(e))}finally{setBusy(false)}
+  }
+  return <main className="wrap narrow settings-page">
+    <div className="card"><div className="card-h"><span><Settings size={17}/> Configuración</span></div>
+      <form className="sec" onSubmit={e=>void update(e)}>
+        <h3>Editar perfil</h3><p>Actualiza tu nombre visible y biografía.</p>
+        <div className="field"><label htmlFor="editName">Nombre para mostrar</label><input id="editName" minLength={1} maxLength={80} value={name} onChange={e=>setName(e.target.value)} required/></div>
+        <div className="field"><label htmlFor="bio">Biografía</label><textarea id="bio" maxLength={500} value={bio} onChange={e=>setBio(e.target.value)}/></div>
+        {error&&<p className="form-error" role="alert">{error}</p>}{saved&&<p className="success-note">Cambios guardados.</p>}
+        <button className="btn p" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar perfil'}</button>
+      </form>
+      <div className="sec"><h3>Cuenta</h3><p>El cambio y recuperación de contraseña todavía no están implementados en FastAPI.</p>
+        <div className="row"><span>Correo</span><b>{user.email??'—'}</b></div>
+        <button className="btn danger" onClick={onLogout}><LogOut size={16}/> Cerrar sesión</button></div>
+    </div>
+  </main>;
+}
+
+function ActivityPage(){
+  return <main className="wrap narrow"><div className="card">
+    <div className="card-h"><span><Bell size={17}/> Actividad</span></div>
+    <div className="sec"><h3>Próximamente</h3><p>El diseño original incluye solicitudes de amistad, pero el backend actual utiliza seguidores. Las notificaciones y solicitudes privadas necesitan nuevos endpoints; no mostraremos solicitudes simuladas como si fueran reales.</p>
+      <button className="btn sm" onClick={()=>go('home')}>Volver al feed</button></div></div>
+  </main>;
+}
+
+export default function App(){
+  const [route,setRoute]=useState<Route>(parseRoute);
+  const [user,setUser]=useState<Profile|null>(null);
+  const [checking,setChecking]=useState(hasToken());
+  const [publish,setPublish]=useState(false);
+  const [feedVersion,setFeedVersion]=useState(0);
+  const [publishRegion,setPublishRegion]=useState<ObservationParams|null>(null);
+  const [search,setSearch]=useState('');
+  const [toast,setToast]=useState('');
+  useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
+  useEffect(()=>{if(!hasToken()){setChecking(false);return;}let active=true;
+    api.me().then(p=>{if(active)setUser(p)}).catch(()=>{if(active){api.logout();setUser(null)}}).finally(()=>{if(active)setChecking(false)});
+    return()=>{active=false};},[]);
+  function loginRequired(){setToast('Inicia sesión para utilizar esta función.');go('home');}
+  function navigateProfile(name:string){go(`u/${encodeURIComponent(name)}`)}
+  function openObservation(id:string){go(`explore?observation_id=${encodeURIComponent(id)}`)}
+  function openPublish(region:ObservationParams|null=null){
+    if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
+  }
+  function logout(){api.logout();setUser(null);setPublish(false);go('home');}
+  function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
+    const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
+    if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
+    else navigateProfile(term.replace(/^@/,''));setSearch('');
+  }
+  if(checking)return <div className="boot-screen"><span className="orb"/> Conectando con AstroGram…</div>;
+  if(!user && !['explore','game'].includes(route.page))return <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>;
+  return <div className="astrogram-shell">
+    <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><span className="orb"/><span>AstroGram</span></button>
+      <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="Usuario o coordenadas (RA, Dec)…"/></form>
+      <nav className="nav" aria-label="Navegación principal">
+        <button className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio"><Home size={19}/><span className="t">Inicio</span></button>
+        <button className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar"><Telescope size={19}/><span className="t">Explorar</span></button>
+        <button className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego"><Gamepad2 size={19}/><span className="t">Juego</span></button>
+        {user&&<>
+          <button className={route.page==='saved'?'on':''} onClick={()=>go('saved')} title="Guardados"><Bookmark size={19}/><span className="t">Guardados</span></button>
+          <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Actividad"><Bell size={19}/><span className="t">Actividad</span></button>
+          <button className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil"><UserRound size={19}/><span className="t">Perfil</span></button>
+          <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes"><Settings size={18}/><span className="t">Ajustes</span></button>
+          <button className="btn p sm newpost" onClick={()=>openPublish()}><Plus size={17}/><span className="t">Publicar</span></button>
+        </>}
+        {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
+      </nav>
+    </header>
+    {route.page==='explore'?<ExplorerPage key={route.observationId??`${route.ra??''}:${route.dec??''}`}
+      observationId={route.observationId} initialRa={route.ra} initialDec={route.dec} onPublish={field=>openPublish(field)} onLogin={loginRequired}/>:
+     route.page==='game'?<GamePage onExplore={()=>go('explore')}/>:
+     route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
+       onExplore={openObservation} onLogin={loginRequired}/>:
+     route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
+     route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired}/>:
+     route.page==='activity'?<ActivityPage/>:
+     <FeedPage key={feedVersion} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired} onPublish={()=>openPublish()}/>}
+    {toast&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
+    {publish&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
+    <footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>
+  </div>;
 }

@@ -12,8 +12,8 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Posts v1: crear, consultar, editar, eliminar, listados por usuario y feed cronológico con reglas de visibilidad.
 - ✅ Interacciones v1: likes, comentarios (incluidas respuestas), seguidores, guardados y contadores por publicación.
 - ✅ Regiones SPHEREx persistentes: guardar parámetros, búsqueda radial, mis observaciones, enlace compartible y posts vinculados.
-- ✅ Prototipo React: feed público y apertura de una región compartida desde la publicación.
-- ⏳ FITS persistentes, subida a S3, notificaciones, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ **Frontend AstroGram en React + Vite** basado en `INT.html`: registro/login, feed, perfiles, publicaciones, seguidores, guardados, ajustes, explorador y juego educativo sintético.
+- ⏳ FITS persistentes, subida a S3, notificaciones, solicitudes de amistad, cambio de contraseña, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
 - ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
@@ -33,7 +33,7 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 │   ├── railway.json
 │   ├── .env.example
 │   └── requirements.txt
-└── web/                   # Visor original React/Vite (aún sin feed social)
+└── web/                   # AstroGram React/Vite: autenticación, red social, explorador y juego demo
 ```
 
 ## Entorno local en Windows (PowerShell)
@@ -61,7 +61,31 @@ npm install
 npm run dev
 ```
 
-Las rutas del visor original se mantienen en `/api`. El frontend Vite sigue siendo el prototipo astronómico inicial; la UI social será el siguiente módulo.
+## Sprint frontend: AstroGram React
+
+La referencia visual fue `INT.html` (variante más reciente de los diseños recibidos). El diseño se migró a componentes React: no se incrusta ni ejecuta el HTML original. La API ya existente se mantiene sin modificaciones.
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Abrir `http://127.0.0.1:5173`. En **desarrollo**, Vite utiliza un proxy para `/api` y `/v1` hacia la API de Railway ya desplegada (se utilizarán **datos reales de producción** al crear usuarios/publicaciones). No es necesario ejecutar FastAPI localmente con esta configuración. Para apuntar a tu propio backend local, cambia el `target` de `web/vite.config.ts`.
+
+Para un dominio frontend independiente, compila con `VITE_API_BASE_URL=https://api-production-a831f79f.up.railway.app`; en Railway configura `CORS_ORIGINS` con el origen exacto de la web. No introduzcas JWT ni secretos en variables de Vite: las variables `VITE_*` se exponen al navegador.
+
+### Estado funcional
+
+- Registro e inicio de sesión con los endpoints existentes; el JWT se conserva en `sessionStorage` (sin refresh token).
+- Feed cronológico, publicaciones, likes (HTTP 204), comentarios, guardados, perfiles y seguidores conectados a FastAPI.
+- El modal crea primero la región `/v1/observations` y luego la publicación con `observation_id`, de acuerdo con el contrato del servidor.
+- El explorador consulta `/api/search` y `/api/frame`; reconoce `?observation_id=<uuid>` y muestra claramente el modo demo.
+- Las ilustraciones del feed y el juego son **sintéticas**, siempre rotuladas. No equivalen a fotografías SPHEREx.
+- Las solicitudes de amistad y el cambio de contraseña propuestos en el diseño todavía no tienen endpoints; aparecen como pendientes, no se falsifica su funcionamiento.
+- Las imágenes FITS no son persistentes entre reinicios: lo que persiste en PostgreSQL son los parámetros de la región.
+
+Las rutas del visor temporal se mantienen bajo `/api`.
 
 ## Autenticación (Auth v1)
 
