@@ -54,4 +54,4 @@ def test_feed_only_public_posts():
 
 
 def test_no_anonymous_social_writes():
-    assert client.post('/v1/posts', json={'caption': 'hi'}).status_code == 404
+    assert client.post('/v1/posts', json={'caption': 'hi'}).status_code == 401

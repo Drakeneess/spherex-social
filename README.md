@@ -9,7 +9,8 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Lecturas: `/v1/health`, `/v1/ready`, `/v1/feed`, `/v1/observations/{id}`.
 - ✅ Visor original: `/api/health`, `/api/search`, `/api/frame/{search_id}/{index}`.
 - ✅ Auth v1: registro, login, JWT HS256 de 30 minutos, Argon2id, perfil propio y público.
-- ⏳ Escrituras sociales, subida a S3, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ Posts v1: crear, consultar, editar, eliminar, listados por usuario y feed cronológico con reglas de visibilidad.
+- ⏳ Likes, comentarios, seguidores, subida a S3, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
 - ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
@@ -69,6 +70,20 @@ Las rutas del visor original se mantienen en `/api`. El frontend Vite sigue sien
 - Swagger: `/docs` → primero registra una cuenta, haz login, copia `access_token`, pulsa **Authorize** y pega solamente el token.
 - Para un lanzamiento público deben agregarse **rate limiting distribuido**, verificación de correo y flujo de recuperación de contraseña. No guardar tokens en logs ni en Git.
 
+## Publicaciones (Sprint 2)
+
+- `POST /v1/posts` exige Bearer: `{"caption":"...","visibility":"public","observation_id":null}`; devuelve HTTP 201.
+- `GET /v1/posts/{id}`: público y `unlisted` accesibles por ID; `private` solamente para autor autenticado (404 para terceros).
+- `PATCH /v1/posts/{id}` admite cambio de `caption`, `visibility`, y `observation_id`; solo autor.
+- `DELETE /v1/posts/{id}`: HTTP 204, solo autor.
+- `GET /v1/users/{username}/posts`: listados públicos; con token propio incluye también privadas y no listadas.
+- `GET /v1/feed?limit=20&offset=0`: exclusivamente publicaciones públicas, orden cronológico descendente.
+- `visibility` admite `public`, `unlisted`, `private`. `caption` contiene entre 1 y 3000 caracteres tras quitar espacios laterales.
+- `observation_id` opcional, pero cuando se proporciona debe existir. Se puede limpiar pasando `null` en PATCH.
+- Publicaciones textuales permitidas; la subida de medios se implementará en un sprint posterior.
+- Sin cambios en modelos: se reutilizan las tablas PostgreSQL existentes.
+- El autor se deriva del JWT, jamás de un `author_id` enviado por el cliente.
+
 ## Tests y migraciones
 
 ```powershell
@@ -84,7 +99,7 @@ alembic upgrade head
 
 ## Railway
 
-Proyecto existente: [`spherex-social`](https://railway.com/project/1c8bda97-096f-451b-95ed-35093a98ca5f) — entorno `production`, servicio `Postgres` online con volumen, y servicio `api` vacío. En `api`:
+Proyecto existente: [`spherex-social`](https://railway.com/project/1c8bda97-096f-451b-95ed-35093a98ca5f) — entorno `production`, servicio `Postgres` online con volumen, y servicio `api` desplegado. En `api`:
 
 - `Root Directory`: `/server`
 - `Dockerfile Path`: `Dockerfile`
@@ -104,7 +119,7 @@ Proyecto existente: [`spherex-social`](https://railway.com/project/1c8bda97-096f
 2. Una `observation` es independiente del `post`: múltiples publicaciones podrán referenciar una observación.
 3. `posts.observation_id` es nullable mientras se decide si permitir publicaciones libres; una restricción posterior puede volverlo obligatorio.
 4. `processing_jobs` registra tareas, pero todavía no hay worker ni cola. Agregar Redis/RQ o similar solo cuando exista procesamiento en background.
-5. **No hay endpoints de creación pública** sin autenticación y autorización. El feed de momento es cronológico.
+5. **No hay creación o modificación anónima de publicaciones**; el feed es público, cronológico, sin personalización algorítmica.
 
 ## Fuentes de SPHEREx
 

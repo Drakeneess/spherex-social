@@ -1,7 +1,4 @@
-"""Public, read-only routes while login and authorization are not yet implemented.
-
-No public write routes are exposed without authentication.
-"""
+"""Read-only operational, feed and observation endpoints."""
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Observation, Post, User
+from .posts import PostOut
 
 router = APIRouter(prefix='/v1', tags=['social'])
 
@@ -24,14 +22,6 @@ class ObservationOut(BaseModel):
     detector: int | None
     mission: str
     data_release: str | None
-    created_at: datetime
-
-
-class PostOut(BaseModel):
-    id: UUID
-    username: str
-    caption: str
-    observation_id: UUID | None
     created_at: datetime
 
 
@@ -64,7 +54,8 @@ def feed(
         .limit(limit).offset(offset)
     ).all()
     return [PostOut(id=p.id, username=username, caption=p.caption,
-                    observation_id=p.observation_id, created_at=p.created_at)
+                    observation_id=p.observation_id, visibility=p.visibility,
+                    created_at=p.created_at)
             for p, username in rows]
 
 
