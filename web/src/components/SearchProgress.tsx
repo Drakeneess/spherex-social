@@ -47,11 +47,13 @@ function Marker({ done, bad, active }: { done?: boolean; bad?: boolean; active?:
 }
 
 export default function SearchProgress({
-  trace, loading, onCancel,
+  trace, loading, onCancel, onRetry, retrySeconds,
 }: {
   trace: SearchTrace | null;
   loading: boolean;
   onCancel: () => void;
+  onRetry: () => void;
+  retrySeconds: number;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -147,6 +149,13 @@ export default function SearchProgress({
     {loading && <button type="button" className="btn sm irsa-cancel" onClick={onCancel}>
       Cancelar búsqueda
     </button>}
+    {trace.phase === 'failed' && !loading && <div className="irsa-retry-actions">
+      <p>Si IRSA no acepta nuevos trabajos, la creación no se repite automáticamente para evitar duplicados.</p>
+      <button type="button" className="btn sm" onClick={onRetry}
+        disabled={retrySeconds > 0}>
+        {retrySeconds > 0 ? `Volver a intentar en ${retrySeconds} s` : 'Volver a intentar la búsqueda'}
+      </button>
+    </div>}
     <p className="irsa-progress-disclaimer">
       El tiempo mostrado es el observado por tu navegador. Cancelar detiene las solicitudes del navegador,
       pero un procesamiento ya iniciado podría continuar temporalmente en Railway.

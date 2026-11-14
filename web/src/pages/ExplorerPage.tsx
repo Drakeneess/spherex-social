@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Database, LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
+import { api, ApiError, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
@@ -41,6 +41,15 @@ export default function ExplorerPage({
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<SearchTrace | null>(null);
+  const [retryUntil, setRetryUntil] = useState(0);
+  const retryUntilRef = useRef(0);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (retryUntil <= Date.now()) return;
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [retryUntil]);
+  const retrySeconds = Math.max(0, Math.ceil((retryUntil - nowTick) / 1000));
   const [saveBusy, setSaveBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -71,6 +80,10 @@ export default function ExplorerPage({
   }, []);
 
   const load = useCallback(async (params: Params) => {
+    if (Date.now() < retryUntilRef.current) {
+      setError('IRSA no está aceptando nuevos trabajos. Espera a que termine el intervalo recomendado antes de reintentar.');
+      return;
+    }
     controller.current?.abort();
     if (remoteJob.current) {
       void api.cancelSkyJob(remoteJob.current).catch(() => {});
@@ -80,6 +93,8 @@ export default function ExplorerPage({
     controller.current = request;
     const startedAt = Date.now();
     setLoading(true);
+    retryUntilRef.current = 0;
+    setRetryUntil(0);
     setTrace({
       phase: 'catalog', startedAt,
       source: params.demo ? 'simulated' : 'irsa', frames: [],
@@ -254,6 +269,14 @@ export default function ExplorerPage({
       }
       if (!request.signal.aborted) {
         const detail = frameErrorMessage(cause);
+        if (cause instanceof ApiError && cause.status === 503) {
+          // Retry only after a separate user action. POST /TAP/async is not
+          // idempotent and auto-retrying could create orphaned remote jobs.
+          const deadline = Date.now() + 30_000;
+          retryUntilRef.current = deadline;
+          setRetryUntil(deadline);
+          setNowTick(Date.now());
+        }
         setError(detail);
         updateTrace(previous => ({
           ...previous, phase: 'failed', catalogError: detail, finishedAt: Date.now(),
@@ -336,6 +359,11 @@ export default function ExplorerPage({
     }
     return params;
   }
+  function retrySearch() {
+    const params = readParams();
+    if (params) void load(params);
+  }
+
   function runSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = readParams();
@@ -473,7 +501,7 @@ export default function ExplorerPage({
           <div className="card-h"><span>Buscar en el cielo</span></div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick">
-              {presets.map(preset => <button key={preset.name} type="button" disabled={loading}
+              {presets.map(preset => <button key={preset.name} type="button" disabled={loading || retrySeconds > 0}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
             </div>
             <div className="two">
@@ -500,9 +528,9 @@ export default function ExplorerPage({
               <label className="epoch-demo"><input type="checkbox" checked={demo}
                 onChange={event => setDemo(event.target.checked)}/> Modo demo API</label>
             </div>
-            <button className="btn p full" disabled={loading} type="submit">
+            <button className="btn p full" disabled={loading || retrySeconds > 0} type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
-              {loading ? 'Procesando búsqueda…' : 'Buscar'}
+              {loading ? 'Procesando búsqueda…' : retrySeconds > 0 ? `Reintentar en ${retrySeconds} s` : 'Buscar'}
             </button>
           </form>
           <div className="epoch-secondary-actions">
@@ -517,7 +545,8 @@ export default function ExplorerPage({
             <pre>{technical ? JSON.stringify(technical, null, 2) : '–'}</pre>
           </details>
         </section>
-        <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}/>
+        <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
+          onRetry={retrySearch} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">
           Las búsquedas reales consultan NASA/IPAC IRSA. Elegir un detector no equivale a seleccionar una banda monocromática.
           Las marcas y los fotogramas no se guardan en PostgreSQL.

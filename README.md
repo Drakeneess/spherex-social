@@ -263,3 +263,17 @@ La creación del trabajo TAP puede responder `202 Accepted` y las primeras consu
 - Un estado `ERROR`/`ABORTED` real, o una respuesta HTTP no reintentable (p. ej. 404 del trabajo remoto), no se transforma en una falsa recuperación.
 - El resultado de la consulta TAP y sus recortes siguen sin persistirse; los trabajos están en memoria local por proceso.
 - Las pruebas unitarias usan `pyvo.dal.DALServiceError(code=502)` y verifican recuperación, límite de errores y fallos no reintentables. **No garantizan la disponibilidad de IRSA**.
+
+
+### IRSA devuelve HTTP 502 al crear el trabajo (TAP /async)
+
+Si `POST /api/search/jobs` responde `503` con `IRSA no está aceptando la creación de trabajos TAP`, la causa original puede ser un `502 Proxy Error` del endpoint remoto `https://irsa.ipac.caltech.edu/TAP/async`. **Este caso es distinto de un fallo de polling de un trabajo ya creado.**
+
+- `Irsa.tap.submit_job(...)` crea un trabajo mediante **POST no idempotente**; un 502 no garantiza que el servidor no lo haya creado. El backend **no hace reintentos automáticos** de esa petición.
+- El servidor registra el traceback y devuelve `503 Service Unavailable` con `Retry-After: 30` y una descripción sin datos privados de IRSA. Los errores no transitorios conservan un 502 explícito.
+- La interfaz ofrece reintento **manual**, con pausa orientativa de 30 segundos para evitar solicitudes rápidas en bucle. El reintento sigue sin garantizar la disponibilidad remota.
+- Si crear el trabajo funciona, pero `remote.run()` falla, el backend intenta eliminar el trabajo que ya conoce; esta limpieza es best-effort.
+- Si el trabajo **ya fue creado**, se conserva el comportamiento de recuperación existente: polling con backoff ante errores temporales. Nunca confundir ambos tipos de error.
+- Los tests simulan fallos de creación 502 y 400 y un fallo de inicio RUN; no envían peticiones reales a IRSA.
+
+Para determinar si la caída está afectando al servicio remoto, consultar su [documentación oficial TAP](https://irsa.ipac.caltech.edu/docs/program_interface/TAP.html) y esperar a que vuelva a responder. No ampliar el timeout de Vite ni sustituir silenciosamente el resultado por datos sintéticos.

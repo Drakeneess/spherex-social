@@ -407,10 +407,46 @@ def start_search_job(params: SearchStart):
     query = make_irsa_query(params.ra, params.dec, params.size_arcmin, params.detector)
     try:
         remote = Irsa.tap.submit_job(query, maxrec=5000)
+    except Exception as exc:
+        # POST /TAP/async is not idempotent. A proxy 502 does not prove
+        # the remote job was never created, so never retry it blindly.
+        logger.warning("IRSA TAP async job creation failed", exc_info=True)
+        if is_temporary_tap_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail="IRSA no está aceptando la creación de trabajos TAP en este momento. "
+                       "No se reintentó automáticamente para evitar trabajos duplicados. "
+                       "Vuelve a intentarlo manualmente más tarde.",
+                headers={"Retry-After": "30", "Cache-Control": "no-store"},
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"IRSA rechazó la creación del trabajo TAP: {type(exc).__name__}",
+        ) from exc
+
+    try:
         remote.run()
     except Exception as exc:
-        logger.exception("IRSA TAP async submit/run failed")
-        raise HTTPException(status_code=502, detail=f"IRSA TAP job submission failed: {type(exc).__name__}") from exc
+        logger.warning("IRSA TAP job execution start failed", exc_info=True)
+        # The job ID is known, even though starting it was unsuccessful.
+        # Best-effort cleanup prevents leaving remote jobs without a ticket.
+        try:
+            remote.delete()
+        except Exception:
+            logger.warning("IRSA TAP job cleanup failed after RUN error", exc_info=True)
+        if is_temporary_tap_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail="IRSA creó el trabajo pero no confirmó su ejecución. "
+                       "Se intentó limpiar el trabajo remoto. "
+                       "Vuelve a intentarlo manualmente más tarde.",
+                headers={"Retry-After": "30", "Cache-Control": "no-store"},
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"IRSA no pudo iniciar el trabajo TAP: {type(exc).__name__}",
+        ) from exc
+
     ticket = secrets.token_urlsafe(24)
     with _lock:
         _tap_jobs[ticket] = TapSearchJob(params.ra, params.dec, params.size_arcmin,

@@ -240,3 +240,46 @@ def test_result_502_does_not_reset_error_counter_on_each_successful_phase(harnes
     assert second.status_code == 200
     assert second.json()["phase"] == "COMPLETED"
     assert calls == 2
+
+
+def test_submission_proxy_502_is_service_unavailable_without_automatic_resubmit(harness, monkeypatch):
+    client, tap = harness
+    calls = []
+
+    def proxy_error(query, maxrec=None):
+        calls.append((query, maxrec))
+        raise DALServiceError("502 Server Error: Proxy Error", code=502)
+
+    monkeypatch.setattr(tap, "submit_job", proxy_error)
+    response = client.post("/api/search/jobs", json=payload())
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "IRSA" in response.json()["detail"]
+    assert "manualmente" in response.json()["detail"]
+    assert len(calls) == 1  # POST is not idempotent; don't create duplicates.
+    assert not explorer._tap_jobs
+
+
+def test_submission_rejection_is_not_mislabeled_as_transient(harness, monkeypatch):
+    client, tap = harness
+    def invalid_adql(query, maxrec=None):
+        raise DALServiceError("400 Bad Request", code=400)
+    monkeypatch.setattr(tap, "submit_job", invalid_adql)
+    response = client.post("/api/search/jobs", json=payload())
+    assert response.status_code == 502
+    assert "rechazó" in response.json()["detail"]
+    assert "Retry-After" not in response.headers
+
+
+def test_run_proxy_error_attempts_remote_cleanup_without_repeating_submission(harness, monkeypatch):
+    client, tap = harness
+    def failing_run(self):
+        raise DALServiceError("502 Proxy Error", code=502)
+    monkeypatch.setattr(FakeRemoteJob, "run", failing_run)
+    response = client.post("/api/search/jobs", json=payload())
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"
+    assert len(tap.jobs) == 1
+    assert tap.jobs[0].deleted
+    assert not explorer._tap_jobs
