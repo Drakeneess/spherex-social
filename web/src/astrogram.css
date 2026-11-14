@@ -204,3 +204,174 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .explore-heading{flex-direction:column;align-items:flex-start}.xgrid{grid-template-columns:1fr}
 .profile-posts{grid-template-columns:1fr}.feed-heading{align-items:flex-start}.footnote{line-height:1.5}}
 @media(prefers-reduced-motion:reduce){.hero-stars,.moving-source{animation:none}}
+
+
+/* Responsive layout correction (2026-11-14)
+   The original INT.html header used one unbreakable flex row.
+   Together with all eight navigation labels it exceeded the viewport,
+   causing the page to pan horizontally and clip both columns. */
+#root,.astrogram-shell{width:100%;min-width:0}
+.astrogram-shell{max-width:100%}
+.navbar{
+  width:100%;
+  min-width:0;
+  display:grid;
+  grid-template-columns:max-content minmax(150px,300px) minmax(0,1fr);
+  align-items:center;
+  justify-content:stretch;
+  gap:16px;
+  padding:10px clamp(14px,2vw,32px);
+}
+.navbar .logo{
+  min-width:0;
+  white-space:nowrap;
+  justify-self:start;
+  font-size:clamp(1.15rem,1.6vw,1.35rem);
+}
+.navbar .search{
+  min-width:0;
+  width:100%;
+  max-width:none;
+  margin:0;
+}
+.navbar .search input{width:100%;min-width:0}
+.navbar .nav{
+  min-width:0;
+  max-width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:nowrap;
+  gap:3px;
+}
+.navbar .nav button{
+  min-width:0;
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+.astrogram-shell>.wrap,
+.wrap{
+  width:100%;
+  max-width:1180px;
+  min-width:0;
+  grid-template-columns:minmax(0,600px) minmax(0,1fr);
+  justify-content:stretch;
+}
+.wrap.single{grid-template-columns:minmax(0,1fr)}
+.wrap.narrow{grid-template-columns:minmax(0,1fr);max-width:720px}
+.wrap>*,
+.feed,.side,.card,.post-card,.post-head,.post-body,.who,
+.phead,.profile-summary,.profile-posts,.xgrid,.x-side{
+  min-width:0;
+}
+.feed{width:100%}
+.post-body,.side p,.who small,.profile-summary p{overflow-wrap:anywhere}
+.stats{flex-wrap:wrap}
+.side{max-width:100%}
+.trend li>*{min-width:0}
+
+/* Medium desktops and enlarged browser zoom: give navigation its own row
+   instead of squeezing content outside the viewport. */
+@media(max-width:1450px){
+  .navbar{
+    grid-template-columns:max-content minmax(0,1fr);
+    grid-template-rows:auto auto;
+    column-gap:18px;
+    row-gap:10px;
+  }
+  .navbar .search{
+    display:block;
+    width:min(100%,380px);
+    justify-self:end;
+    max-width:380px;
+  }
+  .navbar .nav{
+    grid-column:1/-1;
+    grid-row:2;
+    justify-content:center;
+    width:100%;
+    gap:clamp(2px,1vw,12px);
+  }
+  .navbar .nav button{padding:8px 10px}
+  .wrap .side{top:135px}
+}
+
+/* Single-column feed before side cards become too narrow. */
+@media(max-width:1100px){
+  .astrogram-shell>.wrap:not(.single):not(.narrow),
+  .wrap:not(.single):not(.narrow){
+    max-width:760px;
+    grid-template-columns:minmax(0,1fr);
+  }
+  .wrap>.side{
+    position:static;
+    align-self:stretch;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px;
+  }
+  .wrap>.side>.card:first-child{grid-row:span 2}
+}
+
+/* Icons remain reachable at laptop widths without forcing horizontal scroll
+   on the document itself. */
+@media(max-width:960px){
+  .navbar .nav{justify-content:space-between;gap:4px}
+  .navbar .nav .t{display:none}
+  .navbar .nav button{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:42px;
+    min-height:42px;
+    padding:9px;
+  }
+  .navbar .nav .newpost{background:linear-gradient(90deg,var(--a),var(--b),var(--c))}
+}
+
+@media(max-width:640px){
+  .navbar{
+    position:relative;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto auto auto;
+    row-gap:10px;
+    padding:12px;
+  }
+  .navbar .logo{grid-column:1;grid-row:1;font-size:1.25rem}
+  .navbar .search{
+    grid-column:1;
+    grid-row:2;
+    display:block;
+    justify-self:stretch;
+    max-width:none;
+    width:100%;
+  }
+  .navbar .nav{
+    grid-column:1;
+    grid-row:3;
+    width:100%;
+    max-width:100%;
+    justify-content:space-between;
+    gap:2px;
+    overflow-x:auto;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  .navbar .nav::-webkit-scrollbar{display:none}
+  .navbar .nav button{
+    min-width:37px;
+    min-height:40px;
+    padding:8px;
+  }
+  .astrogram-shell>.wrap,.wrap{padding:16px 12px 48px}
+  .wrap>.side{grid-template-columns:minmax(0,1fr)}
+  .wrap>.side>.card:first-child{grid-row:auto}
+  .feed-heading{flex-wrap:wrap}
+  .post-head .time{font-size:.65rem}
+  .post-body{padding-inline:13px}
+  .comment-form{flex-wrap:wrap}
+  .comment-form input{flex-basis:100%}
+  .xgrid{grid-template-columns:minmax(0,1fr)}
+  .stats{gap:12px}
+  .app-footer{padding:16px 12px}
+}
