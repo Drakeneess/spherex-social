@@ -8,12 +8,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import bearer, current_user
 from .db import get_db
-from .models import Observation, Post, User
+from .models import Comment, Observation, Post, PostLike, User
 
 router = APIRouter(prefix='/v1', tags=['posts'])
 Visibility = Literal['public', 'unlisted', 'private']
@@ -65,6 +65,25 @@ class PostOut(BaseModel):
     observation_id: UUID | None
     visibility: Visibility
     created_at: datetime
+    likes_count: int = 0
+    comments_count: int = 0
+
+
+def counts_by_post(db: Session, post_ids: list[UUID]) -> dict[UUID, tuple[int, int]]:
+    """Aggregate interactions in two queries for the whole page (avoid N+1)."""
+    if not post_ids:
+        return {}
+    likes = dict(db.execute(
+        select(PostLike.post_id, func.count())
+        .where(PostLike.post_id.in_(post_ids))
+        .group_by(PostLike.post_id)
+    ).all())
+    comments = dict(db.execute(
+        select(Comment.post_id, func.count())
+        .where(Comment.post_id.in_(post_ids))
+        .group_by(Comment.post_id)
+    ).all())
+    return {pid: (int(likes.get(pid, 0)), int(comments.get(pid, 0))) for pid in post_ids}
 
 
 def optional_user(
@@ -75,11 +94,12 @@ def optional_user(
     return None if credentials is None else current_user(credentials, db)
 
 
-def serialize(post: Post, username: str) -> PostOut:
+def serialize(post: Post, username: str, counts: dict[UUID, tuple[int, int]] | None = None) -> PostOut:
+    likes, comments = (counts or {}).get(post.id, (0, 0))
     return PostOut(
         id=post.id, username=username, caption=post.caption,
         observation_id=post.observation_id, visibility=post.visibility,
-        created_at=post.created_at,
+        created_at=post.created_at, likes_count=likes, comments_count=comments,
     )
 
 
@@ -129,7 +149,7 @@ def get_post(
     if post.visibility == 'private' and (viewer is None or viewer.id != post.author_id):
         raise HTTPException(status_code=404, detail='Post not found')
     # Unlisted posts can be accessed via their direct link.
-    return serialize(post, username)
+    return serialize(post, username, counts_by_post(db, [post.id]))
 
 
 @router.patch('/posts/{post_id}', response_model=PostOut)
@@ -146,7 +166,7 @@ def update_post(
         setattr(post, key, getattr(body, key))
     db.commit()
     db.refresh(post)
-    return serialize(post, user.username)
+    return serialize(post, user.username, counts_by_post(db, [post.id]))
 
 
 @router.delete('/posts/{post_id}', status_code=status.HTTP_204_NO_CONTENT)
@@ -178,4 +198,5 @@ def user_posts(
     posts = db.scalars(
         stmt.order_by(Post.created_at.desc(), Post.id.desc()).limit(limit).offset(offset)
     ).all()
-    return [serialize(post, owner.username) for post in posts]
+    counts = counts_by_post(db, [post.id for post in posts])
+    return [serialize(post, owner.username, counts) for post in posts]

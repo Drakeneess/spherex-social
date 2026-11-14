@@ -3,16 +3,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api import router
 from .auth import router as auth_router
+from .interactions import router as interactions_router
 from .posts import router as posts_router
 from .config import get_settings
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, version='0.4.0')
+    app = FastAPI(title=settings.app_name, version='0.5.0')
     app.include_router(router)
     app.include_router(auth_router)
     app.include_router(posts_router)
+    app.include_router(interactions_router)
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                            allow_credentials=False, allow_methods=['GET', 'POST', 'PATCH', 'DELETE'], allow_headers=['Authorization', 'Content-Type'])

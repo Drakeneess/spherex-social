@@ -10,7 +10,8 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Visor original: `/api/health`, `/api/search`, `/api/frame/{search_id}/{index}`.
 - ✅ Auth v1: registro, login, JWT HS256 de 30 minutos, Argon2id, perfil propio y público.
 - ✅ Posts v1: crear, consultar, editar, eliminar, listados por usuario y feed cronológico con reglas de visibilidad.
-- ⏳ Likes, comentarios, seguidores, subida a S3, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ Interacciones v1: likes, comentarios (incluidas respuestas), seguidores, guardados y contadores por publicación.
+- ⏳ Subida a S3, notificaciones, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
 - ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
@@ -83,6 +84,20 @@ Las rutas del visor original se mantienen en `/api`. El frontend Vite sigue sien
 - Publicaciones textuales permitidas; la subida de medios se implementará en un sprint posterior.
 - Sin cambios en modelos: se reutilizan las tablas PostgreSQL existentes.
 - El autor se deriva del JWT, jamás de un `author_id` enviado por el cliente.
+
+## Interacciones (Sprint 3)
+
+- `POST/DELETE /v1/posts/{id}/like`: activar o quitar like con JWT; son **idempotentes** (204).
+- `POST/DELETE /v1/posts/{id}/bookmark`: guardar o quitar un post con JWT (204).
+- `GET /v1/users/me/bookmarks`: guardados de la cuenta actual (JWT; no muestra posts ajenos que pasaron a privados).
+- `GET /v1/posts/{id}/comments?limit=20&offset=0`: comentarios públicos, orden cronológico ascendente.
+- `POST /v1/posts/{id}/comments`: JWT; cuerpo `{"body":"Texto", "parent_id":null}`, máximo 2000 caracteres.
+- `DELETE /v1/posts/{id}/comments/{comment_id}`: JWT; permite borrar al autor del comentario y al dueño del post (también borra respuestas dependientes por la FK).
+- `POST/DELETE /v1/users/{username}/follow`: JWT; idempotente (204); rechazamos seguirse a sí mismo (400).
+- `GET /v1/users/{username}/stats`: `followers_count`, `following_count`, `is_following` (último campo basado en Bearer opcional).
+- El feed, las publicaciones y las listas por perfil incluyen `likes_count` y `comments_count`; se calculan por lote sin N+1.
+- Las publicaciones `private` no muestran sus interacciones a terceros (404). Las `unlisted` se pueden consultar mediante URL.
+- Se reutilizan las tablas del Sprint 1: **no requiere una migración nueva**.
 
 ## Tests y migraciones
 
