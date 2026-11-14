@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react';
 // Override either target via ASTRO_API_TARGET / SOCIAL_API_TARGET if needed.
 // These are Vite development-proxy settings, not browser-exposed variables.
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, '.', '');
   const astroApi = env.ASTRO_API_TARGET || 'http://127.0.0.1:8000';
   const socialApi = env.SOCIAL_API_TARGET ||
     'https://api-production-a831f79f.up.railway.app';
