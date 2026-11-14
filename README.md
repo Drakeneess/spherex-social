@@ -218,3 +218,37 @@ Durante una búsqueda, el explorador muestra un panel **Estado de la consulta**:
 **Pruebas:** `server/tests/test_async_tap.py` usa un TAP simulado sin tráfico de red. La CI comprueba el contrato de inicio, polling, completado, fallo y cancelación, pero la disponibilidad real de IRSA debe verificarse manualmente.
 
 **Flujo de ramas:** desarrollar la mejora en `feat/irsa-search-progress`, ejecutar CI y revisarla mediante un PR contra `main` antes del merge. El servicio de Railway sigue `main`, no la rama de trabajo.
+
+### Probar el PR #8 sin desplegar a producción
+
+La rama de progreso TAP requiere ejecutar **el backend de la misma rama**. El proxy Vite de esta rama envía `/api` a `http://127.0.0.1:8000` y conserva `/v1` en Railway (cuentas/publicaciones de producción). Esto evita el 404 del endpoint `POST /api/search/jobs` cuando la API pública sigue desplegando `main`.
+
+En PowerShell, desde la raíz del repositorio:
+
+```powershell
+git fetch origin
+git switch feat/irsa-search-progress
+cd server
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+En una **segunda terminal**:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Comprobar que la ruta existe antes de buscar:
+
+```powershell
+(Invoke-RestMethod http://127.0.0.1:8000/openapi.json).paths.PSObject.Properties.Name -contains '/api/search/jobs'
+```
+
+Debe mostrar `True`. En Vite, abrir `http://127.0.0.1:5173/#/explore`. Si el proceso FastAPI no está iniciado, la petición fallará por conexión. Se puede cambiar la dirección de `/api` sin modificar el código mediante `ASTRO_API_TARGET`, y la de `/v1` con `SOCIAL_API_TARGET`. Reiniciar Vite para aplicar variables o cambios en su configuración.
+
+> La búsqueda real utiliza internet desde tu backend local hacia IRSA. No hay garantía de que un trabajo TAP termine rápidamente; el panel ahora muestra el estado remoto sin sujetar una conexión HTTP abierta durante cinco minutos.
+
