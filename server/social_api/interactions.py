@@ -5,7 +5,7 @@ without disclosing whether they exist; unlisted posts work by direct ID.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -193,7 +193,8 @@ def comment_on_post(
         parent = db.get(Comment, body.parent_id)
         if parent is None or parent.post_id != post_id:
             raise HTTPException(status_code=404, detail='Parent comment not found')
-    comment = Comment(author_id=user.id, post_id=post_id, parent_id=body.parent_id, body=body.body)
+    comment = Comment(author_id=user.id, post_id=post_id, parent_id=body.parent_id,
+                      body=body.body, created_at=datetime.now(timezone.utc))
     db.add(comment)
     db.commit()
     db.refresh(comment)
