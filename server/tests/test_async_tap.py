@@ -80,7 +80,8 @@ def test_submit_queue_poll_and_finish(harness):
 
     pending = client.get(f"/api/search/jobs/{ticket}")
     assert pending.status_code == 200
-    assert pending.json() == {"phase": "QUEUED"}
+    assert pending.json()["phase"] == "QUEUED"
+    assert pending.json()["timing"]["poll_count"] == 1
 
     tap.jobs[0].phase = "EXECUTING"
     assert client.get(f"/api/search/jobs/{ticket}").json()["phase"] == "EXECUTING"
