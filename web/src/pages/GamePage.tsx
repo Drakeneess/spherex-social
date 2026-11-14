@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Flag, Lightbulb, Target, Trophy } from 'lucide-react';
+import { recordGameCompleted } from '../lib/gameStreak';
 
 const names=['WISE 0855','Estrella de Barnard','Luhman 16','Cometa en tránsito','Candidato móvil'];
 function random(seed:number){let s=seed;return ()=>{s=(Math.imul(s,1664525)+1013904223)|0;return(s>>>0)/4294967296;};}
@@ -25,7 +26,7 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
   const [done,setDone]=useState(false),[hint,setHint]=useState(false),[feedback,setFeedback]=useState('');
   const answer={x:256+(round%3)*10,y:166+(round%4)*12};
   function next(){
-    if(round===4){setRound(5);return;}
+    if(round===4){recordGameCompleted();setRound(5);return;}
     setRound(r=>r+1);setDone(false);setHint(false);setFeedback('');
   }
   function guess(x:number,y:number){

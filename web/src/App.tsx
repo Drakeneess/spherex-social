@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bell, Bookmark, Gamepad2, Home, LogOut, Plus, Settings, Sparkles, Telescope, UserRound, Users } from 'lucide-react';
+import { Bookmark, Flame, LogOut, Settings, Sparkles, Users, Star } from 'lucide-react';
+import { formatRa, formatDec } from './lib/coordinates';
+import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import ExplorerPage from './pages/ExplorerPage';
@@ -122,9 +124,15 @@ function PublishModal({region,onClose,onDone}:{region:ObservationParams|null;onC
   </div>;
 }
 
-function FeedPage({onProfile,onExplore,onLogin,onPublish}:{onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void}){
-  const [posts,setPosts]=useState<Post[]>([]),[loading,setLoading]=useState(true);
-  const [error,setError]=useState(''),[offset,setOffset]=useState(0),[more,setMore]=useState(true);
+function FeedPage({user,onProfile,onExplore,onLogin}:{
+  user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;
+}){
+  const [posts,setPosts]=useState<Post[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [offset,setOffset]=useState(0);
+  const [more,setMore]=useState(true);
+  const streak=getGameStreak();
   async function fetchFeed(reset=false){
     setLoading(true);setError('');
     try{
@@ -135,25 +143,39 @@ function FeedPage({onProfile,onExplore,onLogin,onPublish}:{onProfile:(u:string)=
     }catch(e){setError(message(e));}finally{setLoading(false);}
   }
   useEffect(()=>{void fetchFeed(true);},[]);
-  return <div className="wrap">
-    <section className="feed" aria-label="Feed AstroGram">
-      <div className="feed-heading"><div><span className="eyebrow"><Sparkles size={15}/> DESCUBRE EL UNIVERSO</span><h1>Inicio</h1>
-        <p>Explora lo que comparte la comunidad.</p></div>
-        <button type="button" className="btn p sm" onClick={onPublish}><Plus size={15}/> Publicar</button></div>
+  return <div className="wrap feed-layout">
+    <main className="feed" aria-label="Feed AstroGram">
       {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}/>)}
       {posts.length===0&&!loading&&!error&&<div className="card empty">Aún no hay publicaciones públicas. ¡Comparte la primera observación!</div>}
       {error&&<p className="form-error" role="alert">{error}</p>}
       {loading&&<div className="card empty">Cargando publicaciones…</div>}
       {!loading&&more&&<button type="button" className="btn more-posts" onClick={()=>void fetchFeed()}>Cargar más publicaciones</button>}
       {!loading&&posts.length>0&&<button type="button" className="refresh-feed" onClick={()=>void fetchFeed(true)}>Actualizar feed</button>}
-    </section>
-    <aside className="side">
-      <div className="card"><div className="card-h">🔭 Regiones para explorar</div><ul className="trend">
-        {quick.map(item=><li key={item.name} onClick={()=>go(`explore?ra=${item.ra}&dec=${item.dec}`)} role="button" tabIndex={0}
-          onKeyDown={e=>{if(e.key==='Enter')go(`explore?ra=${item.ra}&dec=${item.dec}`);}}>
-          <Telescope size={24}/><div><b>{item.name}</b><small>{item.desc}</small></div></li>)}</ul></div>
-      <div className="card sec"><h3>Una publicación, una región</h3><p>Abre una observación desde el feed para investigar sus coordenadas, épocas y detectores. Las vistas ilustrativas no son fotografías científicas.</p></div>
-      <div className="card sec"><h3>NASA Space Apps Challenge</h3><p>AstroGram es un proyecto independiente; NASA no respalda esta herramienta.</p></div>
+    </main>
+    <aside className="side" aria-label="Explorar y perfil">
+      <button type="button" className="card streak" onClick={()=>go('game')}>
+        <div className="streak-counter"><Flame size={31} className={streak.count>0?'streak-active':''}/>
+          <span className="n">{streak.count}</span></div>
+        <div className="streak-text"><b>Racha del juego</b>
+          <small>{streak.playedToday?'Ya jugaste hoy. ¡Vuelve mañana!':'Hoy te espera un reto nuevo'}</small></div>
+      </button>
+      <section className="card">
+        <div className="card-h"><span>🔭 Explora el cielo</span><span className="chip">SPHEREx</span></div>
+        <ul className="trend">
+          {quick.map(item=><li key={item.name}>
+            <button type="button" className="trend-link" onClick={()=>go(`explore?ra=${item.ra}&dec=${item.dec}`)}>
+              <Star size={20} aria-hidden="true" fill="currentColor" />
+              <span><b>{item.name}</b><small>RA {formatRa(item.ra)} · Dec {formatDec(item.dec)}</small></span>
+            </button>
+          </li>)}
+        </ul>
+      </section>
+      <button className="card mini-profile" type="button" onClick={()=>onProfile(user.username)}>
+        <Avatar name={user.username} size={48}/>
+        <span className="mini-profile-details"><b>{user.display_name}</b><small>@{user.username}</small></span>
+      </button>
+      <p className="conn live"><b>● API conectada</b> · publicaciones reales</p>
+      <p className="feed-disclaimer">Las imágenes estelares del feed son ilustraciones sintéticas. Los datos reales se consultan en el explorador.</p>
     </aside>
   </div>;
 }
@@ -184,7 +206,7 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
         {person.bio&&<p>{person.bio}</p>}
         <div className="stats"><span><b>{posts.length}</b> publicaciones listadas</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
           <span><b>{stats?.following_count??0}</b> siguiendo</span></div>
-        <div className="profile-buttons">{mine?<button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button>:
+        <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div>
       <h2 className="section-title">Publicaciones</h2>
@@ -271,15 +293,21 @@ export default function App(){
       <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
         placeholder="Usuario o coordenadas (RA, Dec)…"/></form>
       <nav className="nav" aria-label="Navegación principal">
-        <button className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio"><Home size={19}/><span className="t">Inicio</span></button>
-        <button className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar"><Telescope size={19}/><span className="t">Explorar</span></button>
-        <button className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego"><Gamepad2 size={19}/><span className="t">Juego</span></button>
+        <button className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
+          <span className="nav-emoji" aria-hidden="true">🏠</span><span className="t">Inicio</span></button>
+        <button className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
+          <span className="nav-emoji" aria-hidden="true">🔭</span><span className="t">Explorar</span></button>
+        <button className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
+          <span className="nav-target"><Star size={18}/></span><span className="t">Juego</span></button>
         {user&&<>
-          <button className={route.page==='saved'?'on':''} onClick={()=>go('saved')} title="Guardados"><Bookmark size={19}/><span className="t">Guardados</span></button>
-          <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Actividad"><Bell size={19}/><span className="t">Actividad</span></button>
-          <button className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil"><UserRound size={19}/><span className="t">Perfil</span></button>
-          <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes"><Settings size={18}/><span className="t">Ajustes</span></button>
-          <button className="btn p sm newpost" onClick={()=>openPublish()}><Plus size={17}/><span className="t">Publicar</span></button>
+          <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Solicitudes (pendiente de backend)">
+            <span className="nav-emoji" aria-hidden="true">🔔</span><span className="t">Solicitudes</span></button>
+          <button className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
+            <Avatar name={user.username} size={26}/><span className="t">Perfil</span></button>
+          <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
+            <span className="nav-emoji" aria-hidden="true">⚙️</span><span className="t">Ajustes</span></button>
+          <button className="btn p sm newpost" onClick={()=>openPublish()}>
+            <Sparkles size={15}/><span className="t">Publicar</span></button>
         </>}
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
       </nav>
@@ -292,7 +320,7 @@ export default function App(){
      route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
      route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired}/>:
      route.page==='activity'?<ActivityPage/>:
-     <FeedPage key={feedVersion} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired} onPublish={()=>openPublish()}/>}
+     <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>}
     {toast&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
     <footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>
