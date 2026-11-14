@@ -26,19 +26,21 @@ from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw
 from reproject import reproject_interp
 
-app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.5.0")
+app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.6.0")
 
 # Social REST routes intentionally expose reads only until login/roles are implemented.
 from social_api.api import router as social_router
 from social_api.auth import router as auth_router
 from social_api.posts import router as posts_router
 from social_api.interactions import router as interactions_router
+from social_api.observations import router as observations_router
 from social_api.config import get_settings as get_social_settings
 from fastapi.middleware.cors import CORSMiddleware
 app.include_router(social_router)
 app.include_router(auth_router)
 app.include_router(posts_router)
 app.include_router(interactions_router)
+app.include_router(observations_router)
 if get_social_settings().cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=get_social_settings().cors_origins,
                        allow_credentials=False, allow_methods=['GET', 'POST', 'PATCH', 'DELETE'], allow_headers=['Authorization', 'Content-Type'])

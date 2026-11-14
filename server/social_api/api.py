@@ -1,28 +1,13 @@
 """Read-only operational, feed and observation endpoints."""
-from datetime import datetime
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from .db import get_db
-from .models import Observation, Post, User
+from .models import Post, User
 from .posts import PostOut, counts_by_post, serialize
 
 router = APIRouter(prefix='/v1', tags=['social'])
-
-
-class ObservationOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: UUID
-    ra_deg: float
-    dec_deg: float
-    fov_arcmin: float
-    detector: int | None
-    mission: str
-    data_release: str | None
-    created_at: datetime
 
 
 @router.get('/health', tags=['operations'])
@@ -55,11 +40,3 @@ def feed(
     ).all()
     counts = counts_by_post(db, [post.id for post, _ in rows])
     return [serialize(post, username, counts) for post, username in rows]
-
-
-@router.get('/observations/{observation_id}', response_model=ObservationOut)
-def get_observation(observation_id: UUID, db: Session = Depends(get_db)):
-    observation = db.get(Observation, observation_id)
-    if observation is None:
-        raise HTTPException(status_code=404, detail='Observation not found')
-    return observation

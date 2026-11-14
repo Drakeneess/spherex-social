@@ -11,7 +11,9 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Auth v1: registro, login, JWT HS256 de 30 minutos, Argon2id, perfil propio y público.
 - ✅ Posts v1: crear, consultar, editar, eliminar, listados por usuario y feed cronológico con reglas de visibilidad.
 - ✅ Interacciones v1: likes, comentarios (incluidas respuestas), seguidores, guardados y contadores por publicación.
-- ⏳ Subida a S3, notificaciones, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ Regiones SPHEREx persistentes: guardar parámetros, búsqueda radial, mis observaciones, enlace compartible y posts vinculados.
+- ✅ Prototipo React: feed público y apertura de una región compartida desde la publicación.
+- ⏳ FITS persistentes, subida a S3, notificaciones, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
 - ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
@@ -98,6 +100,18 @@ Las rutas del visor original se mantienen en `/api`. El frontend Vite sigue sien
 - El feed, las publicaciones y las listas por perfil incluyen `likes_count` y `comments_count`; se calculan por lote sin N+1.
 - Las publicaciones `private` no muestran sus interacciones a terceros (404). Las `unlisted` se pueden consultar mediante URL.
 - Se reutilizan las tablas del Sprint 1: **no requiere una migración nueva**.
+
+## Observaciones persistentes (Sprint 4)
+
+- `POST /v1/observations` requiere JWT; ejemplo `{"ra_deg":133.795129,"dec_deg":-7.245147,"fov_arcmin":6,"detector":2}` y devuelve `id` y `viewer_path` (`/?observation_id=<id>`).
+- `GET /v1/observations/{id}` recupera parámetros públicos y estables.
+- `GET /v1/observations?ra_deg=133.795129&dec_deg=-7.245147&radius_arcmin=30&detector=2` busca regiones guardadas por separación angular (no consulta IRSA), con paginación.
+- `GET /v1/users/me/observations` lista solo las regiones creadas por la cuenta autenticada.
+- `GET /v1/observations/{id}/posts` lista posts públicos vinculados; con JWT del autor incluye también sus publicaciones privadas/no listadas.
+- Los posts ya admiten `observation_id` en `POST /v1/posts`. Cada región es pública: no guardar datos personales sensibles en sus coordenadas o metadatos.
+- El frontend carga `?observation_id=<id>`, consulta parámetros persistidos y realiza una búsqueda IRSA fresca (modo real). Las imágenes no se guardan en BD y el resultado no representa una detección científica confirmada.
+- Para el prototipo React local, `vite` envía `/v1` y `/api` al servidor FastAPI local. Si se despliega la web por separado, configurar `VITE_API_BASE_URL` con la URL pública de FastAPI en tiempo de build y `CORS_ORIGINS` en Railway con el origen web.
+- **No hay migración nueva**: se reutiliza `observations`, `posts.observation_id` y las restricciones existentes.
 
 ## Tests y migraciones
 
