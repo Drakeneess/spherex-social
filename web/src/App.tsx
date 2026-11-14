@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Flame, LogOut, Settings, Sparkles, Users, Star } from 'lucide-react';
+import { Bell, Bookmark, Flame, LogOut, Settings, Sparkles, Users, Star } from 'lucide-react';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
