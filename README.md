@@ -44,7 +44,7 @@ Docker Desktop requerido para PostgreSQL local.
 docker compose up -d postgres
 cd server
 Copy-Item .env.example .env
-py -3.12 -m venv .venv
+python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 alembic upgrade head
@@ -277,3 +277,35 @@ Si `POST /api/search/jobs` responde `503` con `IRSA no está aceptando la creaci
 - Los tests simulan fallos de creación 502 y 400 y un fallo de inicio RUN; no envían peticiones reales a IRSA.
 
 Para determinar si la caída está afectando al servicio remoto, consultar su [documentación oficial TAP](https://irsa.ipac.caltech.edu/docs/program_interface/TAP.html) y esperar a que vuelva a responder. No ampliar el timeout de Vite ni sustituir silenciosamente el resultado por datos sintéticos.
+
+
+## Diagnóstico de rendimiento TAP y FITS — misma rama
+
+Una consulta real ahora entrega el campo `timing` en `POST /api/search/jobs` y
+`GET /api/search/jobs/{ticket}`:
+
+- `submit_ms`: tiempo local que tardó el POST de creación del trabajo remoto (no incluye el proceso científico).
+- `run_ms`: duración del POST `PHASE=RUN` hasta obtener respuesta.
+- `phase_events`: cambios de fase **observados** por el sondeo con desplazamiento en milisegundos desde la confirmación de RUN. Se asume `QUEUED` al recibir la confirmación inicial.
+- `phase_observed_ms`: intervalos entre observaciones de fases; **no** representan la hora exacta del cambio en IRSA ni su tiempo de CPU. Sumados dan `remote_observed_ms`. La incertidumbre de transición depende de la frecuencia de sondeo.
+- `phase_http_ms`: tiempo acumulado gastado en solicitudes HTTP de estado, *incluido dentro* de los intervalos de fase. **No sumarlo** a las duraciones de fase.
+- `poll_count`, `poll_errors`: número de consultas de fase al servicio remoto y las que fallaron.
+- `result_fetch_ms` y `result_parse_ms`: tiempo de descarga de tabla y tiempo de normalización/registro de observaciones, respectivamente.
+- `remote_observed_ms` comienza después de confirmar RUN; el total visible en el navegador también incluye las solicitudes frontend y esperas de polling.
+
+Los fotogramas reales en `GET /api/frame/{id}/{index}` incluyen `timing_ms`: `apertura_fits`,
+`lectura_pixeles`, `reproyeccion`, `metadatos`, `png` y `total`. Las lecturas pueden
+ocurrir de manera diferida dentro de Astropy: la división entre apertura y lectura
+es una observación local, no un desglose de procesamiento del servidor IRSA.
+Cuando falle un fotograma, el error público indica la etapa y el tipo de excepción,
+sin incluir URL FITS ni la descripción completa potencialmente sensible.
+
+En **Explorar → Estado de la consulta → Desglose TAP** se ven los tiempos y
+transiciones. **Detalles por época** incluye las etapas FITS por imagen y los fallos;
+al terminar, **Copiar diagnóstico JSON** permite compartir medidas sin imágenes base64,
+identificadores de trabajos, tokens ni URLs de descarga.
+
+El diagnóstico es de observabilidad: **no modifica la consulta ADQL, no acelera
+IRSA y no cambia el comportamiento de las imágenes**. Para pruebas locales, iniciar
+FastAPI y Vite desde la misma rama; las métricas de TAP no aparecen en el modo demo.
+Los tests simulan fases y errores sin enviar trabajos a IRSA.

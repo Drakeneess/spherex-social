@@ -90,6 +90,15 @@ class TapSearchJob:
     consecutive_errors: int = 0
     retry_at: float = 0.0
     last_error_stage: str = ''
+    submit_ms: int = 0
+    run_ms: int = 0
+    poll_count: int = 0
+    poll_errors: int = 0
+    phase_http_ms: int = 0
+    result_fetch_ms: int | None = None
+    result_parse_ms: int | None = None
+    finished_at: float | None = None
+    phase_events: list[dict] = field(default_factory=lambda: [{"phase": "QUEUED", "at_ms": 0}])
 
 
 _tap_jobs: dict[str, TapSearchJob] = {}
@@ -258,38 +267,79 @@ def generate_demo(index: int, total: int) -> dict:
             "pixel_flags_nonzero_fraction": None, "mode": "simulated"}
 
 
+class FrameProcessingError(Exception):
+    """Sanitized error classification for an IRSA cutout request."""
+
+    def __init__(self, stage: str, original_type: str):
+        self.stage = stage
+        self.original_type = original_type
+        super().__init__(f"{stage}: {original_type}")
+
+
 def render_real(session: Session, record: dict) -> dict:
     url = record["url"]
     if not ensure_irsa_cutout_url(url):
-        raise ValueError("Unexpected remote data URL")
-    # Official IRSA endpoint performs the cutout on its server before download.
-    with fits.open(url, memmap=False, cache=False) as hdus:
-        src = np.asarray(hdus["IMAGE"].data, dtype=np.float32)
-        header = hdus["IMAGE"].header
-        spatial = WCS(header)
-        target, pixels = make_target_wcs(session.ra, session.dec, session.size_arcmin)
-        reproj, footprint = reproject_interp((src, spatial), target, shape_out=(pixels, pixels))
-        reproj = np.where(footprint > 0, reproj, np.nan)
-        coord = SkyCoord(session.ra * u.deg, session.dec * u.deg, frame="icrs")
-        x, y = spatial.world_to_pixel(coord)
-        wavelength_um = None
-        bandwidth_um = None
-        try:
-            spectral = WCS(header=header, fobj=hdus, key="W")
-            spectral.sip = None
-            wl, bw = spectral.pixel_to_world(x, y)
-            wavelength_um = float(wl.to_value(u.um))
-            bandwidth_um = float(bw.to_value(u.um))
-        except (KeyError, ValueError, TypeError):
-            pass
-        flags_fraction = None
-        if "FLAGS" in hdus:
-            flags = hdus["FLAGS"].data
-            if flags is not None:
-                flags_fraction = float(np.count_nonzero(flags) / flags.size)
-        return {"image": png_data_url(normalize_preview(reproj)),
-                "wavelength_um": wavelength_um, "bandwidth_um": bandwidth_um,
-                "pixel_flags_nonzero_fraction": flags_fraction, "mode": "real"}
+        raise FrameProcessingError("validacion_url", "ValueError")
+    # FITS data may be loaded lazily; opening headers and reading pixels
+    # are measured separately. Neither step reveals a server-side IRSA timer.
+    started = time.monotonic()
+    step = "apertura_fits"
+    times: dict[str, int] = {}
+    try:
+        checkpoint = time.monotonic()
+        with fits.open(url, memmap=False, cache=False) as hdus:
+            times["apertura_fits"] = elapsed_ms(checkpoint)
+
+            step = "lectura_pixeles"
+            checkpoint = time.monotonic()
+            src = np.asarray(hdus["IMAGE"].data, dtype=np.float32)
+            header = hdus["IMAGE"].header
+            times["lectura_pixeles"] = elapsed_ms(checkpoint)
+
+            step = "reproyeccion"
+            checkpoint = time.monotonic()
+            spatial = WCS(header)
+            target, pixels = make_target_wcs(session.ra, session.dec, session.size_arcmin)
+            reproj, footprint = reproject_interp((src, spatial), target, shape_out=(pixels, pixels))
+            reproj = np.where(footprint > 0, reproj, np.nan)
+            times["reproyeccion"] = elapsed_ms(checkpoint)
+
+            step = "metadatos"
+            checkpoint = time.monotonic()
+            coord = SkyCoord(session.ra * u.deg, session.dec * u.deg, frame="icrs")
+            x, y = spatial.world_to_pixel(coord)
+            wavelength_um = None
+            bandwidth_um = None
+            try:
+                spectral = WCS(header=header, fobj=hdus, key="W")
+                spectral.sip = None
+                wl, bw = spectral.pixel_to_world(x, y)
+                wavelength_um = float(wl.to_value(u.um))
+                bandwidth_um = float(bw.to_value(u.um))
+            except (KeyError, ValueError, TypeError):
+                pass
+            flags_fraction = None
+            if "FLAGS" in hdus:
+                flags = hdus["FLAGS"].data
+                if flags is not None:
+                    flags_fraction = float(np.count_nonzero(flags) / flags.size)
+            times["metadatos"] = elapsed_ms(checkpoint)
+
+            step = "png"
+            checkpoint = time.monotonic()
+            image = png_data_url(normalize_preview(reproj))
+            times["png"] = elapsed_ms(checkpoint)
+            times["total"] = elapsed_ms(started)
+            return {
+                "image": image,
+                "wavelength_um": wavelength_um,
+                "bandwidth_um": bandwidth_um,
+                "pixel_flags_nonzero_fraction": flags_fraction,
+                "mode": "real",
+                "timing_ms": times,
+            }
+    except Exception as exc:
+        raise FrameProcessingError(step, type(exc).__name__) from exc
 
 
 @app.get("/api/health")
@@ -321,6 +371,41 @@ def get_tap_job(ticket: str) -> TapSearchJob:
     if job is None or time.monotonic() - job.created_at > TAP_JOB_SECONDS:
         raise HTTPException(status_code=404, detail="Search job not found or expired")
     return job
+
+
+def elapsed_ms(start: float) -> int:
+    return max(0, round((time.monotonic() - start) * 1000))
+
+
+def tap_timing(job: TapSearchJob) -> dict:
+    """Durations are intervals between *observed* TAP phases, not IRSA CPU time."""
+    with _lock:
+        now = job.finished_at or time.monotonic()
+        active_ms = max(0, round((now - job.created_at) * 1000))
+        events = [dict(item) for item in job.phase_events]
+        periods: dict[str, int] = {}
+        for i, event in enumerate(events):
+            end_ms = events[i + 1]["at_ms"] if i + 1 < len(events) else active_ms
+            phase = event["phase"]
+            periods[phase] = periods.get(phase, 0) + max(0, end_ms - event["at_ms"])
+        return {
+            "submit_ms": job.submit_ms, "run_ms": job.run_ms,
+            "remote_observed_ms": active_ms,
+            "phase_observed_ms": periods,
+            "phase_events": events,
+            "poll_count": job.poll_count, "poll_errors": job.poll_errors,
+            "phase_http_ms": job.phase_http_ms,
+            "result_fetch_ms": job.result_fetch_ms,
+            "result_parse_ms": job.result_parse_ms,
+        }
+
+
+def observe_tap_phase(job: TapSearchJob, phase: str) -> None:
+    with _lock:
+        if job.phase_events[-1]["phase"] != phase:
+            at_ms = elapsed_ms(job.created_at)
+            job.phase_events.append({"phase": phase, "at_ms": at_ms})
+            logger.info("TAP phase transition: %s at %sms", phase, at_ms)
 
 
 def is_temporary_tap_error(exc: Exception) -> bool:
@@ -371,6 +456,7 @@ def tap_retry_response(job: TapSearchJob, exc: Exception, stage: str):
                    "Conservamos el trabajo e intentaremos de nuevo.",
         "retry_after_seconds": delay,
         "attempt": attempts,
+        "timing": tap_timing(job),
     }, headers={"Cache-Control": "no-store"})
 
 
@@ -384,6 +470,7 @@ def tap_wait_response(job: TapSearchJob):
         "warning": f"Esperando antes de reintentar {stage}.",
         "retry_after_seconds": max(1, math.ceil(seconds)),
         "attempt": count,
+        "timing": tap_timing(job),
     }, headers={"Cache-Control": "no-store"})
 
 
@@ -405,6 +492,7 @@ def start_search_job(params: SearchStart):
         if len(_tap_jobs) >= MAX_TAP_JOBS:
             raise HTTPException(status_code=429, detail="Too many active searches; try again later")
     query = make_irsa_query(params.ra, params.dec, params.size_arcmin, params.detector)
+    submitted_at = time.monotonic()
     try:
         remote = Irsa.tap.submit_job(query, maxrec=5000)
     except Exception as exc:
@@ -424,6 +512,8 @@ def start_search_job(params: SearchStart):
             detail=f"IRSA rechazó la creación del trabajo TAP: {type(exc).__name__}",
         ) from exc
 
+    submit_ms = elapsed_ms(submitted_at)
+    ran_at = time.monotonic()
     try:
         remote.run()
     except Exception as exc:
@@ -447,12 +537,17 @@ def start_search_job(params: SearchStart):
             detail=f"IRSA no pudo iniciar el trabajo TAP: {type(exc).__name__}",
         ) from exc
 
+    run_ms = elapsed_ms(ran_at)
     ticket = secrets.token_urlsafe(24)
+    job = TapSearchJob(params.ra, params.dec, params.size_arcmin,
+                       params.detector, params.max_frames, remote,
+                       submit_ms=submit_ms, run_ms=run_ms)
     with _lock:
-        _tap_jobs[ticket] = TapSearchJob(params.ra, params.dec, params.size_arcmin,
-                                        params.detector, params.max_frames, remote)
-    return JSONResponse({"job_id": ticket, "phase": "QUEUED"}, status_code=202,
-                        headers={"Cache-Control": "no-store"})
+        _tap_jobs[ticket] = job
+    logger.info("TAP job submitted: submit=%sms run=%sms", submit_ms, run_ms)
+    return JSONResponse(
+        {"job_id": ticket, "phase": "QUEUED", "timing": tap_timing(job)},
+        status_code=202, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/search/jobs/{ticket}")
@@ -461,37 +556,59 @@ def poll_search_job(ticket: str):
     job = get_tap_job(ticket)
     with _lock:
         if job.result is not None:
-            return {"phase": "COMPLETED", "result": job.result}
+            return {"phase": "COMPLETED", "result": job.result, "timing": tap_timing(job)}
         waiting = job.retry_at > time.monotonic()
     if waiting:
         return tap_wait_response(job)
 
+    requested_at = time.monotonic()
     try:
         phase = str(job.remote.phase).upper()
     except Exception as exc:
+        with _lock:
+            job.poll_count += 1
+            job.poll_errors += 1
+            job.phase_http_ms += elapsed_ms(requested_at)
         return tap_retry_response(job, exc, "estado del trabajo")
+    with _lock:
+        job.poll_count += 1
+        job.phase_http_ms += elapsed_ms(requested_at)
+    observe_tap_phase(job, phase)
     # Preserve the consecutive-error counter while the remote job is
     # complete but the result payload itself is repeatedly failing.
     if phase != "COMPLETED" or job.last_error_stage != "descarga del catálogo":
         clear_tap_errors(job)
     if phase in ("PENDING", "QUEUED", "EXECUTING", "HELD", "SUSPENDED", "UNKNOWN"):
-        return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
+        return JSONResponse({"phase": phase, "timing": tap_timing(job)},
+                            headers={"Cache-Control": "no-store"})
     if phase in ("ERROR", "ABORTED"):
-        return JSONResponse({"phase": phase, "error": "IRSA could not complete the catalog query"},
+        return JSONResponse({"phase": phase, "error": "IRSA could not complete the catalog query",
+                             "timing": tap_timing(job)},
                             headers={"Cache-Control": "no-store"})
     if phase != "COMPLETED":
-        return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
+        return JSONResponse({"phase": phase, "timing": tap_timing(job)},
+                            headers={"Cache-Control": "no-store"})
     try:
-        records = records_from_tap(job.remote.fetch_result())
+        fetch_started = time.monotonic()
+        table = job.remote.fetch_result()
+        with _lock:
+            job.result_fetch_ms = elapsed_ms(fetch_started)
+        parse_started = time.monotonic()
+        records = records_from_tap(table)
         result = make_search_result(job.ra, job.dec, job.size_arcmin,
                                     job.detector, job.max_frames, "irsa", records)
+        with _lock:
+            job.result_parse_ms = elapsed_ms(parse_started)
     except Exception as exc:
         return tap_retry_response(job, exc, "descarga del catálogo")
     clear_tap_errors(job)
     with _lock:
         if job.result is None:
             job.result = result
-        return {"phase": "COMPLETED", "result": job.result}
+            job.finished_at = time.monotonic()
+        logger.info("TAP catalog completed: timing=%s", tap_timing(job))
+        return {"phase": "COMPLETED", "result": job.result,
+                "timing": tap_timing(job)}
 
 
 @app.delete("/api/search/jobs/{ticket}", status_code=204)
@@ -520,8 +637,16 @@ def frame(search_id: str, index: int):
     try:
         rendered = (generate_demo(index, len(session.records)) if session.source == "simulated"
                     else render_real(session, session.records[index]))
+    except FrameProcessingError as exc:
+        logger.warning("FITS frame error index=%s stage=%s type=%s", index, exc.stage, exc.original_type)
+        raise HTTPException(
+            status_code=502,
+            detail=f"FITS falló en {exc.stage}: {exc.original_type}",
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"FITS cutout failed: {type(exc).__name__}") from exc
+        logger.warning("FITS frame error index=%s stage=desconocida type=%s",
+                       index, type(exc).__name__)
+        raise HTTPException(status_code=502, detail=f"FITS falló: {type(exc).__name__}") from exc
     result = {**rendered, "index": index, "date": session.records[index]["date"],
               "release": session.records[index]["release"]}
     with _lock:

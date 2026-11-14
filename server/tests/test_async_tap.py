@@ -283,3 +283,98 @@ def test_run_proxy_error_attempts_remote_cleanup_without_repeating_submission(ha
     assert len(tap.jobs) == 1
     assert tap.jobs[0].deleted
     assert not explorer._tap_jobs
+
+
+def test_tap_timing_reports_observed_phases_and_network_time(harness):
+    client, tap = harness
+    created = client.post("/api/search/jobs", json=payload())
+    assert created.status_code == 202
+    initial = created.json()["timing"]
+    assert initial["submit_ms"] >= 0
+    assert initial["run_ms"] >= 0
+    assert initial["phase_events"] == [{"phase": "QUEUED", "at_ms": 0}]
+    ticket = created.json()["job_id"]
+    first = client.get(f"/api/search/jobs/{ticket}").json()
+    assert first["timing"]["poll_count"] == 1
+    assert first["timing"]["phase_observed_ms"]["QUEUED"] >= 0
+
+    tap.jobs[0].phase = "EXECUTING"
+    running = client.get(f"/api/search/jobs/{ticket}").json()
+    assert running["timing"]["phase_events"][-1]["phase"] == "EXECUTING"
+    assert running["timing"]["poll_count"] == 2
+    assert running["timing"]["phase_http_ms"] >= 0
+
+    tap.jobs[0].phase = "COMPLETED"
+    completed = client.get(f"/api/search/jobs/{ticket}").json()
+    telemetry = completed["timing"]
+    assert completed["phase"] == "COMPLETED"
+    assert telemetry["phase_events"][-1]["phase"] == "COMPLETED"
+    assert telemetry["result_fetch_ms"] >= 0
+    assert telemetry["result_parse_ms"] >= 0
+    assert telemetry["poll_count"] == 3
+    # The phase durations partition the observed remote interval, but
+    # phase transitions are only resolved at poll time.
+    assert sum(telemetry["phase_observed_ms"].values()) == telemetry["remote_observed_ms"]
+    repeated = client.get(f"/api/search/jobs/{ticket}").json()["timing"]
+    assert repeated["remote_observed_ms"] == telemetry["remote_observed_ms"]
+    assert repeated["poll_count"] == telemetry["poll_count"]
+
+
+def test_tap_timing_counts_failed_poll_and_recovers(harness, monkeypatch):
+    client, tap = harness
+    ticket = client.post("/api/search/jobs", json=payload()).json()["job_id"]
+    outcomes = [DALServiceError("Proxy Error", code=502), "EXECUTING"]
+
+    def flaky(_self):
+        value = outcomes.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(FakeRemoteJob, "phase", property(flaky), raising=False)
+    retry = client.get(f"/api/search/jobs/{ticket}").json()
+    assert retry["phase"] == "RETRYING"
+    assert retry["timing"]["poll_count"] == 1
+    assert retry["timing"]["poll_errors"] == 1
+    explorer.get_tap_job(ticket).retry_at = 0
+    running = client.get(f"/api/search/jobs/{ticket}").json()
+    assert running["timing"]["poll_count"] == 2
+    assert running["timing"]["poll_errors"] == 1
+    assert running["phase"] == "EXECUTING"
+
+
+def test_frame_error_reports_processing_stage_without_fits_url(harness, monkeypatch):
+    client, _ = harness
+    record = {"url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/test.fits?center=1,2d&size=0.1",
+              "mjd": 60810.0, "date": "2025-01-01T00:00:00", "release": "DR1"}
+    token = explorer.register_session(explorer.Session(1, 2, 6, 2, [record], "irsa"))
+
+    def unreachable(*args, **kwargs):
+        raise OSError("secret remote URL should never be displayed")
+
+    monkeypatch.setattr(explorer.fits, "open", unreachable)
+    response = client.get(f"/api/frame/{token}/0")
+    assert response.status_code == 502
+    message = response.json()["detail"]
+    assert "apertura_fits" in message
+    assert "OSError" in message
+    assert "secret remote URL" not in message
+    assert "https://" not in message
+
+
+def test_frame_response_preserves_internal_per_stage_timing(harness, monkeypatch):
+    client, _ = harness
+    record = {"url": None, "mjd": 60810.0,
+              "date": "2025-01-01T00:00:00", "release": "DR1"}
+    token = explorer.register_session(explorer.Session(1, 2, 6, 2, [record], "irsa"))
+    stages = {"apertura_fits": 13, "lectura_pixeles": 24, "reproyeccion": 31,
+              "metadatos": 2, "png": 3, "total": 73}
+    monkeypatch.setattr(explorer, "render_real", lambda _s, _r: {
+        "image": "data:image/png;base64,AAAA",
+        "wavelength_um": None, "bandwidth_um": None,
+        "pixel_flags_nonzero_fraction": None, "mode": "real",
+        "timing_ms": stages,
+    })
+    response = client.get(f"/api/frame/{token}/0")
+    assert response.status_code == 200
+    assert response.json()["timing_ms"] == stages

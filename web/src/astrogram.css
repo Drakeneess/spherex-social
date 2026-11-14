@@ -955,3 +955,45 @@ html,body,#root{min-width:0;max-width:100%}
   white-space: normal;
   min-height: 36px;
 }
+
+/* Performance diagnostics: nested, compact breakdown in the explorer sidebar. */
+.irsa-timing-details {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.irsa-timing-details summary {
+  cursor: pointer;
+  color: #bdd0fa;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.irsa-timing-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 8px 12px;
+  margin: 12px 0 3px;
+  font-size: .69rem;
+}
+.irsa-timing-grid dt {color: var(--muted);}
+.irsa-timing-grid dd {margin: 0; color: #d9e5ff; font-variant-numeric: tabular-nums;}
+.irsa-timing-pair {display: contents;}
+.irsa-phase-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: .65rem;
+  color: #aebde0;
+}
+.irsa-frame-server {
+  grid-column: 1 / -1;
+  font-size: .65rem;
+  line-height: 1.5;
+  color: #a6c9ed;
+  overflow-wrap: anywhere;
+}
+.irsa-diagnostic-copy {
+  width: 100%;
+  margin-top: 12px;
+  justify-content: center;
+}

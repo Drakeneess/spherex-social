@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, XCircle } from 'lucide-react';
+import type { FrameTiming, TapTiming } from '../lib/api';
 
 export type FrameState = 'pending' | 'loading' | 'ready' | 'failed';
 export type FrameTrace = {
@@ -8,6 +9,7 @@ export type FrameTrace = {
   startedAt?: number;
   durationMs?: number;
   error?: string;
+  serverTiming?: FrameTiming;
 };
 export type SearchTrace = {
   phase: 'catalog' | 'frames' | 'complete' | 'partial' | 'empty' | 'failed' | 'cancelled';
@@ -22,6 +24,7 @@ export type SearchTrace = {
   remotePhase?: string;
   remoteWarning?: string;
   retryAfterSeconds?: number;
+  tapTiming?: TapTiming;
 };
 
 function duration(ms: number): string {
@@ -56,6 +59,7 @@ export default function SearchProgress({
   retrySeconds: number;
 }) {
   const [now, setNow] = useState(Date.now());
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!trace || !loading) return;
     setNow(Date.now());
@@ -76,6 +80,39 @@ export default function SearchProgress({
   const elapsedMs = Math.max(0, (loading ? now : trace.finishedAt ?? now) - trace.startedAt);
   const total = trace.frames.length;
   const percent = total ? Math.round(finished / total * 100) : 0;
+  const timing = trace.tapTiming;
+  const phaseLabels: Record<string, string> = {
+    QUEUED: 'En cola (observado)',
+    EXECUTING: 'Ejecutando (observado)',
+    PENDING: 'Pendiente (observado)',
+    HELD: 'Retenido (observado)',
+    SUSPENDED: 'Suspendido (observado)',
+    UNKNOWN: 'Desconocido (observado)',
+    COMPLETED: 'Completado, incluida recuperación',
+  };
+  const frameStageLabels: {key:keyof FrameTiming;name:string}[] = [
+    {key:'apertura_fits',name:'Abrir FITS'},
+    {key:'lectura_pixeles',name:'Leer píxeles'},
+    {key:'reproyeccion',name:'Reproyectar'},
+    {key:'metadatos',name:'Metadatos'},
+    {key:'png',name:'Generar PNG'},
+  ];
+  const copyDiagnostic = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({
+        source: trace.source,
+        catalog_ms_browser: trace.catalogMs ?? null,
+        total_ms_browser: (trace.finishedAt ?? Date.now()) - trace.startedAt,
+        total_matches: trace.totalMatches ?? null,
+        catalog_phase: trace.remotePhase ?? null,
+        tap_timing: trace.tapTiming ?? null,
+        frames: trace.frames,
+      }, null, 2));
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   return <section className="irsa-progress" aria-label="Progreso de búsqueda">
     <div className="irsa-progress-heading">
@@ -130,6 +167,29 @@ export default function SearchProgress({
         </div>
       </li>
     </ol>
+    {timing && <details className="irsa-timing-details">
+      <summary>Desglose TAP · {timing.poll_count} sondeos</summary>
+      <dl className="irsa-timing-grid">
+        <dt>Crear trabajo (POST)</dt><dd>{duration(timing.submit_ms)}</dd>
+        <dt>Iniciar ejecución (RUN)</dt><dd>{duration(timing.run_ms)}</dd>
+        {Object.entries(timing.phase_observed_ms).map(([phase, ms]) => <div
+          key={phase} className="irsa-timing-pair">
+          <dt>{phaseLabels[phase] ?? `${phase} (observado)`}</dt><dd>{duration(ms)}</dd>
+        </div>)}
+        <dt>Red: consulta de estado (acumulado)</dt><dd>{duration(timing.phase_http_ms)}</dd>
+        {timing.result_fetch_ms !== null && <><dt>Recuperar tabla</dt><dd>{duration(timing.result_fetch_ms)}</dd></>}
+        {timing.result_parse_ms !== null && <><dt>Validar y preparar observaciones</dt><dd>{duration(timing.result_parse_ms)}</dd></>}
+        <dt>Sondeos fallidos</dt><dd>{timing.poll_errors} / {timing.poll_count}</dd>
+      </dl>
+      <p className="irsa-progress-disclaimer">Los tiempos de fase son intervalos entre estados
+        observados en sondeos, no tiempos exactos de CPU de IRSA. La duración de red
+        está incluida en esos intervalos; <strong>no deben sumarse todas las filas.</strong></p>
+      <div className="irsa-phase-events">
+        {timing.phase_events.map((event, index) => <span key={index}>
+          {event.phase} · {duration(event.at_ms)}{index < timing.phase_events.length - 1 ? ' → ' : ''}
+        </span>)}
+      </div>
+    </details>}
     {total > 0 && <details className="irsa-frame-details">
       <summary>Detalles por época ({finished}/{total})</summary>
       <div className="irsa-frame-list">
@@ -143,9 +203,18 @@ export default function SearchProgress({
           <span>{frame.durationMs !== undefined ? duration(frame.durationMs) :
             frame.startedAt ? duration(Math.max(0, now - frame.startedAt)) : '—'}</span>
           {frame.error && <span className="irsa-frame-error" title={frame.error}><AlertCircle size={12}/> {frame.error}</span>}
+          {frame.serverTiming && <span className="irsa-frame-server">
+            Servidor: {duration(frame.serverTiming.total)} · {frameStageLabels.map(
+              ({key, name}) => `${name}: ${duration(frame.serverTiming![key])}`
+            ).join(' · ')}
+          </span>}
         </div>)}
       </div>
     </details>}
+    {!loading && (catalogDone || trace.phase === 'failed') &&
+      <button type="button" className="btn sm irsa-diagnostic-copy" onClick={() => void copyDiagnostic()}>
+        {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico JSON'}
+      </button>}
     {loading && <button type="button" className="btn sm irsa-cancel" onClick={onCancel}>
       Cancelar búsqueda
     </button>}
@@ -157,8 +226,9 @@ export default function SearchProgress({
       </button>
     </div>}
     <p className="irsa-progress-disclaimer">
-      El tiempo mostrado es el observado por tu navegador. Cancelar detiene las solicitudes del navegador,
-      pero un procesamiento ya iniciado podría continuar temporalmente en Railway.
+      El total es el tiempo observado por tu navegador; las etapas TAP se miden en FastAPI.
+      Cancelar detiene las solicitudes del navegador, pero el procesamiento remoto puede continuar
+      temporalmente si IRSA ya lo inició.
     </p>
   </section>;
 }

@@ -36,10 +36,31 @@ export type SkySearch = {
   ra: number; dec: number; detector: number;
   observations: {index: number;date: string;release: string;mjd: number}[];
 };
+export type TapTiming = {
+  submit_ms: number;
+  run_ms: number;
+  remote_observed_ms: number;
+  phase_observed_ms: Record<string, number>;
+  phase_events: {phase:string;at_ms:number}[];
+  poll_count: number;
+  poll_errors: number;
+  phase_http_ms: number;
+  result_fetch_ms: number | null;
+  result_parse_ms: number | null;
+};
+export type FrameTiming = {
+  apertura_fits: number;
+  lectura_pixeles: number;
+  reproyeccion: number;
+  metadatos: number;
+  png: number;
+  total: number;
+};
 export type SkyFrame = {
   image: string; index: number; date: string; release: string; mode: 'real' | 'simulated';
   wavelength_um: number | null; bandwidth_um: number | null;
   pixel_flags_nonzero_fraction?: number | null;
+  timing_ms?: FrameTiming;
 };
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -133,13 +154,13 @@ export const api = {
     return get<SkySearch>(`/api/search?${query}`,false,signal);
   },
   startSkyJob: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
-    request<{job_id:string;phase:string}>('/api/search/jobs',{
+    request<{job_id:string;phase:string;timing:TapTiming}>('/api/search/jobs',{
       method:'POST',
       body:JSON.stringify({ra:data.ra,dec:data.dec,size_arcmin:data.size,
         detector:data.detector,max_frames:data.frames}),
     },false,signal),
   pollSkyJob: (id:string,signal?:AbortSignal) =>
-    get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
+    get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number;timing?:TapTiming}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
   cancelSkyJob: (id:string) =>
     request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
   frame: (id:string,index:number,signal?:AbortSignal) =>

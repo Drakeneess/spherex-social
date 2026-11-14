@@ -132,7 +132,7 @@ export default function ExplorerPage({
         const started = await api.startSkyJob(params, request.signal);
         if (request.signal.aborted) return;
         remoteJob.current = started.job_id;
-        updateTrace(old => ({ ...old, remotePhase: started.phase }));
+        updateTrace(old => ({ ...old, remotePhase: started.phase, tapTiming: started.timing }));
         while (true) {
           if (request.signal.aborted) return;
           const snapshot = await api.pollSkyJob(started.job_id, request.signal);
@@ -142,6 +142,7 @@ export default function ExplorerPage({
             remotePhase: snapshot.phase,
             remoteWarning: snapshot.warning,
             retryAfterSeconds: snapshot.retry_after_seconds,
+            tapTiming: snapshot.timing ?? old.tapTiming,
           }));
           if (snapshot.phase === 'COMPLETED') {
             if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
@@ -220,7 +221,7 @@ export default function ExplorerPage({
                 ...previous,
                 frames: previous.frames.map(entry =>
                   entry.index === index
-                    ? { ...entry, status: 'ready', durationMs: Date.now() - frameStartedAt }
+                    ? { ...entry, status: 'ready', durationMs: Date.now() - frameStartedAt, serverTiming: frame.timing_ms }
                     : entry
                 ),
               }));
@@ -451,6 +452,7 @@ export default function ExplorerPage({
       remote_phase: trace.remotePhase,
       remote_warning: trace.remoteWarning,
       retry_after_seconds: trace.retryAfterSeconds,
+      tap_timing: trace.tapTiming,
       catalog_ms: trace.catalogMs,
       count: trace.count,
       frames: trace.frames,
