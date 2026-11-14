@@ -180,3 +180,19 @@ Proyecto existente: [`spherex-social`](https://railway.com/project/1c8bda97-096f
 - [SPHEREx Cutouts](https://caltech-ipac.github.io/irsa-tutorials/spherex-cutouts/)
 
 Software independiente; NASA no respalda el producto.
+
+## Sprint de visualización — explorador de épocas (React)
+
+La vista **Explorar** está adaptada a la composición de `INT.html`, con un visor cuadrado y el panel de búsqueda a la derecha:
+
+- Parámetros: RA, Dec, campo de visión 1–12′, detector 1–6 y **2–16 épocas** (se envía `max_frames` a FastAPI).
+- Presets WISE 0855, Barnard's Star y Luhman 16. Al seleccionarlos se ejecuta la búsqueda con las coordenadas elegidas.
+- Búsqueda real de IRSA por defecto, **sin fallback silencioso a datos sintéticos**. El modo demo es una casilla explícita.
+- Carga progresiva de fotogramas desde `/api/frame/{search_id}/{index}` con concurrencia limitada a tres solicitudes; los fallos parciales no impiden consultar otras épocas.
+- Reproductor 1, 3 o 6 fps; pausa, navegación manual con slider, opción para superponer la época anterior.
+- Clic sobre el fotograma para marcar un punto en esa época; una marca por época, trayectoria y botón **Borrar marcas**. Las marcas se mantienen solo en memoria de la página, **no se persisten ni se adjuntan a publicaciones**.
+- Metadatos desplegables con fechas MJD, releases, longitud de onda estimada y proporción de píxeles marcados cuando están disponibles. Las imágenes embebidas en base64 no se incluyen en el panel técnico.
+- `Guardar región` conserva coordenadas y detector en PostgreSQL; `Publicar este hallazgo` vincula esos parámetros a un post, pero **no publica las marcas**.
+- La búsqueda y los recortes SPHEREx son **quicklooks orientativos**, no fotometría calibrada ni una detección confirmada.
+
+Para comprobarlo: `cd web; npm run dev` y abrir `http://127.0.0.1:5173/#/explore`. Primero probar `Modo demo API`, después desactivarlo para consultar IRSA si el servicio dispone de imágenes para esas coordenadas.

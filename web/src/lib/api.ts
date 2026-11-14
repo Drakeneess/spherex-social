@@ -39,6 +39,7 @@ export type SkySearch = {
 export type SkyFrame = {
   image: string; index: number; date: string; release: string; mode: 'real' | 'simulated';
   wavelength_um: number | null; bandwidth_um: number | null;
+  pixel_flags_nonzero_fraction?: number | null;
 };
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -124,10 +125,10 @@ export const api = {
   createObservation: (data:ObservationParams) => write<Observation>('POST','/v1/observations',data),
   observations: (limit=20,offset=0) => get<Observation[]>(`/v1/observations?limit=${limit}&offset=${offset}`),
   mine: () => get<Observation[]>('/v1/users/me/observations',true),
-  async searchSky(data: {ra:number;dec:number;size:number;detector:number;demo:boolean}, signal?:AbortSignal) {
+  async searchSky(data: {ra:number;dec:number;size:number;detector:number;frames:number;demo:boolean}, signal?:AbortSignal) {
     const query = new URLSearchParams({
       ra:String(data.ra),dec:String(data.dec),size_arcmin:String(data.size),
-      detector:String(data.detector),max_frames:'12',demo:String(data.demo),
+      detector:String(data.detector),max_frames:String(data.frames),demo:String(data.demo),
     });
     return get<SkySearch>(`/api/search?${query}`,false,signal);
   },
