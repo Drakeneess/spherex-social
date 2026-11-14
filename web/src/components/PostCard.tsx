@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, MessageCircle, Orbit, Rocket, Share2 } from 'lucide-react';
+import { Bookmark, Heart, MessageCircle, Orbit, Rocket } from 'lucide-react';
+import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import { SkyPreview } from './SkyPreview';
 
@@ -73,19 +74,19 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   return <article className="card post-card">
     <div className="post-head">
       <button className="avatar-button" type="button" onClick={()=>onProfile(post.username)}><Avatar name={post.username}/></button>
-      <div className="who"><button className="who-link" onClick={()=>onProfile(post.username)}>@{post.username}</button>
-        <small>{region ? `RA ${region.ra_deg.toFixed(4)}° · Dec ${region.dec_deg.toFixed(4)}°` : 'Publicación de la comunidad'}</small>
+      <div className="who"><button className="who-link" onClick={()=>onProfile(post.username)}>{post.username}</button>
+        <small>{region ? `RA ${formatRa(region.ra_deg)} · Dec ${formatDec(region.dec_deg)}` : 'Sin coordenadas · publicación de texto'}</small>
       </div>
       <span className="time">{ago(post.created_at)}</span>
     </div>
-    {post.observation_id ? <SkyPreview seed={post.observation_id} moving label="VISTA ILUSTRATIVA · SIN DATOS NASA"
-      onClick={()=>onExplore(post.observation_id!)}/> : <div className="text-poster">
-      <Orbit size={44}/><span>PUBLICACIÓN DE TEXTO</span><small>Sin observación adjunta</small></div>}
+    <SkyPreview seed={post.observation_id ?? post.id} moving
+      label={region ? `Vista ilustrativa · detector ${region.detector ?? '–'} · ${region.fov_arcmin}′` : 'Ilustración sintética · sin observación'}
+      onClick={post.observation_id ? () => onExplore(post.observation_id!) : undefined}/>
     <div className="post-actions">
       <button title="Me gusta" aria-label="Me gusta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <Rocket size={20} fill={liked?'currentColor':'none'}/> <span>{post.likes_count}</span></button>
       <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={19}/> <span>{post.comments_count}</span></button>
-      <button title="Compartir" onClick={()=>void share()}><Share2 size={19}/></button>
+      <button title="Compartir" onClick={()=>void share()}><Orbit size={19}/> <span>Compartir</span></button>
       <button title="Guardar" style={{marginLeft:'auto'}} className={bookmarked?'on':''} disabled={busy}
         onClick={()=>void handleBookmark()}><Bookmark size={20} fill={bookmarked?'currentColor':'none'}/></button>
     </div>
