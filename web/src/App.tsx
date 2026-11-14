@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import CommunityFeed from './CommunityFeed';
 import { Activity, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, Layers, LoaderCircle, Pause, Play, Search, Sparkles } from 'lucide-react';
 
 type Observation = { index: number; date: string; release: string; mjd: number };
@@ -11,7 +12,13 @@ const presets = [
   { name: 'WISE 0855', description: 'Enana marrón de movimiento rápido', ra: 133.795129, dec: -7.245147 },
   { name: "Estrella de Barnard", description: 'Alto movimiento propio', ra: 269.4521, dec: 4.6934 },
 ];
-const API = '/api';
+const API_ROOT = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const API = `${API_ROOT}/api`;
+const SOCIAL_API = `${API_ROOT}/v1`;
+type SavedRegion = {
+  id: string; ra_deg: number; dec_deg: number; fov_arcmin: number;
+  detector: number | null; viewer_path: string;
+};
 
 export default function App() {
   const [ra, setRa] = useState('133.795129');
@@ -26,6 +33,7 @@ export default function App() {
   const [blink, setBlink] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [openedObservationId, setOpenedObservationId] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   const count = searchResult?.count ?? 0;
@@ -47,14 +55,46 @@ export default function App() {
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  async function startSearch() {
+  // Deep links survive reloads and never depend on a server's temporary
+  // in-memory IRSA session. The frontend reconstructs the search from Postgres.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('observation_id');
+    if (id) void openSavedObservation(id, false);
+  }, []);
+
+  async function openSavedObservation(id: string, pushUrl = true) {
+    setError('');
+    try {
+      const result = await fetch(`${SOCIAL_API}/observations/${encodeURIComponent(id)}`);
+      const data: SavedRegion | { detail: string } = await result.json();
+      if (!result.ok) throw new Error('detail' in data ? data.detail : 'Observación no encontrada');
+      const saved = data as SavedRegion;
+      if (saved.detector == null) throw new Error('La observación no tiene detector seleccionado');
+      const params = {
+        ra: String(saved.ra_deg), dec: String(saved.dec_deg),
+        size: String(saved.fov_arcmin), detector: String(saved.detector), demo: false,
+      };
+      setRa(params.ra); setDec(params.dec); setSize(params.size);
+      setDetector(params.detector); setDemo(false); setOpenedObservationId(id);
+      if (pushUrl) window.history.pushState({}, '', `/?observation_id=${encodeURIComponent(id)}`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await startSearch(params);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo abrir la región compartida');
+    }
+  }
+
+  async function startSearch(override?: { ra: string; dec: string; size: string; detector: string; demo: boolean }) {
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
     setLoading(true); setError(''); setSearchResult(null); setFrames({}); setSelected(0);
     setPlaying(false); setBlink(false);
     try {
-      const q = new URLSearchParams({ ra, dec, size_arcmin: size, detector, max_frames: '12', demo: String(demo) });
+      const config = override ?? { ra, dec, size, detector, demo };
+      const q = new URLSearchParams({ ra: config.ra, dec: config.dec,
+        size_arcmin: config.size, detector: config.detector,
+        max_frames: '12', demo: String(config.demo) });
       const result = await fetch(`${API}/search?${q}`, { signal: controller.signal });
       const data = await result.json();
       if (!result.ok) throw new Error(data.detail || 'No se pudo consultar IRSA');
@@ -117,7 +157,7 @@ export default function App() {
               </select></label>
             </div>
             <div className="option-row"><div><strong>Modo de prueba</strong><span>Fotogramas sintéticos (sin datos NASA)</span></div><input type="checkbox" checked={demo} onChange={e => setDemo(e.target.checked)}/></div>
-            <button className="primary" onClick={startSearch} disabled={loading}>
+            <button className="primary" onClick={() => void startSearch()} disabled={loading}>
               {loading ? <LoaderCircle className="spin" size={17}/> : <Search size={17}/>} {loading ? 'Consultando y cargando…' : demo ? 'Probar animación' : 'Buscar en IRSA'}
             </button>
             <div className="section-separator"/>
@@ -129,7 +169,7 @@ export default function App() {
           </aside>
 
           <section className="panel viewer-panel">
-            <div className="viewer-heading"><div><span className="viewer-title">VISUALIZADOR CELESTE</span><h2>{searchResult ? `${searchResult.ra.toFixed(5)}° / ${searchResult.dec.toFixed(5)}°` : 'Selecciona una región del cielo'}</h2></div>
+            <div className="viewer-heading"><div><span className="viewer-title">VISUALIZADOR CELESTE{openedObservationId ? ' · REGIÓN COMPARTIDA' : ''}</span><h2>{searchResult ? `${searchResult.ra.toFixed(5)}° / ${searchResult.dec.toFixed(5)}°` : 'Selecciona una región del cielo'}</h2></div>
               <span className={`source-badge ${searchResult?.source === 'simulated' ? 'sim' : ''}`}>{!searchResult ? 'SIN DATOS' : searchResult.source === 'simulated' ? 'SIMULACIÓN' : 'IRSA · DR1/QR3'}</span>
             </div>
             <div className="sky-container">
@@ -172,6 +212,7 @@ export default function App() {
           </aside>
         </div>
         {error && <div className="error"><CircleAlert size={18}/>{error}</div>}
+        <CommunityFeed onOpenObservation={id => { void openSavedObservation(id); }} />
         <footer>Visualización experimental independiente · Datos SPHEREx cortesía de NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>
       </main>
     </div>
