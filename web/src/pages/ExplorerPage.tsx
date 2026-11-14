@@ -47,6 +47,7 @@ export default function ExplorerPage({
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const controller = useRef<AbortController | null>(null);
+  const remoteJob = useRef<string | null>(null);
   const available = useMemo(
     () => Object.keys(frames).map(Number).sort((a, b) => a - b),
     [frames],
@@ -64,10 +65,17 @@ export default function ExplorerPage({
     return () => window.clearInterval(interval);
   }, [playing, fps, available]);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => {
+    controller.current?.abort();
+    if (remoteJob.current) void api.cancelSkyJob(remoteJob.current).catch(() => {});
+  }, []);
 
   const load = useCallback(async (params: Params) => {
     controller.current?.abort();
+    if (remoteJob.current) {
+      void api.cancelSkyJob(remoteJob.current).catch(() => {});
+      remoteJob.current = null;
+    }
     const request = new AbortController();
     controller.current = request;
     const startedAt = Date.now();
@@ -100,7 +108,52 @@ export default function ExplorerPage({
 
     try {
       const catalogStartedAt = Date.now();
-      const search = await api.searchSky(params, request.signal);
+      let search: SkySearch;
+      if (params.demo) {
+        search = await api.searchSky(params, request.signal);
+      } else {
+        // IRSA sync TAP has a five-minute hard limit. Submit /TAP/async
+        // and poll short requests instead of keeping /api/search open.
+        const started = await api.startSkyJob(params, request.signal);
+        if (request.signal.aborted) return;
+        remoteJob.current = started.job_id;
+        updateTrace(old => ({ ...old, remotePhase: started.phase }));
+        while (true) {
+          if (request.signal.aborted) return;
+          const snapshot = await api.pollSkyJob(started.job_id, request.signal);
+          if (request.signal.aborted) return;
+          updateTrace(old => ({ ...old, remotePhase: snapshot.phase }));
+          if (snapshot.phase === 'COMPLETED') {
+            if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
+            search = snapshot.result;
+            remoteJob.current = null;
+            // Results are registered as a separate in-memory image session.
+            // Releasing the remote TAP job does not remove that image session.
+            void api.cancelSkyJob(started.job_id).catch(() => {});
+            break;
+          }
+          if (snapshot.phase === 'ERROR' || snapshot.phase === 'ABORTED') {
+            throw new Error(snapshot.error ?? 'El trabajo TAP terminó sin resultados');
+          }
+          if (Date.now() - catalogStartedAt > 15 * 60_000) {
+            throw new Error('El catálogo continúa procesando tras 15 minutos. Cancela o repite la búsqueda.');
+          }
+          // Abortable polling delay: cancelling does not wait for the timer.
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => {
+              request.signal.removeEventListener('abort', onAbort);
+              resolve();
+            }, 2500);
+            const onAbort = () => {
+              window.clearTimeout(timer);
+              request.signal.removeEventListener('abort', onAbort);
+              reject(new DOMException('Búsqueda cancelada', 'AbortError'));
+            };
+            request.signal.addEventListener('abort', onAbort, { once: true });
+            if (request.signal.aborted) onAbort();
+          });
+        }
+      }
       if (request.signal.aborted) return;
       const catalogMs = Date.now() - catalogStartedAt;
       setResult(search);
@@ -190,6 +243,10 @@ export default function ExplorerPage({
         if (successes >= 2) setPlaying(true);
       }
     } catch (cause) {
+      if (remoteJob.current) {
+        void api.cancelSkyJob(remoteJob.current).catch(() => {});
+        remoteJob.current = null;
+      }
       if (!request.signal.aborted) {
         const detail = frameErrorMessage(cause);
         setError(detail);
@@ -205,6 +262,10 @@ export default function ExplorerPage({
   function cancelSearch() {
     if (!controller.current || controller.current.signal.aborted) return;
     controller.current.abort();
+    if (remoteJob.current) {
+      void api.cancelSkyJob(remoteJob.current).catch(() => {});
+      remoteJob.current = null;
+    }
     setLoading(false);
     setPlaying(false);
     setTrace(previous => previous && ['catalog', 'frames'].includes(previous.phase)
@@ -354,6 +415,7 @@ export default function ExplorerPage({
     marks_local_only: marks,
     client_progress: trace && {
       phase: trace.phase,
+      remote_phase: trace.remotePhase,
       catalog_ms: trace.catalogMs,
       count: trace.count,
       frames: trace.frames,

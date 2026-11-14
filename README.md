@@ -209,6 +209,12 @@ Durante una búsqueda, el explorador muestra un panel **Estado de la consulta**:
 - No se exponen secretos, URL internas de FITS ni tokens en el panel. La tabla de tiempos se puede desplegar para diagnosticar demoras.
 - El modo demo continúa siendo explícito; los errores de IRSA no se sustituyen silenciosamente por imágenes sintéticas.
 
-**Limitación actual:** no hay tareas asíncronas persistentes ni WebSocket/SSE desde el servidor. El navegador puede medir cuándo solicita y recibe cada resultado, pero no puede conocer los subpasos internos de `/api/search` o `/api/frame` antes de que respondan. Para telemetría de descarga/reproyección en tiempo real habría que introducir una cola de tareas y un endpoint de eventos.
+**Consulta TAP asíncrona (corrección del timeout):** el explorador utiliza `POST /api/search/jobs` para iniciar un trabajo de IRSA TAP `/async`, luego `GET /api/search/jobs/{job_id}` cada 2,5 segundos para conocer `QUEUED`, `EXECUTING` o `COMPLETED`. Solo después descarga los fotogramas. La llamada síncrona `GET /api/search` se mantiene por compatibilidad, pero IRSA impone un límite oficial de 5 minutos a TAP `/sync`.
+
+**Cancelación:** `DELETE /api/search/jobs/{job_id}` intenta abortar y eliminar el trabajo remoto; libera también su identificador local. Las búsquedas completadas crean una sesión separada para visualizar sus fotogramas.
+
+**Limitación actual:** los identificadores de trabajos y las sesiones de imagen están en memoria del proceso Railway, **no** en una cola persistente/Redis/PostgreSQL. Un reinicio, múltiples réplicas o una expiración (30 min) pueden perder el estado local. Tampoco hay WebSocket/SSE que exponga los subpasos internos de descarga y reproyección de un FITS. Para lanzamiento público se necesita persistencia de trabajos, rate limiting y limpieza robusta de trabajos remotos.
+
+**Pruebas:** `server/tests/test_async_tap.py` usa un TAP simulado sin tráfico de red. La CI comprueba el contrato de inicio, polling, completado, fallo y cancelación, pero la disponibilidad real de IRSA debe verificarse manualmente.
 
 **Flujo de ramas:** desarrollar la mejora en `feat/irsa-search-progress`, ejecutar CI y revisarla mediante un PR contra `main` antes del merge. El servicio de Railway sigue `main`, no la rama de trabajo.

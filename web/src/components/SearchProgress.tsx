@@ -19,6 +19,7 @@ export type SearchTrace = {
   frames: FrameTrace[];
   catalogError?: string;
   finishedAt?: number;
+  remotePhase?: string;
 };
 
 function duration(ms: number): string {
@@ -85,7 +86,7 @@ export default function SearchProgress({
         <Marker done={catalogDone} bad={catalogBad} active={catalogActive}/>
         <div>
           <b>1. Catálogo {trace.source === 'irsa' ? 'NASA/IPAC IRSA' : 'de demostración'}</b>
-          <p>{catalogActive ? 'Esperando respuesta de /api/search. El servidor consulta el catálogo TAP; no transmite porcentajes internos.' :
+          <p>{catalogActive ? (trace.remotePhase ? `Trabajo TAP asíncrono: ${trace.remotePhase}. Consultando IRSA cada 2,5 s.` : 'Enviando consulta al catálogo TAP…') :
             catalogBad ? (trace.catalogError ?? 'La consulta no devolvió resultados válidos.') :
             catalogDone ? `${trace.totalMatches ?? 0} coincidencias encontradas · ${duration(trace.catalogMs!)}` :
             'Pendiente'}</p>

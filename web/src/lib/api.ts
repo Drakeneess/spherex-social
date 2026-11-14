@@ -132,6 +132,16 @@ export const api = {
     });
     return get<SkySearch>(`/api/search?${query}`,false,signal);
   },
+  startSkyJob: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
+    request<{job_id:string;phase:string}>('/api/search/jobs',{
+      method:'POST',
+      body:JSON.stringify({ra:data.ra,dec:data.dec,size_arcmin:data.size,
+        detector:data.detector,max_frames:data.frames}),
+    },false,signal),
+  pollSkyJob: (id:string,signal?:AbortSignal) =>
+    get<{phase:string;result?:SkySearch;error?:string}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
+  cancelSkyJob: (id:string) =>
+    request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
   frame: (id:string,index:number,signal?:AbortSignal) =>
     get<SkyFrame>(`/api/frame/${encodeURIComponent(id)}/${index}`,false,signal),
 };

@@ -12,6 +12,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
@@ -22,6 +23,7 @@ from astropy.time import Time
 from astropy.wcs import WCS
 from astroquery.ipac.irsa import Irsa
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw
 from reproject import reproject_interp
@@ -65,6 +67,33 @@ class Session:
 _sessions: dict[str, Session] = {}
 _lock = threading.RLock()
 
+TAP_JOB_SECONDS = 1800
+MAX_TAP_JOBS = 12
+
+
+@dataclass
+class TapSearchJob:
+    ra: float
+    dec: float
+    size_arcmin: float
+    detector: int
+    max_frames: int
+    remote: Any
+    created_at: float = field(default_factory=time.monotonic)
+    result: dict | None = None
+
+
+_tap_jobs: dict[str, TapSearchJob] = {}
+
+
+class SearchStart(BaseModel):
+    ra: float = Field(default=133.795129, ge=0, lt=360, allow_inf_nan=False)
+    dec: float = Field(default=-7.245147, ge=-90, le=90, allow_inf_nan=False)
+    size_arcmin: float = Field(default=6, ge=1, le=12, allow_inf_nan=False)
+    detector: int = Field(default=2, ge=1, le=6)
+    max_frames: int = Field(default=12, ge=2, le=MAX_FRAMES)
+
+
 
 def evenly_spaced(items: list, limit: int) -> list:
     """Select first, last and evenly-spaced observations in between."""
@@ -88,11 +117,11 @@ def ensure_irsa_cutout_url(url: str) -> bool:
     )
 
 
-def search_irsa(ra: float, dec: float, size_arcmin: float, detector: int) -> list[dict]:
-    # ADQL query follows the official IRSA SPHEREx Cutouts notebook.
+def make_irsa_query(ra: float, dec: float, size_arcmin: float, detector: int) -> str:
+    """ADQL query based on IRSA SPHEREx Cutouts documentation."""
     size_deg = size_arcmin / 60
     bandpass = f"SPHEREx-D{detector}"
-    query = f"""
+    return f"""
         SELECT
           'https://irsa.ipac.caltech.edu/' || a.uri ||
           '?center={ra},{dec}d&size={size_deg}' AS uri,
@@ -103,7 +132,9 @@ def search_irsa(ra: float, dec: float, size_arcmin: float, detector: int) -> lis
           AND p.energy_bandpassname = '{bandpass}'
         ORDER BY p.time_bounds_lower
     """
-    table = Irsa.query_tap(query)
+
+
+def records_from_tap(table) -> list[dict]:
     result = []
     seen = set()
     for row in table:
@@ -116,7 +147,29 @@ def search_irsa(ra: float, dec: float, size_arcmin: float, detector: int) -> lis
             continue
         release = "DR1" if "/dr1/" in url else "QR3"
         result.append({"url": url, "mjd": mjd, "date": Time(mjd, format="mjd").isot, "release": release})
-    return sorted(result, key=lambda rec: rec["mjd"])
+    return sorted(result, key=lambda record: record["mjd"])
+
+
+def search_irsa(ra: float, dec: float, size_arcmin: float, detector: int) -> list[dict]:
+    # Legacy synchronous endpoint, kept for backwards compatibility.
+    return records_from_tap(Irsa.query_tap(make_irsa_query(ra, dec, size_arcmin, detector)))
+
+
+def make_search_result(ra: float, dec: float, size_arcmin: float,
+                       detector: int, max_frames: int, source: str,
+                       all_records: list[dict]) -> dict:
+    records = evenly_spaced(all_records, max_frames)
+    session = Session(ra, dec, size_arcmin, detector, records, source)
+    token = register_session(session)
+    return {
+        "search_id": token, "source": source, "total_matches": len(all_records),
+        "count": len(records), "ra": ra, "dec": dec, "detector": detector,
+        "observations": [
+            {"index": i, "date": record["date"], "release": record["release"],
+             "mjd": record["mjd"]}
+            for i, record in enumerate(records)
+        ],
+    }
 
 
 def demo_records() -> list[dict]:
@@ -248,15 +301,87 @@ def search(
         all_records = demo_records() if demo else search_irsa(ra, dec, size_arcmin, detector)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"IRSA query failed: {type(exc).__name__}") from exc
-    records = evenly_spaced(all_records, max_frames)
-    source = "simulated" if demo else "irsa"
-    session = Session(ra, dec, size_arcmin, detector, records, source)
-    token = register_session(session)
-    return {"search_id": token, "source": source, "total_matches": len(all_records),
-            "count": len(records), "ra": ra, "dec": dec, "detector": detector,
-            "observations": [{"index": i, "date": r["date"], "release": r["release"],
-                              "mjd": r["mjd"]} for i, r in enumerate(records)]}
+    return make_search_result(ra, dec, size_arcmin, detector, max_frames,
+                              "simulated" if demo else "irsa", all_records)
 
+
+
+def get_tap_job(ticket: str) -> TapSearchJob:
+    with _lock:
+        job = _tap_jobs.get(ticket)
+    if job is None or time.monotonic() - job.created_at > TAP_JOB_SECONDS:
+        raise HTTPException(status_code=404, detail="Search job not found or expired")
+    return job
+
+
+@app.post("/api/search/jobs", status_code=202)
+def start_search_job(params: SearchStart):
+    """Submit IRSA TAP /async, not the five-minute synchronous endpoint."""
+    with _lock:
+        # Do not perform network calls while holding the shared lock.
+        for key in list(_tap_jobs):
+            if time.monotonic() - _tap_jobs[key].created_at > TAP_JOB_SECONDS:
+                del _tap_jobs[key]
+        if len(_tap_jobs) >= MAX_TAP_JOBS:
+            raise HTTPException(status_code=429, detail="Too many active searches; try again later")
+    query = make_irsa_query(params.ra, params.dec, params.size_arcmin, params.detector)
+    try:
+        remote = Irsa.tap.submit_job(query, maxrec=5000)
+        remote.run()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"IRSA TAP job submission failed: {type(exc).__name__}") from exc
+    ticket = secrets.token_urlsafe(24)
+    with _lock:
+        _tap_jobs[ticket] = TapSearchJob(params.ra, params.dec, params.size_arcmin,
+                                        params.detector, params.max_frames, remote)
+    return JSONResponse({"job_id": ticket, "phase": "QUEUED"}, status_code=202,
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/search/jobs/{ticket}")
+def poll_search_job(ticket: str):
+    """One short remote phase check per call; no long-held browser connection."""
+    job = get_tap_job(ticket)
+    with _lock:
+        if job.result is not None:
+            return {"phase": "COMPLETED", "result": job.result}
+    try:
+        phase = str(job.remote.phase).upper()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"IRSA TAP phase check failed: {type(exc).__name__}") from exc
+    if phase in ("PENDING", "QUEUED", "EXECUTING", "HELD", "SUSPENDED", "UNKNOWN"):
+        return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
+    if phase in ("ERROR", "ABORTED"):
+        return JSONResponse({"phase": phase, "error": "IRSA could not complete the catalog query"},
+                            headers={"Cache-Control": "no-store"})
+    if phase != "COMPLETED":
+        return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
+    try:
+        records = records_from_tap(job.remote.fetch_result())
+        result = make_search_result(job.ra, job.dec, job.size_arcmin,
+                                    job.detector, job.max_frames, "irsa", records)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"IRSA TAP result retrieval failed: {type(exc).__name__}") from exc
+    with _lock:
+        if job.result is None:
+            job.result = result
+        return {"phase": "COMPLETED", "result": job.result}
+
+
+@app.delete("/api/search/jobs/{ticket}", status_code=204)
+def cancel_search_job(ticket: str):
+    job = get_tap_job(ticket)
+    with _lock:
+        _tap_jobs.pop(ticket, None)
+    try:
+        job.remote.abort()
+    except Exception:
+        pass
+    try:
+        job.remote.delete()
+    except Exception:
+        pass
+    return None
 
 @app.get("/api/frame/{search_id}/{index}")
 def frame(search_id: str, index: int):
