@@ -196,3 +196,19 @@ La vista **Explorar** está adaptada a la composición de `INT.html`, con un vis
 - La búsqueda y los recortes SPHEREx son **quicklooks orientativos**, no fotometría calibrada ni una detección confirmada.
 
 Para comprobarlo: `cd web; npm run dev` y abrir `http://127.0.0.1:5173/#/explore`. Primero probar `Modo demo API`, después desactivarlo para consultar IRSA si el servicio dispone de imágenes para esas coordenadas.
+
+
+## Observabilidad de búsquedas IRSA — rama `feat/irsa-search-progress`
+
+Durante una búsqueda, el explorador muestra un panel **Estado de la consulta**:
+
+- Catálogo (`GET /api/search`): tiempo transcurrido y duración real observada por el navegador. Mientras la API consulta IRSA/TAP, **no inventamos porcentajes**.
+- Fotogramas (`GET /api/frame/{search_id}/{index}`): cantidad en cola, en curso, recibida o fallida, y duración de cada solicitud; el avance `X/Y` representa **respuestas finalizadas**, no progreso interno de Astropy/FITS.
+- Visor: número de imágenes ya recibidas que pueden seleccionarse; una falla parcial no borra las otras épocas.
+- **Cancelar búsqueda** interrumpe las peticiones del navegador mediante `AbortController`. Un procesamiento ya iniciado puede seguir brevemente en Railway porque FastAPI trabaja de forma síncrona.
+- No se exponen secretos, URL internas de FITS ni tokens en el panel. La tabla de tiempos se puede desplegar para diagnosticar demoras.
+- El modo demo continúa siendo explícito; los errores de IRSA no se sustituyen silenciosamente por imágenes sintéticas.
+
+**Limitación actual:** no hay tareas asíncronas persistentes ni WebSocket/SSE desde el servidor. El navegador puede medir cuándo solicita y recibe cada resultado, pero no puede conocer los subpasos internos de `/api/search` o `/api/frame` antes de que respondan. Para telemetría de descarga/reproyección en tiempo real habría que introducir una cola de tareas y un endpoint de eventos.
+
+**Flujo de ramas:** desarrollar la mejora en `feat/irsa-search-progress`, ejecutar CI y revisarla mediante un PR contra `main` antes del merge. El servicio de Railway sigue `main`, no la rama de trabajo.

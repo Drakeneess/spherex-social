@@ -3,6 +3,7 @@ import { Database, LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucid
 import { api, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
+import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 
 const presets = [
   { name: 'WISE 0855', ra: 133.795129, dec: -7.245147 },
@@ -39,6 +40,7 @@ export default function ExplorerPage({
   const [compare, setCompare] = useState(false);
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
+  const [trace, setTrace] = useState<SearchTrace | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -68,7 +70,12 @@ export default function ExplorerPage({
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
+    const startedAt = Date.now();
     setLoading(true);
+    setTrace({
+      phase: 'catalog', startedAt,
+      source: params.demo ? 'simulated' : 'irsa', frames: [],
+    });
     setPlaying(false);
     setCompare(false);
     setPosition(0);
@@ -79,11 +86,35 @@ export default function ExplorerPage({
     setSavedId(null);
     setNotice('');
     setError('');
+
+    const frameErrorMessage = (cause: unknown) =>
+      cause instanceof Error ? cause.message.slice(0, 220) : 'Error inesperado';
+
+    // Ignore stale state changes if a newer search replaced this request.
+    const updateTrace = (fn: (old: SearchTrace) => SearchTrace) => {
+      if (request.signal.aborted) return;
+      setTrace(previous =>
+        previous && previous.startedAt === startedAt ? fn(previous) : previous
+      );
+    };
+
     try {
+      const catalogStartedAt = Date.now();
       const search = await api.searchSky(params, request.signal);
       if (request.signal.aborted) return;
+      const catalogMs = Date.now() - catalogStartedAt;
       setResult(search);
       setActiveParams(params);
+      updateTrace(previous => ({
+        ...previous,
+        phase: search.count > 0 ? 'frames' : 'empty',
+        catalogMs,
+        totalMatches: search.total_matches,
+        count: search.count,
+        frames: Array.from({ length: search.count }, (_, index) =>
+          ({ index, status: 'pending' as const })),
+        ...(search.count === 0 ? { finishedAt: Date.now() } : {}),
+      }));
       if (search.count === 0) {
         setNotice('IRSA no devolvió épocas para este campo y detector.');
         return;
@@ -91,20 +122,52 @@ export default function ExplorerPage({
       let cursor = 0;
       const failures: number[] = [];
       let successes = 0;
-      // Bounded concurrency limits downloads and allows rendering frames as
-      // they arrive; a single bad cutout must not discard the other epochs.
+
+      // At most three independent /api/frame requests. The backend sends
+      // completed PNGs, not intermediate FITS-processing events.
       const worker = async () => {
         while (!request.signal.aborted) {
           const index = cursor++;
           if (index >= search.count) return;
+          const frameStartedAt = Date.now();
+          updateTrace(previous => ({
+            ...previous,
+            frames: previous.frames.map(frame =>
+              frame.index === index
+                ? { ...frame, status: 'loading', startedAt: frameStartedAt }
+                : frame
+            ),
+          }));
           try {
             const frame = await api.frame(search.search_id, index, request.signal);
             if (!request.signal.aborted) {
               setFrames(previous => ({ ...previous, [index]: frame }));
               successes += 1;
+              updateTrace(previous => ({
+                ...previous,
+                frames: previous.frames.map(entry =>
+                  entry.index === index
+                    ? { ...entry, status: 'ready', durationMs: Date.now() - frameStartedAt }
+                    : entry
+                ),
+              }));
             }
-          } catch {
-            if (!request.signal.aborted) failures.push(index);
+          } catch (cause) {
+            if (!request.signal.aborted) {
+              failures.push(index);
+              updateTrace(previous => ({
+                ...previous,
+                frames: previous.frames.map(entry =>
+                  entry.index === index
+                    ? {
+                      ...entry, status: 'failed',
+                      durationMs: Date.now() - frameStartedAt,
+                      error: frameErrorMessage(cause),
+                    }
+                    : entry
+                ),
+              }));
+            }
           }
         }
       };
@@ -112,22 +175,43 @@ export default function ExplorerPage({
         Array.from({ length: Math.min(3, search.count) }, () => worker()),
       );
       if (request.signal.aborted) return;
+
+      updateTrace(previous => ({
+        ...previous,
+        phase: successes === 0 ? 'failed' : failures.length ? 'partial' : 'complete',
+        finishedAt: Date.now(),
+      }));
       if (successes === 0) {
-        setError('No se pudo cargar ninguna imagen. Consulta los datos técnicos o realiza otra búsqueda.');
+        setError('No se pudo cargar ninguna imagen. Abre el detalle por época para ver los errores de cada solicitud.');
       } else {
         if (failures.length) {
-          setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Se reproducirán las disponibles.`);
+          setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Puedes consultar las disponibles.`);
         }
         if (successes >= 2) setPlaying(true);
       }
     } catch (cause) {
       if (!request.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : 'No se pudo consultar IRSA');
+        const detail = frameErrorMessage(cause);
+        setError(detail);
+        updateTrace(previous => ({
+          ...previous, phase: 'failed', catalogError: detail, finishedAt: Date.now(),
+        }));
       }
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
   }, []);
+
+  function cancelSearch() {
+    if (!controller.current || controller.current.signal.aborted) return;
+    controller.current.abort();
+    setLoading(false);
+    setPlaying(false);
+    setTrace(previous => previous && ['catalog', 'frames'].includes(previous.phase)
+      ? { ...previous, phase: 'cancelled', finishedAt: Date.now() }
+      : previous);
+    setNotice('Solicitud cancelada desde el navegador; las imágenes ya recibidas siguen disponibles.');
+  }
 
   useEffect(() => {
     if (!observationId) return;
@@ -268,6 +352,13 @@ export default function ExplorerPage({
     },
     loaded_epochs: available,
     marks_local_only: marks,
+    client_progress: trace && {
+      phase: trace.phase,
+      catalog_ms: trace.catalogMs,
+      count: trace.count,
+      frames: trace.frames,
+      elapsed_ms: (trace.finishedAt ?? Date.now()) - trace.startedAt,
+    },
   } : null;
 
   return <main className="wrap single epoch-explorer">
@@ -342,7 +433,7 @@ export default function ExplorerPage({
             </div>
             <button className="btn p full" disabled={loading} type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
-              {loading ? 'Consultando IRSA…' : 'Buscar'}
+              {loading ? 'Procesando búsqueda…' : 'Buscar'}
             </button>
           </form>
           <div className="epoch-secondary-actions">
@@ -357,6 +448,7 @@ export default function ExplorerPage({
             <pre>{technical ? JSON.stringify(technical, null, 2) : '–'}</pre>
           </details>
         </section>
+        <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}/>
         <div className="epoch-science-note">
           Las búsquedas reales consultan NASA/IPAC IRSA. Elegir un detector no equivale a seleccionar una banda monocromática.
           Las marcas y los fotogramas no se guardan en PostgreSQL.
