@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import math
 import secrets
 import threading
@@ -27,6 +28,8 @@ from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw
 from reproject import reproject_interp
+
+logger = logging.getLogger("astrogram.irsa")
 
 app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.6.0")
 
@@ -329,6 +332,7 @@ def start_search_job(params: SearchStart):
         remote = Irsa.tap.submit_job(query, maxrec=5000)
         remote.run()
     except Exception as exc:
+        logger.exception("IRSA TAP async submit/run failed")
         raise HTTPException(status_code=502, detail=f"IRSA TAP job submission failed: {type(exc).__name__}") from exc
     ticket = secrets.token_urlsafe(24)
     with _lock:
@@ -348,6 +352,7 @@ def poll_search_job(ticket: str):
     try:
         phase = str(job.remote.phase).upper()
     except Exception as exc:
+        logger.exception("IRSA TAP async phase check failed")
         raise HTTPException(status_code=502, detail=f"IRSA TAP phase check failed: {type(exc).__name__}") from exc
     if phase in ("PENDING", "QUEUED", "EXECUTING", "HELD", "SUSPENDED", "UNKNOWN"):
         return JSONResponse({"phase": phase}, headers={"Cache-Control": "no-store"})
@@ -361,6 +366,7 @@ def poll_search_job(ticket: str):
         result = make_search_result(job.ra, job.dec, job.size_arcmin,
                                     job.detector, job.max_frames, "irsa", records)
     except Exception as exc:
+        logger.exception("IRSA TAP async result retrieval failed")
         raise HTTPException(status_code=502, detail=f"IRSA TAP result retrieval failed: {type(exc).__name__}") from exc
     with _lock:
         if job.result is None:
