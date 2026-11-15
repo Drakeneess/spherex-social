@@ -502,6 +502,6 @@ def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
 
     # A request without a token must reach the notification endpoint and
     # respond 401 (not the 404 that triggered this regression).
-    with TestClient(deployed_app, raise_server_exceptions=True) as client:
-        assert client.get('/v1/users/me/notifications').status_code == 401
-        assert client.get('/v1/users/me/notifications/count').status_code == 401
+    client = TestClient(deployed_app, raise_server_exceptions=True)
+    assert client.get('/v1/users/me/notifications').status_code == 401
+    assert client.get('/v1/users/me/notifications/count').status_code == 401
