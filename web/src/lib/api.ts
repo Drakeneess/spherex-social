@@ -96,6 +96,16 @@ export type SkySearch = {
   ra: number; dec: number; detector: number;
   observations: {index: number;date: string;release: string;mjd: number}[];
 };
+export type MotionCandidate = {
+  id:string;score:number;support:number;span_days:number;shift_px:number;
+  motion_arcsec_day:number;fit_rms_px:number;ra_deg:number;dec_deg:number;
+  detections:{index:number;mjd:number;x:number;y:number;snr_proxy:number}[];
+};
+export type SkyCandidateSearch = {
+  job_id:string;method:string;frames_total:number;frames_used:number;frames_skipped:number;
+  status:'candidates'|'no_candidates'|'insufficient';message:string;
+  candidates:MotionCandidate[];limitations:string[];
+};
 export type PersistentSkyJob = {
   job_id: string;
   status: 'queued' | 'catalog' | 'frames' | 'complete' | 'partial' | 'empty' | 'failed' | 'cancelled';
@@ -371,6 +381,8 @@ export const api = {
         detector:data.detector,max_frames:data.frames,demo:data.demo,
       }),
     },false,signal),
+  getSkyCandidates: (jobId:string,signal?:AbortSignal) =>
+    get<SkyCandidateSearch>(`/api/sky/jobs/${encodeURIComponent(jobId)}/candidates`,false,signal),
   getPersistentSkyJob: (jobId:string,signal?:AbortSignal) =>
     get<PersistentSkyJob>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,false,signal),
   getPersistentSkyFrame: (jobId:string,index:number,signal?:AbortSignal) =>

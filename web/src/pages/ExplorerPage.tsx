@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
+import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch, type MotionCandidate, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import { REALTIME_EVENT, skyJobStreamActive, startRealtime, subscribeRealtime } from '../lib/realtime';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
@@ -8,6 +8,7 @@ import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
+import CandidateFinder from '../components/CandidateFinder';
 import ZodiacChart from '../components/ZodiacChart';
 import { getZodiacAtlas, type SkyPoint } from '../lib/zodiacAtlas';
 
@@ -70,6 +71,7 @@ export default function ExplorerPage({
   const [revealRecipe,setRevealRecipe] = useState<RevealRecipe>({...DEFAULT_REVEAL});
   const [revealEnabled,setRevealEnabled] = useState(true);
   const [skyState,setSkyState] = useState<PersistentSkyJob|null>(null);
+  const [selectedCandidate,setSelectedCandidate] = useState<MotionCandidate|null>(null);
   const [restoring,setRestoring] = useState(false);
 
   const controller = useRef<AbortController | null>(null);
@@ -128,6 +130,7 @@ export default function ExplorerPage({
     setResult(null);
     setFrames({});
     setSkyState(null);
+    setSelectedCandidate(null);
     setRevealRecipe({...DEFAULT_REVEAL});
     setRevealEnabled(true);
     setActiveParams(params);
@@ -586,6 +589,22 @@ export default function ExplorerPage({
           {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
 
         </section>
+        {skyState && !skyState.query.demo && result &&
+          <CandidateFinder jobId={skyState.job_id}
+            ready={skyState.status==='complete'||skyState.status==='partial'}
+            epochsAvailable={skyState.frames.filter(item=>
+              item.status==='ready'&&item.raw_available).length}
+            selectedId={selectedCandidate?.id??null}
+            onSelect={candidate=>{
+              setSelectedCandidate(candidate);setPlaying(false);
+              if(candidate?.detections.length){
+                setPosition(candidate.detections[0].index);
+                document.querySelector('[data-tour="explore-canvas"]')?.scrollIntoView({
+                  behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+                  block:'center',
+                });
+              }
+            }}/>}
         {result?.source !== 'simulated' && result && <RevealEditor
           active={active} jobId={activeJobId.current}
           index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
