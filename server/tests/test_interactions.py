@@ -499,12 +499,18 @@ expected = {
     ('POST', '/v1/users/me/notifications/read-all'),
     ('POST', '/v1/users/me/notifications/{notification_id}/read'),
 }
-for app in (deployed, standalone):
+for name, app in (('railway', deployed), ('standalone', standalone)):
     routes = {
         (method, route.path)
         for route in app.routes
         for method in getattr(route, 'methods', ())
     }
+    if not expected.issubset(routes):
+        from social_api.notifications import router as source_router
+        print('DEBUG ENTRYPOINT:', name,
+              'all routes:', [(r.path, list(getattr(r,'methods',[]))) for r in app.routes],
+              'notification router:', [(r.path,list(getattr(r,'methods',[]))) for r in source_router.routes],
+              flush=True)
     assert expected.issubset(routes), f'Missing notification routes: {expected-routes}'
 # An unauthenticated request must reach the router and return 401,
 # not the 404 that was returned in the deployed application.
