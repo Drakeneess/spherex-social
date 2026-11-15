@@ -85,7 +85,6 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
         <button type="submit" className="btn p full" disabled={busy}>{busy?'Conectando…':mode==='register'?'Crear cuenta':'Entrar'}</button>
       </form>
       <button type="button" className="auth-explore" onClick={onExplore}>Explorar el cielo sin cuenta →</button>
-      <p className="conn"><b>● API AstroGram</b> · conectada a FastAPI y PostgreSQL</p>
     </section>
   </div>;
 }
@@ -199,7 +198,6 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish}:{
         <Avatar name={user.username} size={48}/>
         <span className="mini-profile-details"><b>{user.display_name}</b><small>@{user.username}</small></span>
       </button>
-      <p className="conn live"><b>● API conectada</b> · publicaciones reales</p>
       <p className="feed-disclaimer">Las publicaciones con observación muestran vistas reales preliminares de SPHEREx cuando hay al menos dos épocas. El parpadeo no confirma por sí solo movimiento propio.</p>
     </aside>
   </div>;
