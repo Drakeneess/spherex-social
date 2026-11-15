@@ -95,8 +95,6 @@ export default function ProfileEditor({user,onUpdate}:{
     finally{setBusy(null);}
   }
 
-  const avatarPreview=preview?.kind==='avatar'?preview.url:
-    user.avatar_version?api.profileMediaUrl(user.username,'avatar',user.avatar_version):null;
   const coverPreview=preview?.kind==='cover'?preview.url:
     user.cover_version?api.profileMediaUrl(user.username,'cover',user.cover_version):null;
 
