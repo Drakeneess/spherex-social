@@ -409,6 +409,15 @@ export default function App(){
   },[backgroundStatus?.jobId,backgroundStatus?.trace?.phase,
       backgroundStatus?.restored,route.page]);
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
+  useEffect(()=>{
+    const otherTabLogout=(event:StorageEvent)=>{
+      if(event.key!=='astrogram.auth.logout')return;
+      api.clearLocalSession();
+      setUser(null);setPublish(false);setTour(null);go('home');
+    };
+    window.addEventListener('storage',otherTabLogout);
+    return()=>window.removeEventListener('storage',otherTabLogout);
+  },[]);
   // Previous route state must never leave the auth page panned horizontally.
   useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
   useEffect(()=>{

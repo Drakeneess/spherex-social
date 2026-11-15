@@ -239,6 +239,7 @@ export const api = {
     sessionStorage.setItem(TOKEN_KEY, result.access_token);
     return result;
   },
+  clearLocalSession: clearToken,
   // A new browser tab can restore the login using only the HttpOnly cookie.
   async restoreSession() {
     return Boolean(sessionStorage.getItem(TOKEN_KEY)||await renewAccess());
@@ -250,6 +251,9 @@ export const api = {
     });
     if(!response.ok)throw new ApiError('No se pudo cerrar sesión en el servidor',response.status);
     clearToken();
+    // Tell other open tabs to discard their short JWT too. The server has
+    // already revoked this device session, so they cannot silently refresh.
+    try{localStorage.setItem('astrogram.auth.logout',String(Date.now()));}catch{}
   },
   me: () => get<Profile>('/v1/users/me', true),
   patchMe: (data: {display_name?:string;bio?:string|null}) => write<Profile>('PATCH','/v1/users/me',data),
