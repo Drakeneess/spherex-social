@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bell, Bookmark, Check, LogOut, Settings, Users } from 'lucide-react';
+import { Bookmark, Check, LogOut, Settings, Users } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
 import PublishModal, {type PublishRegion} from './components/PublishModal';
 import BrandLogo from './components/BrandLogo';
