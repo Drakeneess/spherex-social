@@ -72,7 +72,9 @@ export default function ZodiacChart({
         aria-label="Cerrar carta estelar"><X size={18}/></button>
     </div>
     <div className="taurus-atlas-body">
-      <div className="taurus-atlas-map">
+      <div className="taurus-atlas-map" tabIndex={0} role="region"
+        aria-label="Mapa de la constelación, desplazable horizontalmente en pantallas pequeñas">
+        <p className="taurus-map-swipe-hint">Desliza el mapa horizontalmente para ver las estrellas y seleccionar una región.</p>
         <svg className="taurus-chart-svg" viewBox="0 0 900 510" role="img"
           aria-label={`Carta interactiva de ${atlas.sign.name}, con estrellas reales de referencia. Pulsa sobre el mapa para seleccionar coordenadas.`}
           onClick={mapClick}>
