@@ -146,3 +146,95 @@ def test_combined_api_exposes_auth():
     assert '/v1/auth/register' in paths
     assert '/v1/auth/login' in paths
     assert '/v1/users/me' in paths
+
+
+def test_persistent_cookie_renews_short_lived_jwt_and_is_http_only(client):
+    from social_api.auth import REFRESH_SECONDS
+    from social_api.models import AuthSession
+    register(client)
+    response = login(client)
+    assert response.status_code == 200
+    cookie = response.headers.get('set-cookie', '')
+    assert 'astrogram_refresh=' in cookie
+    assert 'httponly' in cookie.lower()
+    assert 'samesite=lax' in cookie.lower()
+    assert 'path=/v1/auth' in cookie.lower()
+    assert f'max-age={REFRESH_SECONDS}' in cookie.lower()
+    with Session(engine) as db:
+        entry = db.query(AuthSession).one()
+        assert len(entry.secret_hash) == 64
+        assert entry.secret_hash not in cookie
+    initial_token = response.json()['access_token']
+    first = jwt.decode(initial_token, get_settings().jwt_secret,
+                       algorithms=['HS256'], issuer=get_settings().jwt_issuer,
+                       audience=get_settings().jwt_audience)
+    renewed = client.post('/v1/auth/refresh')
+    assert renewed.status_code == 200, renewed.text
+    assert renewed.json()['expires_in'] == 1800
+    renewed_claims = jwt.decode(renewed.json()['access_token'],
+                               get_settings().jwt_secret,
+                               algorithms=['HS256'], issuer=get_settings().jwt_issuer,
+                               audience=get_settings().jwt_audience)
+    assert first['sid'] == renewed_claims['sid']
+    assert first['jti'] != renewed_claims['jti']
+    assert client.get('/v1/users/me',headers={
+        'Authorization': f"Bearer {renewed.json()['access_token']}",
+    }).status_code == 200
+    with Session(engine) as db:
+        assert db.query(AuthSession).one().last_used_at is not None
+
+
+def test_logout_revokes_server_session_and_existing_access_token(client):
+    from social_api.models import AuthSession
+    register(client)
+    login_response = login(client)
+    token = login_response.json()['access_token']
+    assert client.get('/v1/users/me',headers={
+        'Authorization': f'Bearer {token}',
+    }).status_code == 200
+    assert client.post('/v1/auth/logout').status_code == 204
+    assert client.post('/v1/auth/refresh').status_code == 401
+    assert client.get('/v1/users/me',headers={
+        'Authorization': f'Bearer {token}',
+    }).status_code == 401
+    with Session(engine) as db:
+        assert db.query(AuthSession).count() == 0
+
+
+def test_device_logouts_do_not_revoke_other_sessions(client):
+    register(client)
+    first=login(client)
+    token_a=first.json()['access_token']
+    second=login(client)
+    token_b=second.json()['access_token']
+    assert token_a != token_b
+    assert client.post('/v1/auth/logout').status_code == 204
+    assert client.get('/v1/users/me',headers={
+        'Authorization': f'Bearer {token_b}',
+    }).status_code == 401
+    assert client.get('/v1/users/me',headers={
+        'Authorization': f'Bearer {token_a}',
+    }).status_code == 200
+
+
+def test_expired_session_rejects_refresh_and_stale_jwt(client):
+    from social_api.models import AuthSession
+    register(client)
+    token=login(client).json()['access_token']
+    with Session(engine) as db:
+        entry=db.query(AuthSession).one()
+        entry.expires_at=datetime.now(timezone.utc)-timedelta(seconds=10)
+        db.commit()
+    assert client.post('/v1/auth/refresh').status_code == 401
+    assert client.get('/v1/users/me', headers={
+        'Authorization': f'Bearer {token}',
+    }).status_code == 401
+
+
+def test_refresh_rejects_invalid_cookie_without_creating_device_session(client):
+    from social_api.models import AuthSession
+    client.cookies.set('astrogram_refresh','invalid-cookie',path='/v1/auth')
+    assert client.post('/v1/auth/refresh').status_code == 401
+    assert client.post('/v1/auth/logout').status_code == 204
+    with Session(engine) as db:
+        assert db.query(AuthSession).count() == 0
