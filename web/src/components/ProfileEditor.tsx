@@ -3,6 +3,7 @@ import { CalendarDays, Camera, Check, ExternalLink, ImagePlus, Link2,
   Palette, Save, Trash2, UploadCloud } from 'lucide-react';
 import { api, type Profile } from '../lib/api';
 import { Avatar, updateAvatarCache } from './PostCard';
+import BirthdaySkyReveal from './BirthdaySkyReveal';
 import { signalTask } from '../lib/onboarding';
 import { DEFAULT_COVER, fallbackAvatarColors, PROFILE_PRESETS,
   safeHexColor, themeGradient } from '../lib/profileTheme';
@@ -57,6 +58,7 @@ export default function ProfileEditor({user,onUpdate}:{
   const [success,setSuccess]=useState('');
   const avatarInput=useRef<HTMLInputElement>(null);
   const coverInput=useRef<HTMLInputElement>(null);
+  const birthdayDiscovery=useRef<HTMLDivElement>(null);
   useEffect(()=>{
     const avatar=fallbackAvatarColors(user.username);
     setName(user.display_name);setBio(user.bio??'');setWebsite(user.website??'');
@@ -112,8 +114,13 @@ export default function ProfileEditor({user,onUpdate}:{
         cover_color_start:coverStart,cover_color_end:coverEnd,
         birth_date:birthDate||null,show_birthday:birthDate?showBirthday:false,
       });
+      const isNewBirthday=Boolean(updated.birth_date)&&updated.birth_date!==user.birth_date;
       onUpdate(updated);
       updateAvatarCache(user.username,updated);
+      if(isNewBirthday){
+        window.requestAnimationFrame(()=>
+          birthdayDiscovery.current?.scrollIntoView({behavior:'smooth',block:'center'}));
+      }
       if(updated.bio?.trim())signalTask('bio');
       setSuccess('Cambios guardados en tu perfil.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el perfil.');}
@@ -284,6 +291,10 @@ export default function ProfileEditor({user,onUpdate}:{
             onChange={event=>{setShowBirthday(event.target.checked);setSuccess('');}}/>
           <span>Mostrar mi cumpleaños (solo día y mes) en mi perfil público</span>
         </label>
+        <div ref={birthdayDiscovery}>
+          {user.birth_date&&birthDate===user.birth_date&&
+            <BirthdaySkyReveal birthDate={user.birth_date}/>}
+        </div>
       </section>
       {error&&<p role="alert" className="form-error">{error}</p>}
       {success&&<p role="status" className="success-note"><Check size={17}/>{success}</p>}

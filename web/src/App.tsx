@@ -6,7 +6,7 @@ import BrandLogo from './components/BrandLogo';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { feedSidebarStickyTop } from './lib/sidebarScroll';
-import { resolveSkyName } from './lib/taurus';
+import { constellationForBirthday } from './lib/zodiac';
 import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import ProfileEditor from './components/ProfileEditor';
@@ -26,7 +26,7 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; constellation?:string; target?:string};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; constellation?:string; prefill?:boolean};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
@@ -46,7 +46,7 @@ function parseRoute():Route {
     ra:params.has('ra')?Number(params.get('ra')):undefined,
     dec:params.has('dec')?Number(params.get('dec')):undefined,
     constellation:params.get('constellation')||undefined,
-    target:params.get('target')||undefined};
+    prefill:params.get('prefill')==='1'};
   if(parts[0]==='u'&&parts[1])return {page:'profile',username:parts[1]};
   if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1'};
   if(parts[0]==='settings'||parts[0]==='game'||parts[0]==='saved'||parts[0]==='activity')return {page:parts[0]};
@@ -568,13 +568,8 @@ export default function App(){
   }
   function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
     const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
-    const target=resolveSkyName(term);
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
-    else if(target){
-      const extras=target.type==='target'
-        ?`&target=${encodeURIComponent(target.target.id)}`:'';
-      go(`explore?constellation=taurus${extras}`);
-    }else navigateProfile(term.replace(/^@/,''));
+    else navigateProfile(term.replace(/^@/,''));
     setSearch('');
   }
   if(checking)return <div className="boot-screen"><BrandLogo size={44}/> Conectando con AstroGram…</div>;
@@ -586,9 +581,9 @@ export default function App(){
       : <>
     <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><BrandLogo size={36}/><span>AstroGram</span></button>
       <form className="search" onSubmit={doSearch}><input data-tour="global-search"
-        aria-label="Buscar usuarios, constelaciones, estrellas o coordenadas"
+        aria-label="Buscar usuarios o coordenadas"
         value={search} onChange={e=>setSearch(e.target.value)}
-        placeholder="Buscar personas, Tauro o Aldebarán"/></form>
+        placeholder="Buscar astroamigos"/></form>
       <nav className="nav" aria-label="Navegación principal">
         <button data-tour="nav-home" className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
           <AstroGlyph name="home" size={19}/><span className="t">Inicio</span></button>
@@ -620,8 +615,9 @@ export default function App(){
         observationId={explorerVisible?route.observationId:undefined}
         initialRa={explorerVisible?route.ra:undefined}
         initialDec={explorerVisible?route.dec:undefined}
-        constellation={explorerVisible?route.constellation:undefined}
-        initialTarget={explorerVisible?route.target:undefined}
+        constellation={explorerVisible&&constellationForBirthday(user?.birth_date)?.id==='taurus'
+          ?route.constellation:undefined}
+        prefillOnly={explorerVisible&&Boolean(route.prefill)}
         active={explorerVisible}
         onProgress={setBackgroundStatus}
         onGoHome={()=>go('home')}
