@@ -3,6 +3,7 @@ import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
 import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
+import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
@@ -399,7 +400,7 @@ export default function ExplorerPage({
   return <main className="wrap single epoch-explorer" aria-hidden={!active ? true : undefined}>
     <div className="xgrid epoch-grid">
       <section className="card epoch-viewer">
-        <div className="card-h"><span>🔭 Explorador de épocas</span><span className="chip">{badge}</span></div>
+        <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Explorador de épocas</span><span className="chip">{badge}</span></div>
         <EpochCanvas key={result?.search_id ?? 'empty'} frame={current}
           previous={compare && position > 0 ? frames[position - 1] : undefined}
           index={position} total={result?.count ?? 0}
