@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { ArrowRight, AtSign, Hash, LoaderCircle, Search, Telescope, X } from 'lucide-react';
+import { ArrowRight, Hash, LoaderCircle, Search, Telescope, X } from 'lucide-react';
 import { api, type GlobalSearchResults } from '../lib/api';
 import { Avatar } from './PostCard';
 
@@ -51,7 +51,9 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
   },[onMobileOpenChange]);
   useEffect(()=>{
     const outside=(event:PointerEvent)=>{
-      if(root.current&&!root.current.contains(event.target as Node)){
+      const target=event.target;
+      if(target instanceof Element&&target.closest('[data-global-search-toggle]'))return;
+      if(root.current&&!root.current.contains(target as Node)){
         setFocused(false);
         onMobileOpenChange(false);
       }
