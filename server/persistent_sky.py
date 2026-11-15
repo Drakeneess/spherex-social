@@ -345,6 +345,49 @@ def _heartbeat(job_id: uuid.UUID, worker: str, done: threading.Event):
             logger.warning("Sky worker heartbeat failed", exc_info=True)
 
 
+def _archived_catalog(row: SkySearchJob) -> tuple[list[dict], dict, str] | None:
+    """Find public science images for the exact query, without exposing a job UUID.
+
+    Previous jobs are immutable after completion. Only real observations,
+    exactly matching all 5 spatial/detector/epoch parameters, may be reused.
+    This lookup is internal; clients never learn another search capability.
+    """
+    with _factory()() as db:
+        matches = db.scalars(
+            select(SkySearchJob).where(
+                SkySearchJob.ra == row.ra,
+                SkySearchJob.dec == row.dec,
+                SkySearchJob.size_arcmin == row.size_arcmin,
+                SkySearchJob.detector == row.detector,
+                SkySearchJob.max_frames == row.max_frames,
+                SkySearchJob.demo.is_(False),
+                SkySearchJob.status.in_(("complete", "partial")),
+                SkySearchJob.source.in_(("sia2", "irsa")),
+            ).order_by(SkySearchJob.updated_at.desc()).limit(12)
+        ).all()
+        for previous in matches:
+            if previous.id == row.id:
+                continue
+            if (previous.discovery_data or {}).get("_archive_source_job"):
+                continue  # Avoid chains of archived aliases.
+            records = previous.records_data or []
+            states = previous.frame_states or []
+            if (not records or len(states) != len(records)
+                    or not any(item.get("status") == "ready" for item in states)):
+                continue
+            if not previous.result_data or previous.result_data.get("count") != len(records):
+                continue
+            metadata = {
+                "method": "archive",
+                "fallback_from": "sia2+tap",
+                "archive_date": _iso_utc(previous.updated_at),
+                "catalog_source": previous.source,
+                "_archive_source_job": str(previous.id),
+            }
+            return [dict(item) for item in records], metadata, previous.source
+    return None
+
+
 def _discover(row: SkySearchJob, worker: str) -> tuple[list[dict], dict, dict]:
     from app import (demo_records, evenly_spaced, ensure_irsa_cutout_url,
                      query_sia2)
@@ -362,10 +405,17 @@ def _discover(row: SkySearchJob, worker: str) -> tuple[list[dict], dict, dict]:
             _write(row.id, worker, source="irsa", discovery_data=state)
 
         if previous.get("_tap_submission_started"):
-            all_records, discovery = retrieve_tap_catalog(
-                row.ra, row.dec, row.size_arcmin, row.detector,
-                previous, persist_tap,
-            )
+            try:
+                all_records, discovery = retrieve_tap_catalog(
+                    row.ra, row.dec, row.size_arcmin, row.detector,
+                    previous, persist_tap,
+                )
+            except TapFallbackError:
+                archived = _archived_catalog(row)
+                if archived is None:
+                    raise
+                all_records, discovery, _ = archived
+                logger.info("Using archived sky observation catalog after TAP failed")
         else:
             try:
                 sia = query_sia2(row.ra, row.dec, row.size_arcmin, row.detector)
@@ -401,11 +451,19 @@ def _discover(row: SkySearchJob, worker: str) -> tuple[list[dict], dict, dict]:
                     "SIA2 catalog unavailable, trying TAP async fallback: %s",
                     str(exc)[:150],
                 )
-                all_records, discovery = retrieve_tap_catalog(
-                    row.ra, row.dec, row.size_arcmin, row.detector,
-                    previous, persist_tap, sia2_failure=str(exc),
-                )
-        source = "sia2" if discovery["method"] == "sia2" else "irsa"
+                try:
+                    all_records, discovery = retrieve_tap_catalog(
+                        row.ra, row.dec, row.size_arcmin, row.detector,
+                        previous, persist_tap, sia2_failure=str(exc),
+                    )
+                except TapFallbackError:
+                    archived = _archived_catalog(row)
+                    if archived is None:
+                        raise
+                    all_records, discovery, _ = archived
+                    logger.info("Using archived sky observations after SIA2 and TAP failed")
+        source = (discovery["catalog_source"] if discovery["method"] == "archive"
+                  else "sia2" if discovery["method"] == "sia2" else "irsa")
 
     selected = evenly_spaced(all_records, row.max_frames)
     result = {
@@ -495,6 +553,23 @@ def _process(job_id: uuid.UUID, worker: str):
             _write(job_id, worker, status=final)
             return
         _write(job_id, worker, status="frames")
+
+    # A matching *previously completed* sky search may be shown when both
+    # remote catalog services are unavailable. Its real immutable assets
+    # remain in the existing private bucket: no second IRSA fetch, no clone,
+    # no new storage cost, and no disclosure of the original capability.
+    source_id = (row.discovery_data or {}).get("_archive_source_job")
+    if source_id:
+        with _factory()() as db:
+            previous = db.get(SkySearchJob, uuid.UUID(source_id))
+            if (previous is None or previous.status not in ("complete", "partial")
+                    or previous.demo or len(previous.frame_states or []) != len(records)):
+                raise RuntimeError("Archived sky frames are no longer available")
+            archived_states = [dict(item) for item in previous.frame_states]
+        ready = sum(item["status"] == "ready" for item in archived_states)
+        final = "complete" if ready == len(archived_states) else "partial" if ready else "failed"
+        _write(job_id, worker, frame_states=archived_states, status=final)
+        return
 
     # Only workers render and upload FITS; persistence updates stay serialized.
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="sky-frame") as pool:
