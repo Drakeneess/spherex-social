@@ -12,6 +12,7 @@ import { startRealtime, subscribeRealtime, REALTIME_EVENT } from './lib/realtime
 import PostCard, { Avatar, updateAvatarCache } from './components/PostCard';
 import ProfileEditor from './components/ProfileEditor';
 import SoundSettingsPanel from './components/SoundSettingsPanel';
+import SoundQuickToggle from './components/SoundQuickToggle';
 import { playSound } from './lib/sounds';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
@@ -111,6 +112,7 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
         <button type="submit" className="btn p full" disabled={busy}>{busy?'Conectando…':mode==='register'?'Crear cuenta':'Entrar'}</button>
       </form>
       <button type="button" className="auth-explore" onClick={onExplore}>Explorar el cielo sin cuenta →</button>
+      <SoundQuickToggle className="auth-sound-toggle"/>
     </section>
   </div>;
 }
@@ -725,6 +727,7 @@ export default function App(){
           <button data-tour="nav-publish" data-sound="open" className="btn p sm newpost" onClick={()=>openPublish()} aria-label="Crear publicación" title="Publicar">
             <AstroGlyph name="spark" size={15}/><span className="t">Publicar</span></button>
         </>}
+        <SoundQuickToggle/>
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
       </nav>
     </header>
