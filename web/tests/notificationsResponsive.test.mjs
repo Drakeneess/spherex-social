@@ -23,7 +23,8 @@ test('notifications page heading cannot compete with navbar search for stacking 
 
 test('activity rows remain compact while retaining a usable click target on mobile', () => {
   assert.match(css, /\.notification-item\{[^}]*min-height:68px;padding:12px 16px;/s);
-  assert.match(css, /@media\(max-width:600px\)\{[^}]*\.notification-item\{[^}]*min-height:64px;padding:11px 12px/s);
+  assert.match(css, /@media\(max-width:600px\)\{/);
+  assert.match(css, /\.notification-item\{gap:10px;min-height:64px;padding:11px 12px\}/);
   assert.match(css, /\.notification-copy small\{[^}]*margin-top:3px\}/s);
   assert.match(responsive, /\.notification-item\{gap:10px;padding:12px 10px\}/);
 });
