@@ -27,7 +27,9 @@ import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 import OnboardingTour from './components/OnboardingTour';
-import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
+import MissionFinale from './components/MissionFinale';
+import { TASKS, TASK_EVENT, NUDGE_EVENT, allMissionsCompleted,
+  newlyCompletedAllMissions, explorerSteps, gameSteps, isTaskKey,
   nudgeStep, publishingSteps, readFlag, readTasks, saveTasks,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
@@ -117,8 +119,9 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
   </div>;
 }
 
-function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,onHideGuide,tag}:{
+function FeedPage({user,onProfile,onExplore,onLogin,onPublish,onReplayFinale,tasks,guideHidden,onHideGuide,tag}:{
   user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void;
+  onReplayFinale:()=>void;
   tasks:TaskProgress;guideHidden:boolean;onHideGuide:()=>void;tag?:string;
 }){
   const [posts,setPosts]=useState<Post[]>([]);
@@ -239,6 +242,8 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
             <span>{task.title}</span>
           </button>)}
         </div>
+        {completed===TASKS.length&&<button type="button" className="first-steps-replay"
+          onClick={onReplayFinale}><AstroGlyph name="spark" size={17}/> Revivir celebración</button>}
         <button type="button" className="first-steps-hide" onClick={onHideGuide}>Ocultar</button>
       </section>}
       <button type="button" className="card streak" onClick={()=>go('game')}>
@@ -435,9 +440,10 @@ function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:
   </main>;
 }
 
-function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
+function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide,onReplayFinale,canReplayFinale}:{
   user:Profile;onUpdate:(p:Profile)=>void;onLogout:()=>void;
   onReplayTour:()=>void;onShowGuide:()=>void;
+  onReplayFinale:()=>void;canReplayFinale:boolean;
 }){
   return <main className="wrap narrow settings-page">
     <div className="card"><div className="card-h"><span><AstroGlyph name="gear" size={17}/> Ajustes</span><span className="chip">@{user.username}</span></div>
@@ -454,6 +460,8 @@ function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
           <button type="button" className="btn" onClick={onShowGuide}>
             <AstroGlyph name="ship" size={16}/> Ver primeros pasos
           </button>
+          {canReplayFinale&&<button type="button" className="btn onboarding-replay-finale"
+            onClick={onReplayFinale}><AstroGlyph name="spark" size={16}/> Revivir celebración</button>}
         </div>
       </div>
       <div className="sec"><h3>Cuenta</h3><p>El cambio y recuperación de contraseña todavía no están implementados en FastAPI.</p>
@@ -487,6 +495,8 @@ export default function App(){
   const [tourRevision,setTourRevision]=useState(0);
   const [onboardingNotice,setOnboardingNotice]=useState('');
   const [celebrate,setCelebrate]=useState(false);
+  const closeFinale=useCallback(()=>setCelebrate(false),[]);
+  useEffect(()=>{setCelebrate(false);},[user?.id]);
   useEffect(()=>{
     if(!user)setUnreadCount(0);
     let active=true;
@@ -592,9 +602,16 @@ export default function App(){
       saveTasks(user.id,updated);
       setMissions(updated);
       const completed=TASKS.filter(item=>updated[item.key]).length;
-      if(completed===TASKS.length){
-        setOnboardingNotice('¡Completaste los primeros pasos! Ya conoces AstroGram.');
-        setCelebrate(true);
+      if(newlyCompletedAllMissions(prior,updated)){
+        setOnboardingNotice('');
+        // The completion is tied to a real action. Persist the milestone once
+        // per account even if another tab later hydrates the same progress.
+        if(!readFlag(user.id,'missions-finale-v2')){
+          writeFlag(user.id,'missions-finale-v2');
+          setTour(null);
+          playSound('milestone');
+          setCelebrate(true);
+        }
       }else{
         setOnboardingNotice(`${TASKS.find(item=>item.key===key)?.title} · ${completed}/${TASKS.length}`);
       }
@@ -607,17 +624,12 @@ export default function App(){
     const timer=window.setTimeout(()=>setOnboardingNotice(''),3600);
     return()=>window.clearTimeout(timer);
   },[onboardingNotice]);
-  useEffect(()=>{
-    if(!celebrate)return;
-    const timer=window.setTimeout(()=>setCelebrate(false),3400);
-    return()=>window.clearTimeout(timer);
-  },[celebrate]);
   const closeTour=useCallback((_completed:boolean)=>{
     if(user&&tour)writeFlag(user.id,tour.key);
     setTour(null);setTourRevision(n=>n+1);
   },[user?.id,tour?.key]);
   useEffect(()=>{
-    if(!user||checking||tour||publish)return;
+    if(!user||checking||tour||publish||celebrate)return;
     const id=user.id;
     const isWelcome=route.page==='home'&&!readFlag(id,'welcome');
     const page=route.page==='explore'?'explore':route.page==='game'?'game':null;
@@ -634,26 +646,27 @@ export default function App(){
       }
     },650);
     return()=>window.clearTimeout(timer);
-  },[user?.id,user?.display_name,user?.username,checking,route.page,tour,publish,tourRevision]);
+  },[user?.id,user?.display_name,user?.username,checking,route.page,tour,publish,celebrate,tourRevision]);
   useEffect(()=>{
-    if(!user||!publish||tour||!readFlag(user.id,'welcome')
+    if(!user||!publish||tour||celebrate||!readFlag(user.id,'welcome')
       ||readFlag(user.id,'publish'))return;
     const timer=window.setTimeout(()=>setTour({
       key:'publish',steps:publishingSteps(Boolean(publishRegion)),soft:true,
     }),450);
     return()=>window.clearTimeout(timer);
-  },[user?.id,publish,publishRegion,tour,tourRevision]);
+  },[user?.id,publish,publishRegion,tour,celebrate,tourRevision]);
   useEffect(()=>{
     if(!user)return;
     const nudge=(event:Event)=>{
       const kind=(event as CustomEvent<{key?:NudgeKey}>).detail?.key;
-      if(!kind||!['like','mark','game'].includes(kind)||tour
+      if(!kind||!['like','mark','game'].includes(kind)||tour||celebrate
+        ||readFlag(user.id,'missions-finale-v2')
         ||!readFlag(user.id,'welcome')||readFlag(user.id,`nudge-${kind}`))return;
       setTour({key:`nudge-${kind}`,steps:[nudgeStep(kind)],soft:true});
     };
     window.addEventListener(NUDGE_EVENT,nudge);
     return()=>window.removeEventListener(NUDGE_EVENT,nudge);
-  },[user?.id,tour]);
+  },[user?.id,tour,celebrate]);
   useEffect(()=>{if(tour&&((tour.key==='publish'&&!publish)
       ||(tour.key==='page-explore'&&route.page!=='explore')
       ||(tour.key==='page-game'&&route.page!=='game')
@@ -666,6 +679,11 @@ export default function App(){
   }
   function showGuide(){
     if(!user)return;writeFlag(user.id,'hidden',false);setGuideHidden(false);go('home');
+  }
+  function replayFinale(){
+    if(!user||!allMissionsCompleted(readTasks(user.id)))return;
+    setTour(null);setOnboardingNotice('');
+    playSound('milestone');setCelebrate(true);
   }
   function replayTour(){
     if(!user)return;writeFlag(user.id,'welcome',false);setTour(null);
@@ -751,7 +769,8 @@ export default function App(){
        route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
          onExplore={openObservation} onLogin={loginRequired}/>:
        route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}
-          onReplayTour={replayTour} onShowGuide={showGuide}/>:
+          onReplayTour={replayTour} onShowGuide={showGuide}
+          onReplayFinale={replayFinale} canReplayFinale={allMissionsCompleted(missions)}/>:
        route.page==='search'?<SearchResultsPage query={route.q||''} onNavigate={go}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'&&user?<NotificationsPage onCountChanged={setUnreadCount}/>:
@@ -760,7 +779,8 @@ export default function App(){
          currentUsername={user?.username}
          onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>:
        <FeedPage key={`${feedVersion}-${route.tag??''}`} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
-          onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden}
+          onPublish={()=>openPublish()} onReplayFinale={replayFinale}
+          tasks={missions} guideHidden={guideHidden}
           onHideGuide={hideGuide} tag={route.tag}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{if(user)writeFlag(user.id,'publish');
@@ -769,10 +789,7 @@ export default function App(){
     {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}
     {onboardingNotice&&user&&<div className="ag-onboard-toast" role="status" aria-live="polite">
       <Check size={17}/> {onboardingNotice}</div>}
-    {celebrate&&user&&<div className="ag-onboard-confetti" aria-hidden="true">{Array.from({length:30},(_,i)=>
-      <span key={i} style={{left:`${(i*37)%100}%`,animationDelay:`${(i%7)*.09}s`,fontSize:`${17+(i%5)*4}px`}}>
-        <AstroGlyph name={i%2===0?'spark':'ship'} size={20}/>
-      </span>)}</div>}
+    {celebrate&&user&&<MissionFinale onClose={closeFinale}/>}
     {tour&&user&&<OnboardingTour key={tour.key} spec={tour} onClose={closeTour}/>}
     {shouldShowSkyDock(backgroundStatus,explorerVisible,dockDismissed) &&
       <BackgroundSkyDock status={backgroundStatus} onOpen={()=>{
