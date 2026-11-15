@@ -25,6 +25,7 @@ export type Post = {
   comments_count: number;
   reposts_count: number;
   reposted_by_me: boolean;
+  bookmarked_by_me: boolean;
   reposted_by: string | null;
   reposted_at: string | null;
 };
@@ -168,7 +169,7 @@ async function request<T>(path: string, init: RequestInit = {}, auth = false, si
   return response.json() as Promise<T>;
 }
 const get = <T>(path: string, auth = false, signal?: AbortSignal) =>
-  request<T>(path, {}, auth, signal);
+  request<T>(path, auth ? {cache: 'no-store'} : {}, auth, signal);
 const write = <T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
   request<T>(path, {method, ...(body === undefined ? {} : {body: JSON.stringify(body)})}, true);
 

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .auth import bearer, current_user
 from .db import get_db
-from .models import Comment, Observation, Post, PostLike, PostRepost, SkySearchJob, User
+from .models import Bookmark, Comment, Observation, Post, PostLike, PostRepost, SkySearchJob, User
 
 router = APIRouter(prefix='/v1', tags=['posts'])
 Visibility = Literal['public', 'unlisted', 'private']
@@ -72,6 +72,7 @@ class PostOut(BaseModel):
     comments_count: int = 0
     reposts_count: int = 0
     reposted_by_me: bool = False
+    bookmarked_by_me: bool = False
     reposted_by: str | None = None
     reposted_at: datetime | None = None
 
@@ -110,6 +111,16 @@ def reposted_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[
     ).all())
 
 
+def bookmarked_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[UUID]:
+    """One query for all bookmarks in a page; never expose another user's saves."""
+    if viewer is None or not post_ids:
+        return set()
+    return set(db.scalars(
+        select(Bookmark.post_id)
+        .where(Bookmark.user_id == viewer.id, Bookmark.post_id.in_(post_ids))
+    ).all())
+
+
 def optional_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Annotated[Session, Depends(get_db)],
@@ -121,6 +132,7 @@ def optional_user(
 def serialize(
     post: Post, username: str, counts: dict[UUID, tuple[int, int, int]] | None = None,
     *, viewer_reposts: set[UUID] | None = None,
+    viewer_bookmarks: set[UUID] | None = None,
     reposted_by: str | None = None, reposted_at: datetime | None = None,
 ) -> PostOut:
     likes, comments, reposts = (counts or {}).get(post.id, (0, 0, 0))
@@ -129,6 +141,7 @@ def serialize(
         observation_id=post.observation_id, visibility=post.visibility,
         created_at=post.created_at, likes_count=likes, comments_count=comments,
         reposts_count=reposts, reposted_by_me=post.id in (viewer_reposts or set()),
+        bookmarked_by_me=post.id in (viewer_bookmarks or set()),
         reposted_by=reposted_by, reposted_at=reposted_at,
     )
 
@@ -205,6 +218,7 @@ def get_post(
     return serialize(
         post, username, counts_by_post(db, [post.id]),
         viewer_reposts=reposted_ids(db, viewer, [post.id]),
+        viewer_bookmarks=bookmarked_ids(db, viewer, [post.id]),
     )
 
 
@@ -228,7 +242,11 @@ def update_post(
         setattr(post, key, getattr(body, key))
     db.commit()
     db.refresh(post)
-    return serialize(post, user.username, counts_by_post(db, [post.id]))
+    return serialize(
+        post, user.username, counts_by_post(db, [post.id]),
+        viewer_reposts=reposted_ids(db, user, [post.id]),
+        viewer_bookmarks=bookmarked_ids(db, user, [post.id]),
+    )
 
 
 @router.delete('/posts/{post_id}', status_code=status.HTTP_204_NO_CONTENT)
@@ -283,9 +301,11 @@ def user_posts(
     ids = [post.id for post, _, _, _ in rows]
     counts = counts_by_post(db, ids)
     viewer_reposts = reposted_ids(db, viewer, ids)
+    viewer_bookmarks = bookmarked_ids(db, viewer, ids)
     return [
         serialize(
             post, author, counts, viewer_reposts=viewer_reposts,
+            viewer_bookmarks=viewer_bookmarks,
             reposted_by=owner.username if is_repost else None,
             reposted_at=activity_at if is_repost else None,
         )

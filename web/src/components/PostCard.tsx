@@ -18,15 +18,15 @@ export function Avatar({name,size=36}:{name:string;size?:number}) {
   return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.34),
     background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>{name.slice(0,2).toUpperCase()}</span>;
 }
-export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,currentUsername}: {
+export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,onBookmarkChange,currentUsername}: {
   post:Post;onProfile:(name:string)=>void;onExplore:(id:string)=>void;onRequireLogin:()=>void;
-  onRepostChange?:()=>void;currentUsername?:string;
+  onRepostChange?:()=>void;onBookmarkChange?:(postId:string,bookmarked:boolean)=>void;
+  currentUsername?:string;
 }) {
   const [post,setPost] = useState(initial);
   const [region,setRegion] = useState<Observation|null>(null);
   const [liked,setLiked] = useState(false);
-  const [bookmarked,setBookmarked] = useState(false);
-  const [busy,setBusy] = useState(false);
+   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [notice,setNotice] = useState('');
   const [commentsOpen,setCommentsOpen] = useState(false);
@@ -52,9 +52,16 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   }
   async function handleBookmark() {
     if(!hasToken()){onRequireLogin();return;}
-    setBusy(true);setError('');
-    try {if(bookmarked)await api.unbookmark(post.id);else await api.bookmark(post.id);setBookmarked(v=>!v);}
-    catch(e){setError(e instanceof Error?e.message:'Error al guardar')} finally{setBusy(false)}
+    setBusy(true);setError('');setNotice('');
+    const wasBookmarked = post.bookmarked_by_me;
+    try {
+      if(wasBookmarked)await api.unbookmark(post.id);else await api.bookmark(post.id);
+      setPost(current=>({...current,bookmarked_by_me:!wasBookmarked}));
+      onBookmarkChange?.(post.id,!wasBookmarked);
+      setNotice(wasBookmarked?'Eliminado de Guardados.':'Guardado en tu colección.');
+    }
+    catch(e){setError(e instanceof Error?e.message:'Error al guardar')}
+    finally{setBusy(false)}
   }
   async function toggleComments(){
     if(!commentsOpen){try{setComments(await api.comments(post.id));setError('')}catch(e){setError(e instanceof Error?e.message:'Error al cargar comentarios')}}
@@ -125,8 +132,10 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
         <Repeat2 size={19}/> <span>{post.reposted_by_me?'Compartido':'Compartir'}</span> <span>{post.reposts_count}</span></button>
       <button title="Copiar enlace" aria-label="Copiar enlace" disabled={busy} onClick={()=>void copyLink()}>
         <Link2 size={18}/></button>
-      <button title="Guardar" style={{marginLeft:'auto'}} className={bookmarked?'on':''} disabled={busy}
-        onClick={()=>void handleBookmark()}><Bookmark size={20} fill={bookmarked?'currentColor':'none'}/></button>
+      <button title={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'} aria-label={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'}
+        aria-pressed={post.bookmarked_by_me} style={{marginLeft:'auto'}}
+        className={post.bookmarked_by_me?'on':''} disabled={busy}
+        onClick={()=>void handleBookmark()}><Bookmark size={20} fill={post.bookmarked_by_me?'currentColor':'none'}/></button>
     </div>
     <div className="post-body"><b>@{post.username}</b> {post.caption}</div>
     {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}>🔭 Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}

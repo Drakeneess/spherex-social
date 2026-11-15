@@ -280,3 +280,45 @@ def test_repost_profile_pagination_combines_authored_and_shared(env):
     assert sum(1 for p in posts if p['reposted_by']) == 1
     assert len(client.get('/v1/users/beta/posts?limit=1').json()) == 1
     assert len(client.get('/v1/users/beta/posts?limit=1&offset=1').json()) == 1
+
+
+def test_bookmark_status_is_loaded_from_database_across_all_post_views(env):
+    client, headers = env
+    public = new_post(client, headers, 'public', 'Bookmark across views')
+    own_secret = client.post('/v1/posts', headers=headers['beta'], json={
+        'caption': 'My private note', 'visibility': 'private',
+    }).json()['id']
+
+    url = f'/v1/posts/{public}/bookmark'
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert client.post(f'/v1/posts/{own_secret}/bookmark', headers=headers['beta']).status_code == 204
+
+    def one(path, auth=None, post_id=public):
+        response = client.get(path, headers=headers[auth] if auth else None)
+        assert response.status_code == 200
+        posts = response.json()
+        if isinstance(posts, list):
+            return next(item for item in posts if item['id'] == post_id)
+        return posts
+
+    for route in (
+        '/v1/feed',
+        '/v1/users/alpha/posts',
+        f'/v1/posts/{public}',
+    ):
+        assert one(route)['bookmarked_by_me'] is False
+        assert one(route, 'beta')['bookmarked_by_me'] is True
+        assert one(route, 'alpha')['bookmarked_by_me'] is False
+
+    assert one('/v1/users/me/bookmarks', 'beta')['bookmarked_by_me'] is True
+    assert one('/v1/users/beta/posts', 'beta', own_secret)['bookmarked_by_me'] is True
+    assert one(f'/v1/posts/{own_secret}', 'beta')['bookmarked_by_me'] is True
+    assert client.get(f'/v1/posts/{own_secret}', headers=headers['alpha']).status_code == 404
+
+    # A fresh request reflects the persisted state after removal.
+    assert client.delete(url, headers=headers['beta']).status_code == 204
+    assert one('/v1/feed', 'beta')['bookmarked_by_me'] is False
+    assert one(f'/v1/posts/{public}', 'beta')['bookmarked_by_me'] is False
+    saved = client.get('/v1/users/me/bookmarks', headers=headers['beta']).json()
+    assert {item['id'] for item in saved} == {own_secret}
+    assert saved[0]['bookmarked_by_me'] is True
