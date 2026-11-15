@@ -1456,3 +1456,127 @@ body {
 .post-blink-preview.format-wide{aspect-ratio:16/9}
 .profile-tile .post-blink-preview{aspect-ratio:1/1}
 .post-blink-preview.format-portrait,.post-blink-preview.format-wide{min-height:0}
+
+
+/* ============================================================
+   AstroGram onboarding: FINAL2 guided spotlight + real missions.
+   All progress and dismissal flags are per-account and client-only.
+   ============================================================ */
+.first-steps-progress{
+  width:100%;height:4px;background:var(--line);overflow:hidden;
+}
+.first-steps-progress>span{
+  display:block;height:100%;background:var(--brand);
+  transition:width .35s ease;
+}
+.first-steps-links .onboard-mission{
+  display:flex;align-items:center;gap:12px;
+  padding:8px 16px;min-height:44px;
+  width:100%;font-size:.88rem;color:var(--text);text-align:left;
+}
+.onboard-mission-icon{
+  display:grid;place-items:center;flex:none;
+  width:28px;height:28px;border-radius:50%;
+  background:var(--panel2);border:1px solid var(--line);
+  color:var(--text);
+}
+.first-steps-links .onboard-mission-icon .ag-glyph{
+  width:17px;height:17px;border:0;background:transparent;border-radius:0;padding:0;
+}
+.onboard-mission.done .onboard-mission-icon{
+  color:white;background:var(--brand);border-color:transparent;
+}
+.onboard-mission.done>span:last-child{color:var(--muted);text-decoration:line-through}
+.first-steps-links .onboard-mission:hover{background:var(--panel2)}
+.first-steps-hide{font-size:.78rem;color:var(--muted);padding:8px 16px 13px}
+.onboarding-settings .mrow{display:flex;gap:10px;flex-wrap:wrap}
+.onboarding-settings .mrow .btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-width:180px;flex:1;
+}
+.ag-tour{
+  position:fixed;inset:0;z-index:140;
+  pointer-events:auto;
+}
+.ag-tour--soft{pointer-events:none}
+.ag-tour__spot{
+  position:fixed;z-index:0;border-radius:14px;
+  border:2px solid var(--a);
+  box-shadow:0 0 0 9999px rgba(2,3,8,.82);
+  transition:top .2s,left .2s,width .2s,height .2s;
+  pointer-events:none;
+}
+.ag-tour__veil{position:fixed;inset:0;background:rgba(2,3,8,.83);pointer-events:none}
+.ag-tour--soft .ag-tour__spot{
+  box-shadow:0 0 0 3px rgba(90,176,255,.44),0 0 24px rgba(255,107,181,.35);
+  animation:ag-soft-pulse 1.6s ease-in-out infinite;
+}
+.ag-tour--soft .ag-tour__veil{background:transparent}
+@keyframes ag-soft-pulse{
+  50%{box-shadow:0 0 0 6px rgba(90,176,255,.2),0 0 30px rgba(255,107,181,.48)}
+}
+.ag-tour__tip{
+  position:fixed;z-index:2;width:min(300px,calc(100vw - 24px));
+  padding:16px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 12px 45px rgba(0,0,0,.62);
+  color:var(--text);max-height:calc(100dvh - 24px);overflow-y:auto;
+  outline:none;
+}
+.ag-tour--soft .ag-tour__tip{pointer-events:auto}
+.ag-tour__tip--middle{text-align:center}
+.ag-tour__tip h3{font-size:1rem;line-height:1.3;margin:0 0 8px;font-weight:800}
+.ag-tour__tip p{font-size:.86rem;line-height:1.5;color:#cfd6ee;margin:0}
+.ag-tour__icon{display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.ag-tour__segments{display:flex;gap:4px;margin-bottom:12px}
+.ag-tour__segments>span{flex:1;height:3px;border-radius:3px;background:var(--line)}
+.ag-tour__segments>span.on{background:var(--brand)}
+.ag-tour__footer{
+  display:flex;align-items:center;gap:8px;margin-top:15px;min-height:31px;
+}
+.ag-tour__counter{flex:1;text-align:left;color:var(--muted);font-size:.76rem}
+.ag-tour__skip{padding:6px 4px;color:var(--muted);font-size:.8rem;font-weight:600}
+.ag-tour__skip:hover{color:var(--text)}
+.ag-tour__footer .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.ag-tour__x{display:grid;place-items:center;color:var(--muted);padding:4px}
+.ag-tour__x:hover{color:var(--text)}
+.ag-tour__arrow{
+  position:absolute;width:12px;height:12px;background:var(--panel2);
+  border-left:1px solid var(--line);border-top:1px solid var(--line);
+}
+.ag-tour__arrow.below{top:-7px;transform:rotate(45deg)}
+.ag-tour__arrow.above{bottom:-7px;transform:rotate(225deg)}
+.ag-onboard-toast{
+  position:fixed;bottom:96px;left:50%;transform:translateX(-50%);
+  z-index:135;display:flex;align-items:center;gap:9px;
+  width:max-content;max-width:calc(100vw - 26px);
+  padding:10px 17px;border-radius:999px;
+  border:1px solid rgba(90,176,255,.34);
+  background:var(--panel2);color:var(--text);
+  font-size:.85rem;font-weight:650;text-align:center;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+.ag-onboard-toast svg{color:var(--ok);flex:none}
+.ag-onboard-confetti{
+  position:fixed;inset:0;z-index:150;pointer-events:none;overflow:hidden;
+}
+.ag-onboard-confetti>span{
+  position:absolute;top:-40px;
+  animation:ag-confetti-fall 2.8s ease-in forwards;
+}
+@keyframes ag-confetti-fall{
+  to{transform:translateY(110vh) rotate(520deg);opacity:0}
+}
+@media(max-width:520px){
+  .ag-tour__tip{padding:14px}
+  .ag-tour__tip h3{font-size:.96rem}
+  .ag-onboard-toast{bottom:24px;font-size:.76rem}
+  .onboarding-settings .mrow .btn{min-width:135px}
+}
+@media(prefers-reduced-motion:reduce){
+  .ag-tour__spot,.ag-tour--soft .ag-tour__spot,
+  .first-steps-progress>span,.ag-onboard-confetti>span{
+    animation:none!important;transition:none!important;
+  }
+  .ag-onboard-confetti{display:none}
+}
