@@ -5,6 +5,7 @@ import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
+import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
@@ -155,6 +156,8 @@ export default function ExplorerPage({
             if (request.signal.aborted) return;
             networkFailures = 0;
             lastSnapshot = state;
+            if(state.source==='sia2' && state.result && state.frames.some(frame=>frame.status==='ready'))
+              signalTask('explore');
             setSkyState(state);
             const fromQuery = state.query;
             const completed = terminalStatuses.has(state.status);
@@ -371,6 +374,7 @@ export default function ExplorerPage({
       { index: position, x, y },
     ].sort((left, right) => left.index - right.index));
     setNotice(`Época ${position + 1}: posición marcada. ${marks.some(mark => mark.index === position) ? 'Marca reemplazada.' : 'Marca registrada.'}`);
+    signalTask('mark');signalNudge('mark');
   }
 
   async function saveRegion() {
@@ -417,11 +421,11 @@ export default function ExplorerPage({
     <div className="xgrid epoch-grid">
       <section className="card epoch-viewer">
         <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Explorador de épocas</span><span className="chip">{badge}</span></div>
-        <EpochCanvas key={result?.search_id ?? 'empty'} frame={current}
+        <div data-tour="explore-canvas"><EpochCanvas key={result?.search_id ?? 'empty'} frame={current}
           previous={compare && position > 0 ? frames[position - 1] : undefined}
           index={position} total={result?.count ?? 0}
           marks={marks} onMark={addMark} metaLabel={metadata?.date}
-          loading={loading} hasSearch={Boolean(result)}/>
+          loading={loading} hasSearch={Boolean(result)}/></div>
         {error && <div className="epoch-inline-error" role="alert">{error}</div>}
         {notice && <div className="epoch-inline-note" role="status">{notice}</div>}
         <div className="xctrl epoch-playback">
@@ -456,7 +460,7 @@ export default function ExplorerPage({
         <section className="card epoch-search-card">
           <div className="card-h"><span>Buscar en el cielo</span></div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
-            <div className="quick">
+            <div className="quick" data-tour="explore-presets">
               {presets.map(preset => <button key={preset.name} type="button"
                 disabled={loading}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
@@ -493,7 +497,7 @@ export default function ExplorerPage({
             </button>
           </form>
           <div className="epoch-secondary-actions">
-            <button type="button" className="btn epoch-publish" onClick={publish}>✦ Publicar este hallazgo</button>
+            <button type="button" data-tour="explore-publish" className="btn epoch-publish" onClick={publish}>✦ Publicar este hallazgo</button>
             <button type="button" className="btn epoch-save" disabled={saveBusy} onClick={() => void saveRegion()}>
               <Save size={14}/> {saveBusy ? 'Guardando…' : 'Guardar región'}
             </button>

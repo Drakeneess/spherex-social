@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Bookmark, Heart, Link2, MessageCircle, Orbit, Repeat2, Telescope } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
+import { signalTask, signalNudge } from '../lib/onboarding';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
@@ -48,7 +49,9 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   async function handleLike() {
     if(!hasToken()) {onRequireLogin();return;}
     setBusy(true);setError('');
-    try { if(liked) await api.unlike(post.id); else await api.like(post.id); setLiked(v=>!v);await reload();}
+    try { if(liked) await api.unlike(post.id); else await api.like(post.id);
+      if(!liked){signalTask('like');signalNudge('like');}
+      setLiked(v=>!v);await reload();}
     catch(e){setError(e instanceof Error?e.message:'Error de like')} finally{setBusy(false)}
   }
   async function handleBookmark() {
@@ -124,7 +127,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
           <span>Publicación de texto · sin imágenes astronómicas adjuntas</span>
         </div>}
     <div className="post-actions">
-      <button title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
+      <button data-tour="like-button" title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <AstroGlyph name={liked?'ship-on':'ship'} size={24}/> <span>{post.likes_count}</span></button>
       <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={24}/> <span>{post.comments_count}</span></button>
       <button title={currentUsername===post.username?'Ya está en tu perfil':post.reposted_by_me?'Retirar de mi perfil':'Compartir en mi perfil'}
