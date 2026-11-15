@@ -1006,3 +1006,299 @@ html,body,#root{min-width:0;max-width:100%}
 .post-repost-label button:hover {text-decoration:underline;}
 .inline-message.success {color:var(--ok);}
 .post-actions button:disabled {opacity:.5;cursor:not-allowed;}
+
+
+/* ===============================================================
+   FINAL2.html visual alignment (presentation only)
+   The social API, actual SPHEREx data, and all user interactions
+   continue to use the existing React components and endpoints.
+   =============================================================== */
+:root {
+  --bg:#070a14;
+  --panel:#0f1424;
+  --panel2:#171d33;
+  --line:#242c4a;
+  --text:#eaf0ff;
+  --muted:#8792b3;
+  --a:#5ab0ff;
+  --b:#ff6bb5;
+  --c:#ff6bb5;
+  --ok:#7ce38b;
+  --bad:#ff6b7a;
+  --warn:#ffd166;
+  --brand:linear-gradient(45deg,var(--a),var(--c));
+  --r:18px;
+}
+html{color-scheme:dark}
+body {
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:14px;
+  line-height:1.45;
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(900px 500px at 85% -10%,rgba(255,107,181,.14),transparent 60%),
+    radial-gradient(700px 500px at -10% 20%,rgba(90,176,255,.12),transparent 60%);
+}
+.ag-glyph{display:inline-block;flex:none;vertical-align:middle;color:inherit}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;font-size:.92rem;font-weight:700;border-bottom:1px solid var(--line)}
+.card-h > span:first-child{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.chip{font-size:.72rem;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap}
+.btn{font-size:.88rem}
+.btn.p,.astrogram-shell .navbar .nav button.newpost{
+  color:white;
+  background:var(--brand);
+  border:0;
+}
+.btn.p:hover,.astrogram-shell .navbar .nav button.newpost:hover{filter:brightness(1.1)}
+.logo .orb {
+  width:30px;height:30px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 35% 35%,#fff 0 8%,var(--a) 9% 45%,var(--c) 85%);
+  box-shadow:0 0 18px rgba(90,176,255,.55);
+}
+.logo span:last-child,.grad{
+  background:var(--brand);background-clip:text;-webkit-background-clip:text;
+  color:transparent;
+}
+
+/* Header: same compact, single-row desktop hierarchy as FINAL2. */
+.astrogram-shell .navbar{
+  position:sticky;top:0;z-index:20;
+  min-height:60px;
+  grid-template-columns:max-content minmax(150px,1fr) max-content;
+  grid-template-rows:auto;
+  gap:14px;
+  padding:10px 20px;
+  border-bottom:1px solid var(--line);
+  background:rgba(7,10,20,.82);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+.astrogram-shell .navbar .logo{
+  display:inline-flex;align-items:center;gap:10px;
+  font-size:1.35rem;font-weight:800;letter-spacing:-.02em;
+}
+.astrogram-shell .navbar .search{width:100%;max-width:340px}
+.astrogram-shell .navbar .search input{
+  padding:9px 16px;border-radius:999px;
+  color:var(--text);background:var(--panel2);border:1px solid var(--line);
+  font-size:.88rem;
+}
+.astrogram-shell .navbar .nav{gap:4px;justify-content:flex-end}
+.astrogram-shell .navbar .nav button{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 11px;border-radius:12px;
+  color:var(--muted);font-size:.88rem;
+  white-space:nowrap;transition:background .15s,color .15s;
+}
+.astrogram-shell .navbar .nav button:hover,
+.astrogram-shell .navbar .nav button.on{
+  background:var(--panel2);color:var(--text);
+}
+.astrogram-shell .navbar .nav button.on{font-weight:700}
+.astrogram-shell .navbar .nav button.newpost{
+  margin-left:4px;padding:8px 13px;
+  font-weight:700;
+}
+.astrogram-shell .navbar .nav button.newpost .ag-glyph{filter:brightness(0) invert(1)}
+.astrogram-shell .navbar .nav .avatar{border-radius:50%}
+
+/* Feed: 470px post column, 320px companion column, 32px gap. */
+.astrogram-shell>.wrap.feed-layout,.wrap.feed-layout{
+  width:100%;max-width:1180px;
+  grid-template-columns:minmax(0,470px) minmax(0,320px);
+  gap:32px;padding:18px 20px 80px;
+  justify-content:center;align-items:start;
+}
+.feed-layout>.feed{display:flex;flex-direction:column;gap:22px;min-width:0}
+.feed-layout>.side{display:flex;flex-direction:column;gap:18px;min-width:0}
+.feed-layout .side>.card{width:100%}
+.feed-layout .streak{
+  display:flex;align-items:center;text-align:left;gap:14px;
+  padding:16px;border:1px solid var(--line);
+}
+.streak-counter{gap:7px}
+.streak-counter .ag-glyph.streak-inactive{filter:grayscale(1);opacity:.5}
+.streak-counter .n{font-size:2rem;line-height:1;font-weight:800}
+.streak-text>b{font-size:.88rem}
+.streak-text>small{font-size:.76rem}
+.feed-layout .trend-link{padding:12px 16px;gap:12px;font-size:.88rem}
+.feed-layout .trend-link>b,.trend-link b{font-size:.88rem}
+.feed-layout .trend-link small{font-size:.72rem}
+.feed-layout .mini-profile{padding:16px;gap:14px}
+.mini-profile-details{gap:2px}
+.mini-profile-details>b{font-size:.88rem}
+.mini-profile-details>small{font-size:.76rem}
+
+/* The mock's onboarding panel is a navigational guide, not simulated progress. */
+.first-steps .card-h{padding:12px 16px}
+.first-steps-links{display:flex;flex-direction:column;padding:4px 0}
+.first-steps-links button{
+  display:flex;align-items:center;gap:12px;
+  width:100%;padding:8px 16px;
+  color:var(--text);text-align:left;font-size:.88rem;
+}
+.first-steps-links button:hover{background:var(--panel2)}
+.first-steps-links .ag-glyph{
+  width:28px;height:28px;padding:5px;
+  border:1px solid var(--line);background:var(--panel2);
+  border-radius:50%;
+}
+.first-steps-hide{padding:6px 16px 13px;color:var(--muted);font-size:.78rem;font-weight:600}
+.first-steps-hide:hover{color:var(--text)}
+
+/* Post cards: gradient avatar story ring, compact header and 24px SVG actions. */
+.post-card{width:100%;min-width:0}
+.post-card .post-head{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.post-card .avatar-button{
+  flex:none;padding:2px;line-height:0;
+  border-radius:50%;background:var(--brand);
+}
+.post-card .avatar-button .avatar{border:2px solid var(--panel)}
+.post-card .who{font-size:.88rem;line-height:1.2}
+.post-card .who-link{font-size:.88rem;font-weight:700}
+.post-card .who small{font-size:.72rem;font-weight:400;color:var(--muted);margin-top:2px}
+.post-head .time{font-size:.76rem;color:var(--muted);margin-left:auto}
+.post-actions{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px 0;flex-wrap:wrap;
+}
+.post-actions button{
+  min-height:36px;padding:6px 9px;
+  display:inline-flex;align-items:center;gap:6px;
+  border-radius:10px;color:var(--text);
+  font-size:.9rem;font-weight:600;
+}
+.post-actions button:hover{color:var(--text);background:var(--panel2)}
+.post-actions button.on{color:var(--c)}
+.post-actions button:first-child:not(:disabled):hover .ag-glyph{transform:translate(2px,-2px)}
+.post-actions button .ag-glyph{transition:transform .25s ease}
+.post-actions button:disabled{opacity:.5;cursor:not-allowed}
+.post-body{padding:4px 16px 14px;font-size:.9rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.post-body b{font-weight:700}
+.inline-explore{
+  display:inline-flex;align-items:center;justify-content:flex-start;gap:7px;
+  font-size:.78rem;text-align:left;
+}
+.post-repost-label{font-size:.74rem}
+.post-text-poster{min-height:220px}
+.comments{font-size:.85rem}
+.comments-title{font-size:.83rem}
+.comments .comment{font-size:.85rem}
+.comment-form input,.comment-form button{font-size:.87rem}
+
+/* Scientific previews remain the real SPHEREx images, with mock-like chrome. */
+.post-blink-preview{background:#04060d}
+.post-blink-top{padding:12px 12px 23px}
+.post-blink-chip{border-radius:999px;font-size:.68rem}
+.post-blink-bottom{padding:52px 12px 18px}
+.post-blink-control,.post-blink-open{border-radius:10px}
+.post-blink-open:hover{border-color:var(--a)}
+.post-blink-epoch-indicators span.active{background:var(--a);box-shadow:0 0 7px var(--a)}
+
+/* Profile: large editorial summary, followed by a contained observations grid. */
+.profile-layout{align-content:start}
+.profile-layout .phead{
+  display:flex;align-items:center;gap:24px;
+  padding:22px;border-radius:18px;
+}
+.profile-avatar{padding:3px;border-radius:50%;background:var(--brand);line-height:0;flex:none}
+.profile-avatar .avatar{border:3px solid var(--panel)}
+.profile-summary{flex:1;min-width:220px}
+.profile-summary h1{font-size:1.3rem;line-height:1.25;margin:0}
+.profile-summary .un{font-size:.88rem;color:var(--muted)}
+.profile-summary p{font-size:.9rem;margin-top:8px;max-width:480px}
+.profile-summary .stats{display:flex;flex-wrap:wrap;gap:22px;margin-top:10px;color:var(--muted);font-size:.85rem}
+.profile-summary .stats span{display:block}
+.profile-summary .stats b{display:block;color:var(--text);font-size:1rem}
+.profile-summary .profile-buttons{margin-top:14px}
+.profile-observation-heading{
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:18px 18px 0 0;
+  margin-top:18px;
+}
+.profile-posts{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;padding:14px;
+  border:1px solid var(--line);border-top:0;
+  border-radius:0 0 18px 18px;background:var(--panel);
+  align-items:start;
+}
+.profile-posts .post-card{width:100%;max-width:none}
+.profile-posts>.empty{grid-column:1/-1}
+.saved-page,.settings-page{align-content:start}
+.settings-page .card-h .ag-glyph{vertical-align:middle}
+
+/* Auth, forms, explorer and game share FINAL2's scale and surfaces. */
+.auth h2{font-size:1.4rem}
+.auth .hero .txt{bottom:14%}
+.auth .tabs{background:var(--panel2);padding:4px;border-radius:12px}
+.auth .tabs button{font-size:.88rem}
+.authbox .field input,.authbox .field select,.authbox .field textarea,
+.settings-page .field input,.settings-page .field textarea{font-size:.9rem}
+.field label{font-size:.76rem}
+.modal .mbox h2{display:flex;align-items:center;gap:8px}
+.epoch-explorer .card-h,.epoch-search-card .card-h{font-size:.92rem}
+.epoch-explorer .card-h .ag-glyph{vertical-align:middle}
+.epoch-grid{grid-template-columns:minmax(0,1fr) 340px}
+.epoch-explorer .card,.gbox{border-color:var(--line)}
+.gend h2{font-size:1.3rem}
+.gend>.ag-glyph{display:block;margin:0 auto 9px}
+.app-footer{font-size:.7rem;color:var(--muted)}
+
+@media(max-width:980px){
+  .astrogram-shell .navbar{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) max-content;
+    grid-template-rows:auto;
+    padding:10px 14px;
+    gap:9px;
+  }
+  .astrogram-shell .navbar .search{display:none}
+  .astrogram-shell .navbar .nav{
+    display:flex;grid-column:2;grid-row:1;
+    width:auto;justify-content:flex-end;overflow:visible;
+  }
+  .astrogram-shell .navbar .nav button{
+    min-width:34px;min-height:34px;padding:7px;
+  }
+  .astrogram-shell .navbar .nav button .t{display:none}
+  .astrogram-shell .navbar .nav button.newpost .t{display:inline}
+  .astrogram-shell>.wrap.feed-layout,.wrap.feed-layout{
+    max-width:740px;grid-template-columns:minmax(0,1fr);
+    gap:18px;padding:14px 12px 65px;
+  }
+  .feed-layout>.side{position:static;align-self:stretch}
+}
+@media(max-width:700px){
+  .profile-posts{grid-template-columns:minmax(0,1fr)}
+  .profile-layout .phead{align-items:flex-start;gap:16px}
+}
+@media(max-width:520px){
+  .astrogram-shell .navbar{
+    grid-template-columns:minmax(0,1fr) max-content;
+    grid-template-rows:auto;
+    padding:10px 10px;
+  }
+  .astrogram-shell .navbar .logo{grid-column:1;grid-row:1;font-size:1rem}
+  .astrogram-shell .navbar .search{display:none}
+  .astrogram-shell .navbar .nav{grid-column:2;grid-row:1;justify-content:flex-end;gap:0}
+  .astrogram-shell .navbar .nav button{min-width:31px;min-height:34px;padding:6px}
+  .astrogram-shell .navbar .nav button.newpost .t{display:none}
+  .astrogram-shell>.wrap.feed-layout,.wrap.feed-layout{padding:10px 8px 55px}
+  .post-actions{gap:2px}
+  .post-actions button{padding:6px}
+  .post-actions button .ag-glyph{width:21px;height:21px}
+  .profile-layout .phead{padding:16px}
+  .profile-avatar .avatar{width:68px!important;height:68px!important}
+  .profile-summary{min-width:0}
+  .profile-posts{padding:8px}
+}
+@media(max-width:390px){
+  .astrogram-shell .navbar .logo > span:last-child{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .post-actions button .ag-glyph{transition:none}
+}
+
