@@ -480,33 +480,38 @@ def test_notification_visibility_changes_hide_private_replies_and_deleted_posts(
 
 
 def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
-    """CI previously tested social_api.main, while Railway runs uvicorn app:app.
+    """Boot the exact ASGI entrypoint in a clean process, like Railway does.
 
-    Verify the *real* deployed ASGI app has the same notification endpoints.
-    This regression test would have caught the 404 Not Found in production.
+    Other tests create multiple FastAPI instances and may modify import state.
+    A fresh interpreter is the right boundary for validating uvicorn app:app.
     """
-    from app import app as deployed_app
-    from social_api.main import app as standalone_app
+    import subprocess
+    import sys
 
-    expected = {
-        ('GET', '/v1/users/me/notifications'),
-        ('GET', '/v1/users/me/notifications/count'),
-        ('POST', '/v1/users/me/notifications/read-all'),
-        ('POST', '/v1/users/me/notifications/{notification_id}/read'),
+    check = """
+from app import app as deployed
+from social_api.main import app as standalone
+from fastapi.testclient import TestClient
+
+expected = {
+    ('GET', '/v1/users/me/notifications'),
+    ('GET', '/v1/users/me/notifications/count'),
+    ('POST', '/v1/users/me/notifications/read-all'),
+    ('POST', '/v1/users/me/notifications/{notification_id}/read'),
+}
+for app in (deployed, standalone):
+    routes = {
+        (method, route.path)
+        for route in app.routes
+        for method in getattr(route, 'methods', ())
     }
-    for entrypoint in (deployed_app, standalone_app):
-        routes = {
-            (method, route.path)
-            for route in entrypoint.routes
-            for method in getattr(route, 'methods', ())
-        }
-        if not expected.issubset(routes):
-            import app as deployed_module
-            from social_api.notifications import router as notification_router
-            raise AssertionError(
-                f'Missing notification routes: {expected-routes}; '
-                f'app file={deployed_module.__file__!r}, '
-                f'entrypoint is production={entrypoint is deployed_module.app}; '
-                f'registered user routes={[p for p in sorted(routes) if p[1].startswith("/v1/users/")]}; '
-                f'notification router routes={[(r.path, list(getattr(r, "methods", []))) for r in notification_router.routes]}'
-            )
+    assert expected.issubset(routes), f'Missing notification routes: {expected-routes}'
+# An unauthenticated request must reach the router and return 401,
+# not the 404 that was returned in the deployed application.
+assert TestClient(deployed).get('/v1/users/me/notifications').status_code == 401
+"""
+    result = subprocess.run(
+        [sys.executable, '-c', check], capture_output=True, text=True,
+        timeout=60, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
