@@ -162,5 +162,5 @@ Las observaciones astronómicas provienen de **NASA/IPAC Infrared Science Archiv
   <sub>Diseñado para quienes quieren mirar el cielo, hacer preguntas y compartir sus observaciones.</sub>
 
   <br />
-  <strong>AstroGram · Drakeneess</strong>
+  <strong>AstroGram · Soñadores del Cosmos</strong>
 </div>
