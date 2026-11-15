@@ -82,12 +82,18 @@ export default function SearchProgress({
         <span style={isWaiting ? undefined : {width: `${summary.percent}%`}}/>
       </div>}
     <p className="sky-search-detail">{summary.detail}</p>
+    {trace.catalogWarning && <p className="sky-search-subtle" role="status">
+      {trace.catalogWarning}
+      {active&&trace.remotePhase ? ` Estado TAP: ${trace.remotePhase}.` : ''}
+    </p>}
     {active && !isWaiting && summary.ready > 0 &&
       <p className="sky-search-subtle">Ya puedes explorar las imágenes que están disponibles.</p>}
     {trace.phase === 'partial' &&
       <p className="sky-search-subtle">Algunas imágenes no pudieron obtenerse; las disponibles se conservaron.</p>}
     {trace.phase === 'failed' &&
-      <p className="sky-search-subtle" role="alert">No fue posible completar esta búsqueda. Puedes intentarlo nuevamente.</p>}
+      <p className="sky-search-subtle" role="alert">
+        {trace.catalogError || 'No fue posible completar esta búsqueda. Puedes intentarlo nuevamente.'}
+      </p>}
     <div className="sky-search-actions">
       {active && <>
         <button type="button" className="btn p sm" onClick={onHome}>Seguir explorando Inicio <ArrowRight size={14}/></button>
