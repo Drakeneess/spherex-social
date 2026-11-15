@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, Link2, MessageCircle, Orbit, Repeat2, Telescope } from 'lucide-react';
+import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
+import PostMediaGallery from './PostMediaGallery';
 
 const ago = (date:string) => {
   const value = new Date(date).getTime();
@@ -113,19 +114,12 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       </div>
       <span className="time">{ago(post.created_at)}</span>
     </div>
-    {post.observation_id
-      ? region
-        ? <PostBlinkPreview postId={post.id}
-            onExplore={() => onExplore(region.id)}/>
-        : <div className="post-text-poster" role="status">
-            <Telescope size={30} aria-hidden="true"/>
-            <strong>Abriendo observación…</strong>
-          </div>
-      : <div className="post-text-poster">
-          <Orbit size={35} aria-hidden="true"/>
-          <strong>Una idea para explorar</strong>
-          <span>Publicación de texto · sin imágenes astronómicas adjuntas</span>
-        </div>}
+    {post.media?.length>0&&<PostMediaGallery postId={post.id} media={post.media}/>}
+    {post.observation_id&&(region
+      ? <PostBlinkPreview postId={post.id} onExplore={()=>onExplore(region.id)}/>
+      : <div className="post-text-poster" role="status">
+          <Telescope size={30} aria-hidden="true"/><strong>Abriendo observación…</strong>
+        </div>)}
     <div className="post-actions">
       <button data-tour="like-button" title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <AstroGlyph name={liked?'ship-on':'ship'} size={24}/> <span>{post.likes_count}</span></button>
@@ -141,7 +135,18 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
         className={post.bookmarked_by_me?'on':''} disabled={busy}
         onClick={()=>void handleBookmark()}><Bookmark size={24} fill={post.bookmarked_by_me?'currentColor':'none'}/></button>
     </div>
-    <div className="post-body"><b>{post.username}</b> {post.caption}</div>
+    {post.caption&&<div className="post-body"><b>{post.username}</b> {post.caption}</div>}
+    {post.hashtags?.length>0&&<div className="post-tag-list" aria-label="Hashtags">
+      {post.hashtags.map(tag=><button type="button" key={tag}
+        onClick={()=>{window.location.hash=`#/home?tag=${encodeURIComponent(tag)}`;}}>
+        #{tag}</button>)}
+    </div>}
+    {post.link_url&&<a className="post-external-link" href={post.link_url}
+      target="_blank" rel="noopener noreferrer nofollow"
+      title="Abrir recurso astronómico externo"><ExternalLink size={17}/>
+      <span>{(()=>{try{return new URL(post.link_url).hostname;}catch{return 'Abrir enlace';}})()}</span>
+      <small>Recurso externo</small>
+    </a>}
     {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}><AstroGlyph name="telescope" size={17}/> Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
     {error && <div className="inline-message" role="alert">{error}</div>}
     {notice && <div className="inline-message success" role="status">{notice}</div>}

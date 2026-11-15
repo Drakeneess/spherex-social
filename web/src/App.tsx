@@ -9,6 +9,7 @@ import { feedSidebarStickyTop } from './lib/sidebarScroll';
 import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
+import PostMediaGallery from './components/PostMediaGallery';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
@@ -248,10 +249,12 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           aria-label={`Abrir publicación de ${post.username}: ${post.caption.slice(0,80)}`}
           onClick={()=>setSelectedId(post.id)}
           onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedId(post.id);}}}>
-          {post.observation_id
-            ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
-            : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
-                <span>Publicación de texto</span><small>Sin imágenes astronómicas adjuntas</small></div>}
+          {post.media?.length>0
+            ? <PostMediaGallery postId={post.id} media={post.media} compact/>
+            : post.observation_id
+              ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
+              : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
+                  <span>Publicación de texto</span><small>Idea de la comunidad</small></div>}
           <div className="profile-tile-label">
             {post.reposted_by&&<span className="profile-tile-share">Compartido por @{post.reposted_by}</span>}
             <strong>@{post.username}</strong>
