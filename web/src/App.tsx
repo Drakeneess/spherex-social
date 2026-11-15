@@ -151,7 +151,7 @@ function FeedPage({user,onProfile,onExplore,onLogin}:{
   useEffect(()=>{void fetchFeed(true);},[]);
   return <div className="wrap feed-layout">
     <main className="feed" aria-label="Feed AstroGram">
-      {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}/>)}
+      {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin} currentUsername={user.username}/>)}
       {posts.length===0&&!loading&&!error&&<div className="card empty">Aún no hay publicaciones públicas. ¡Comparte la primera observación!</div>}
       {error&&<p className="form-error" role="alert">{error}</p>}
       {loading&&<div className="card empty">Cargando publicaciones…</div>}
@@ -197,6 +197,10 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     }).catch(e=>{if(active)setError(message(e))});
     return ()=>{active=false};
   },[username,current?.username]);
+  async function refreshPosts(){
+    try {setPosts(await api.userPosts(username));}
+    catch(e) {setError(message(e));}
+  }
   async function follow(){
     if(!hasToken()){onLogin();return;}
     if(!stats)return;setBusy(true);
@@ -210,26 +214,27 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     {!person?<div className="card empty">Cargando perfil…</div>:<>
       <div className="card phead"><Avatar name={person.username} size={84}/><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
         {person.bio&&<p>{person.bio}</p>}
-        <div className="stats"><span><b>{posts.length}</b> publicaciones listadas</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
+        <div className="stats"><span><b>{posts.length}</b> publicaciones y compartidos</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
           <span><b>{stats?.following_count??0}</b> siguiendo</span></div>
         <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div>
-      <h2 className="section-title">Publicaciones</h2>
+      <h2 className="section-title">Publicaciones y compartidos</h2>
       <div className="profile-posts">{posts.map(p=><PostCard key={p.id} post={p} onProfile={u=>go(`u/${encodeURIComponent(u)}`)}
-        onExplore={onExplore} onRequireLogin={onLogin}/>)}{posts.length===0&&<div className="card empty">Sin publicaciones visibles.</div>}</div>
+        onExplore={onExplore} onRequireLogin={onLogin} currentUsername={current?.username}
+        onRepostChange={()=>void refreshPosts()}/>)}{posts.length===0&&<div className="card empty">Sin publicaciones visibles.</div>}</div>
     </>}
   </main>;
 }
 
-function SavedPage({onExplore,onProfile,onLogin}:{onExplore:(id:string)=>void;onProfile:(u:string)=>void;onLogin:()=>void}){
+function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:string)=>void;onProfile:(u:string)=>void;onLogin:()=>void;currentUsername?:string}){
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   useEffect(()=>{let active=true;api.bookmarks().then(data=>{if(active)setPosts(data)}).catch(e=>{if(active)setError(message(e))})
     .finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
   return <main className="wrap narrow saved-page"><h1><Bookmark size={24}/> Guardados</h1>
     <p className="muted">Solo tú puedes consultar tus publicaciones guardadas.</p>
     {error&&<p className="form-error">{error}</p>}
-    {loading?<div className="card empty">Cargando…</div>:posts.length===0?<div className="card empty">Todavía no guardaste publicaciones.</div>:posts.map(p=><PostCard key={p.id} post={p} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}/>)}
+    {loading?<div className="card empty">Cargando…</div>:posts.length===0?<div className="card empty">Todavía no guardaste publicaciones.</div>:posts.map(p=><PostCard key={p.id} post={p} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin} currentUsername={currentUsername}/>)}
   </main>;
 }
 
@@ -342,7 +347,7 @@ export default function App(){
        route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
          onExplore={openObservation} onLogin={loginRequired}/>:
        route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
-       route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired}/>:
+       route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'?<ActivityPage/>:
        <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}

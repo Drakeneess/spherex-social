@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, MessageCircle, Orbit, Rocket, Telescope } from 'lucide-react';
+import { Bookmark, Heart, Link2, MessageCircle, Orbit, Repeat2, Rocket, Telescope } from 'lucide-react';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
@@ -18,8 +18,9 @@ export function Avatar({name,size=36}:{name:string;size?:number}) {
   return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.34),
     background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>{name.slice(0,2).toUpperCase()}</span>;
 }
-export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin}: {
+export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,currentUsername}: {
   post:Post;onProfile:(name:string)=>void;onExplore:(id:string)=>void;onRequireLogin:()=>void;
+  onRepostChange?:()=>void;currentUsername?:string;
 }) {
   const [post,setPost] = useState(initial);
   const [region,setRegion] = useState<Observation|null>(null);
@@ -27,6 +28,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   const [bookmarked,setBookmarked] = useState(false);
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
+  const [notice,setNotice] = useState('');
   const [commentsOpen,setCommentsOpen] = useState(false);
   const [comments,setComments] = useState<Comment[]>([]);
   const [draft,setDraft] = useState('');
@@ -39,7 +41,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   },[initial]);
   async function reload() {
     const next = await api.get<Post>(`/v1/posts/${post.id}`,hasToken());
-    setPost(next);
+    // The detail endpoint has no profile context; keep the repost attribution.
+    setPost({...next,reposted_by:post.reposted_by,reposted_at:post.reposted_at});
   }
   async function handleLike() {
     if(!hasToken()) {onRequireLogin();return;}
@@ -66,12 +69,32 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     catch(e){setError(e instanceof Error?e.message:'Error al comentar')} finally{setBusy(false)}
   }
   async function share(){
+    if(!hasToken()){onRequireLogin();return;}
+    if(currentUsername===post.username)return;
+    setBusy(true);setError('');setNotice('');
+    const wasReposted = post.reposted_by_me;
+    try {
+      if(wasReposted)await api.unrepost(post.id);else await api.repost(post.id);
+      setPost(current=>({...current,reposted_by_me:!wasReposted,
+        reposts_count:Math.max(0,current.reposts_count+(wasReposted?-1:1))}));
+      setNotice(wasReposted?'Se retiró de tu perfil.':'Compartido en tu perfil.');
+      onRepostChange?.();
+    } catch(e) {setError(e instanceof Error?e.message:'No se pudo compartir');}
+    finally {setBusy(false);}
+  }
+  async function copyLink(){
     const url = post.observation_id
       ? `${window.location.origin}/?observation_id=${encodeURIComponent(post.observation_id)}`
       : `${window.location.origin}/#/u/${encodeURIComponent(post.username)}`;
-    try{await navigator.clipboard.writeText(url);setError('Enlace copiado.')}catch{setError(url)}
+    setError('');setNotice('');
+    try{await navigator.clipboard.writeText(url);setNotice('Enlace copiado.');}
+    catch{setError('No se pudo copiar el enlace.');}
   }
   return <article className="card post-card">
+    {post.reposted_by && <div className="post-repost-label"><Repeat2 size={15} aria-hidden="true"/>
+      <button type="button" onClick={()=>onProfile(post.reposted_by!)}>@{post.reposted_by}</button>
+      <span>compartió esta publicación{post.reposted_at?' · '+ago(post.reposted_at):''}</span>
+    </div>}
     <div className="post-head">
       <button className="avatar-button" type="button" onClick={()=>onProfile(post.username)}><Avatar name={post.username}/></button>
       <div className="who"><button className="who-link" onClick={()=>onProfile(post.username)}>{post.username}</button>
@@ -96,13 +119,19 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       <button title="Me gusta" aria-label="Me gusta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <Rocket size={20} fill={liked?'currentColor':'none'}/> <span>{post.likes_count}</span></button>
       <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={19}/> <span>{post.comments_count}</span></button>
-      <button title="Compartir" onClick={()=>void share()}><Orbit size={19}/> <span>Compartir</span></button>
+      <button title={currentUsername===post.username?'Ya está en tu perfil':post.reposted_by_me?'Retirar de mi perfil':'Compartir en mi perfil'}
+        aria-pressed={post.reposted_by_me} className={post.reposted_by_me?'on':''}
+        disabled={busy || currentUsername===post.username} onClick={()=>void share()}>
+        <Repeat2 size={19}/> <span>{post.reposted_by_me?'Compartido':'Compartir'}</span> <span>{post.reposts_count}</span></button>
+      <button title="Copiar enlace" aria-label="Copiar enlace" disabled={busy} onClick={()=>void copyLink()}>
+        <Link2 size={18}/></button>
       <button title="Guardar" style={{marginLeft:'auto'}} className={bookmarked?'on':''} disabled={busy}
         onClick={()=>void handleBookmark()}><Bookmark size={20} fill={bookmarked?'currentColor':'none'}/></button>
     </div>
     <div className="post-body"><b>@{post.username}</b> {post.caption}</div>
     {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}>🔭 Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
-    {error && <div className="inline-message" role="status">{error}</div>}
+    {error && <div className="inline-message" role="alert">{error}</div>}
+    {notice && <div className="inline-message success" role="status">{notice}</div>}
     {commentsOpen && <div className="comments">
       <div className="comments-title"><Heart size={15}/> Conversación</div>
       {comments.length===0?<p className="muted">Sin comentarios todavía.</p>:comments.map(c=><div key={c.id} className="comment"><b>@{c.username}</b> {c.body}</div>)}

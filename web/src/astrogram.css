@@ -993,3 +993,16 @@ html,body,#root{min-width:0;max-width:100%}
 @media(prefers-reduced-motion:reduce) {
   .post-blink-preview * {scroll-behavior:auto;}
 }
+/* Reposts reuse original post cards with visible profile attribution. */
+.post-repost-label {
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  color:var(--muted);font-size:.73rem;padding:12px 14px 0;
+}
+.post-repost-label svg {color:var(--c);}
+.post-repost-label button {
+  color:#b4c7ff;font:inherit;font-weight:700;background:none;border:0;
+  cursor:pointer;padding:0;
+}
+.post-repost-label button:hover {text-decoration:underline;}
+.inline-message.success {color:var(--ok);}
+.post-actions button:disabled {opacity:.5;cursor:not-allowed;}
