@@ -9,6 +9,7 @@ import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/B
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 
+type PublishRegion = ObservationParams & {sky_job_id?:string};
 type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
@@ -84,7 +85,7 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
   </div>;
 }
 
-function PublishModal({region,onClose,onDone}:{region:ObservationParams|null;onClose:()=>void;onDone:()=>void}){
+function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose:()=>void;onDone:()=>void}){
   const [caption,setCaption]=useState(''),[visibility,setVisibility]=useState<Post['visibility']>('public');
   const [attach,setAttach]=useState(Boolean(region)),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [savedId,setSavedId]=useState<string|null>(null);
@@ -96,10 +97,14 @@ function PublishModal({region,onClose,onDone}:{region:ObservationParams|null;onC
       let observation_id:string|null=null;
       if(attach&&region){
         // Keep the created ID across retries if the post request fails.
-        observation_id=savedId??(await api.createObservation(region)).id;
+        observation_id=savedId??(await api.createObservation({
+          ra_deg:region.ra_deg,dec_deg:region.dec_deg,
+          fov_arcmin:region.fov_arcmin,detector:region.detector,
+        })).id;
         setSavedId(observation_id);
       }
-      await api.createPost({caption:caption.trim(),visibility,observation_id});
+      await api.createPost({caption:caption.trim(),visibility,observation_id,
+        sky_job_id:attach && region?.sky_job_id ? region.sky_job_id : null});
       onDone();
     }catch(e){setError(message(e));}finally{setBusy(false);}
   }
@@ -176,7 +181,7 @@ function FeedPage({user,onProfile,onExplore,onLogin}:{
         <span className="mini-profile-details"><b>{user.display_name}</b><small>@{user.username}</small></span>
       </button>
       <p className="conn live"><b>● API conectada</b> · publicaciones reales</p>
-      <p className="feed-disclaimer">Las imágenes estelares del feed son ilustraciones sintéticas. Los datos reales se consultan en el explorador.</p>
+      <p className="feed-disclaimer">Las publicaciones con observación muestran vistas reales preliminares de SPHEREx cuando hay al menos dos épocas. El parpadeo no confirma por sí solo movimiento propio.</p>
     </aside>
   </div>;
 }
@@ -266,7 +271,7 @@ export default function App(){
   const [checking,setChecking]=useState(hasToken());
   const [publish,setPublish]=useState(false);
   const [feedVersion,setFeedVersion]=useState(0);
-  const [publishRegion,setPublishRegion]=useState<ObservationParams|null>(null);
+  const [publishRegion,setPublishRegion]=useState<PublishRegion|null>(null);
   const [search,setSearch]=useState('');
   const [toast,setToast]=useState('');
   const [backgroundStatus,setBackgroundStatus]=useState<ExplorerBackgroundStatus | null>(null);
@@ -281,7 +286,7 @@ export default function App(){
   function loginRequired(){setToast('Inicia sesión para utilizar esta función.');go('home');}
   function navigateProfile(name:string){go(`u/${encodeURIComponent(name)}`)}
   function openObservation(id:string){go(`explore?observation_id=${encodeURIComponent(id)}`)}
-  function openPublish(region:ObservationParams|null=null){
+  function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
   function logout(){api.logout();setUser(null);setPublish(false);go('home');}

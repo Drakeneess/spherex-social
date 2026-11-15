@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from social_api.auth import _create_access_token
 from social_api.db import Base, get_db
 from social_api.main import create_app
-from social_api.models import Observation, Post, User
+from social_api.models import Observation, Post, SkySearchJob, User
 
 
 @pytest.fixture
@@ -160,3 +160,168 @@ def test_feed_pagination_and_visibility_change(env):
     assert client.patch(f'/v1/posts/{ids[-1]}', headers=headers['alpha'],
                         json={'visibility': 'private'}).status_code == 200
     assert ids[-1] not in [p['id'] for p in client.get('/v1/feed').json()]
+
+
+def test_old_post_reuses_matching_real_sky_job_and_real_frame_dates(env, monkeypatch):
+    from persistent_sky import _schedule
+    import persistent_sky
+    client, engine, author_id, _, headers = env
+    scheduled = []
+    monkeypatch.setattr(persistent_sky, "_schedule", lambda jid: scheduled.append(jid))
+    with Session(engine) as db:
+        region = Observation(creator_id=author_id, ra_deg=162.299, dec_deg=-53.318,
+                             fov_arcmin=6.0, detector=2)
+        task = SkySearchJob(
+            id=uuid4(), ra=162.299, dec=-53.318, size_arcmin=6.0,
+            detector=2, max_frames=2, demo=False, status="complete",
+            source="sia2",
+            frame_states=[
+                {"index": 0, "status": "ready"},
+                {"index": 1, "status": "ready"},
+            ],
+            result_data={"observations": [
+                {"index": 0, "date": "2025-05-15T00:00:00"},
+                {"index": 1, "date": "2025-09-15T00:00:00"},
+            ]},
+        )
+        db.add_all([region, task])
+        db.commit()
+        db.refresh(region)
+        task_id, region_id = str(task.id), str(region.id)
+    post_id = publish(client, headers["alpha"], "Movimiento",
+                      observation_id=region_id).json()["id"]
+    result = client.post(f"/v1/posts/{post_id}/blink")
+    assert result.status_code == 200, result.text
+    data = result.json()
+    assert data["job_id"] == task_id
+    assert data["status"] == "complete"
+    assert data["source"] == "sia2"
+    assert [x["date"] for x in data["frames"]] == [
+        "2025-05-15T00:00:00", "2025-09-15T00:00:00",
+    ]
+    assert client.post(f"/v1/posts/{post_id}/blink").json()["job_id"] == task_id
+    assert not scheduled
+    with Session(engine) as db:
+        assert str(db.get(Post, UUID(post_id)).sky_job_id) == task_id
+
+
+def test_old_post_prepares_two_epoch_job_only_once(env, monkeypatch):
+    import persistent_sky
+    client, engine, author_id, _, headers = env
+    scheduled = []
+    monkeypatch.setattr(persistent_sky, "_schedule", lambda jid: scheduled.append(str(jid)))
+    with Session(engine) as db:
+        region = Observation(creator_id=author_id, ra_deg=133.795129, dec_deg=-7.245147,
+                             fov_arcmin=6, detector=2)
+        db.add(region)
+        db.commit()
+        db.refresh(region)
+        region_id = str(region.id)
+    post_id = publish(client, headers["alpha"], "Mi campo",
+                      observation_id=region_id).json()["id"]
+    first = client.post(f"/v1/posts/{post_id}/blink")
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "queued"
+    job_id = first.json()["job_id"]
+    assert client.post(f"/v1/posts/{post_id}/blink").json()["job_id"] == job_id
+    assert scheduled == [job_id]
+    with Session(engine) as db:
+        task = db.get(SkySearchJob, UUID(job_id))
+        assert task is not None
+        assert task.max_frames == 2
+        assert task.demo is False
+        assert task.ra == 133.795129
+
+
+def test_post_may_attach_only_a_matching_real_ready_job(env):
+    client, engine, author_id, _, headers = env
+    with Session(engine) as db:
+        region = Observation(creator_id=author_id, ra_deg=133.795129,
+                             dec_deg=-7.245147, fov_arcmin=6.0, detector=2)
+        other = Observation(creator_id=author_id, ra_deg=12.0,
+                            dec_deg=12.0, fov_arcmin=6, detector=2)
+        task = SkySearchJob(
+            id=uuid4(), ra=133.795129, dec=-7.245147,
+            size_arcmin=6, detector=2, max_frames=12,
+            source="sia2", status="frames", demo=False,
+            frame_states=[{"index": 0, "status": "ready"}],
+            result_data={"count": 12, "observations": []},
+        )
+        not_ready = SkySearchJob(
+            id=uuid4(), ra=133.795129, dec=-7.245147,
+            size_arcmin=6, detector=2, max_frames=2, demo=False,
+            status="queued", frame_states=[],
+        )
+        demo = SkySearchJob(
+            id=uuid4(), ra=133.795129, dec=-7.245147,
+            size_arcmin=6, detector=2, max_frames=2, demo=True,
+            status="complete", frame_states=[{"index": 0, "status": "ready"}],
+            result_data={"count": 2, "observations": []},
+        )
+        db.add_all([region, other, task, not_ready, demo])
+        db.commit()
+        for entity in (region, other, task, not_ready, demo):
+            db.refresh(entity)
+        region_id, other_id = str(region.id), str(other.id)
+        task_id, not_ready_id, demo_id = str(task.id), str(not_ready.id), str(demo.id)
+    created = publish(client, headers["alpha"], "Vista real",
+                      observation_id=region_id, sky_job_id=task_id)
+    assert created.status_code == 201, created.text
+    post_id = created.json()["id"]
+    with Session(engine) as db:
+        assert str(db.get(Post, UUID(post_id)).sky_job_id) == task_id
+    for invalid in (
+        {"observation_id": other_id, "sky_job_id": task_id},
+        {"observation_id": region_id, "sky_job_id": not_ready_id},
+        {"observation_id": region_id, "sky_job_id": demo_id},
+        {"sky_job_id": task_id},
+    ):
+        assert publish(client, headers["alpha"], "No válido",
+                       **invalid).status_code == 422
+    assert client.patch(f"/v1/posts/{post_id}", headers=headers["alpha"],
+                        json={"observation_id": other_id}).status_code == 200
+    with Session(engine) as db:
+        assert db.get(Post, UUID(post_id)).sky_job_id is None
+
+
+def test_private_blink_preview_is_not_public(env, monkeypatch):
+    import persistent_sky
+    client, engine, author_id, _, headers = env
+    monkeypatch.setattr(persistent_sky, "_schedule", lambda _jid: None)
+    with Session(engine) as db:
+        region = Observation(creator_id=author_id, ra_deg=17, dec_deg=11,
+                             fov_arcmin=6, detector=2)
+        db.add(region)
+        db.commit()
+        db.refresh(region)
+        region_id = str(region.id)
+    private = publish(client, headers["alpha"], "Privado",
+                      visibility="private", observation_id=region_id).json()["id"]
+    assert client.post(f"/v1/posts/{private}/blink").status_code == 404
+    assert client.post(f"/v1/posts/{private}/blink", headers=headers["beta"]).status_code == 404
+    assert client.post(f"/v1/posts/{private}/blink", headers=headers["alpha"]).status_code == 200
+    unlisted = publish(client, headers["alpha"], "Con enlace",
+                       visibility="unlisted", observation_id=region_id).json()["id"]
+    assert client.post(f"/v1/posts/{unlisted}/blink").status_code == 200
+    text_post = publish(client, headers["alpha"], "Solo texto").json()["id"]
+    assert client.post(f"/v1/posts/{text_post}/blink").status_code == 404
+
+
+def test_preparing_blink_respects_active_worker_capacity(env, monkeypatch):
+    import persistent_sky
+    client, engine, author_id, _, headers = env
+    monkeypatch.setattr(persistent_sky, "_schedule", lambda _jid: None)
+    with Session(engine) as db:
+        region = Observation(creator_id=author_id, ra_deg=30, dec_deg=30,
+                             fov_arcmin=6, detector=2)
+        db.add(region)
+        for n in range(persistent_sky.MAX_ACTIVE_JOBS):
+            db.add(SkySearchJob(id=uuid4(), ra=n, dec=n, size_arcmin=6,
+                                detector=2, max_frames=2, status="queued",
+                                demo=False, frame_states=[]))
+        db.commit()
+        db.refresh(region)
+        region_id = str(region.id)
+    post_id = publish(client, headers["alpha"], "Con muchos trabajos",
+                      observation_id=region_id).json()["id"]
+    assert client.post(f"/v1/posts/{post_id}/blink").status_code == 429
