@@ -196,7 +196,7 @@ export default function ExplorerPage({
             if (request.signal.aborted) return;
             networkFailures = 0;
             lastSnapshot = state;
-            if(state.source==='sia2' && state.result && state.frames.some(frame=>frame.status==='ready'))
+            if(state.source!=='simulated' && state.result && state.frames.some(frame=>frame.status==='ready'))
               signalTask('explore');
             setSkyState(state);
             const fromQuery = state.query;
@@ -215,6 +215,11 @@ export default function ExplorerPage({
               totalMatches: state.total_matches ?? undefined,
               count: state.result?.count,
               catalogMs: state.result ? state.discovery?.elapsed_ms ?? 0 : undefined,
+              catalogError: state.error ?? undefined,
+              catalogWarning: state.discovery?.method==='tap'
+                ? 'SIA2 no respondió; se está utilizando TAP asíncrono.' : undefined,
+              remotePhase: state.discovery?.method==='tap'
+                ? state.discovery.phase : undefined,
               frames: frameTrace,
             });
             if (state.result) {
@@ -223,7 +228,7 @@ export default function ExplorerPage({
                 ra: fromQuery.ra, dec: fromQuery.dec,
                 size: fromQuery.size_arcmin, detector: fromQuery.detector,
                 frames: fromQuery.max_frames, demo: fromQuery.demo,
-                catalogMethod: 'sia2',
+                catalogMethod: state.source==='irsa'?'tap':'sia2',
               });
             }
             const pending = state.frames
@@ -235,7 +240,9 @@ export default function ExplorerPage({
             if (completed) {
               if (state.status === 'empty') setNotice('No se encontraron observaciones en esta región.');
               else if (state.status === 'partial') setNotice('Algunas imágenes no pudieron recuperarse.');
-              else if (state.status === 'failed') setError('No pudimos completar esta búsqueda. Inténtalo de nuevo.');
+              else if (state.status === 'failed') setError(state.error || 'No pudimos completar esta búsqueda. Inténtalo de nuevo.');
+              else if (state.discovery?.method==='tap')
+                setNotice('SIA2 no respondió; las observaciones se recuperaron mediante TAP.');
               const ready = state.frames.filter(item => item.status === 'ready').length;
               if (ready >= 2 && state.status !== 'cancelled') setPlaying(true);
               setLoading(false);
