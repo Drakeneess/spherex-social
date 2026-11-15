@@ -102,3 +102,34 @@ def test_reveal_endpoint_only_allows_ready_real_fits(monkeypatch):
         assert client.post(f"{path}/0/reveal", json={"white": 500}).status_code == 422
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+def test_real_fits_cutout_is_preserved_before_8bit_reveal(monkeypatch, tmp_path):
+    """Exercise the real ingestion with a local synthetic FITS, without IRSA network."""
+    from astropy.io import fits
+    from astropy.wcs import WCS
+
+    target = WCS(naxis=2)
+    target.wcs.crval = [133.795129, -7.245147]
+    target.wcs.crpix = [24.5, 24.5]
+    target.wcs.cdelt = [-6/3600, 6/3600]
+    target.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    source = np.arange(48 * 48, dtype=np.float32).reshape(48, 48)
+    cutout = tmp_path / "real.fits"
+    fits.HDUList([fits.PrimaryHDU(),
+                  fits.ImageHDU(data=source, header=target.to_header(), name="IMAGE")]
+                 ).writeto(cutout)
+    monkeypatch.setattr(explorer, "ensure_irsa_cutout_url", lambda _url: True)
+    record = {"url": str(cutout), "date": "2025-05-15T00:00:00", "release": "DR1"}
+    session = explorer.Session(
+        ra=133.795129, dec=-7.245147, size_arcmin=6,
+        detector=2, records=[record], source="sia2",
+    )
+    result = explorer.render_real(session, record)
+    assert result["mode"] == "real"
+    assert result["image"].startswith("data:image/png;base64,")
+    assert result["science_fits"].startswith(b"SIMPLE  ")
+    assert result["science_pixels"].dtype == np.float32
+    with fits.open(io.BytesIO(result["science_fits"])) as restored:
+        assert np.array_equal(restored["IMAGE"].data, source)
+        assert restored["IMAGE"].header["CTYPE1"] == "RA---TAN"
