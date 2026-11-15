@@ -477,3 +477,31 @@ def test_notification_visibility_changes_hide_private_replies_and_deleted_posts(
     assert client.delete(f'/v1/posts/{post_id}',headers=headers['alpha']).status_code==204
     assert inbox(client,headers,'alpha')==[]
     assert inbox(client,headers,'beta')==[]
+
+
+def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
+    """Test the exact ASGI entrypoint used by Railway, not only social_api.main.
+
+    Modern FastAPI can keep nested routers as _IncludedRouter placeholders in
+    app.routes, so use the expanded OpenAPI schema and real ASGI requests.
+    """
+    from app import app as deployed_app
+    from social_api.main import app as standalone_app
+
+    expected = {
+        '/v1/users/me/notifications': 'get',
+        '/v1/users/me/notifications/count': 'get',
+        '/v1/users/me/notifications/read-all': 'post',
+        '/v1/users/me/notifications/{notification_id}/read': 'post',
+    }
+    for entrypoint in (deployed_app, standalone_app):
+        paths = entrypoint.openapi()['paths']
+        for path, method in expected.items():
+            assert path in paths, f'Missing notification path: {path}'
+            assert method in paths[path], f'Missing {method.upper()} method: {path}'
+
+    # A request without a token must reach the notification endpoint and
+    # respond 401 (not the 404 that triggered this regression).
+    client = TestClient(deployed_app, raise_server_exceptions=True)
+    assert client.get('/v1/users/me/notifications').status_code == 401
+    assert client.get('/v1/users/me/notifications/count').status_code == 401

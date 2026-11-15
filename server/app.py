@@ -55,6 +55,7 @@ from social_api.api import router as social_router
 from social_api.auth import router as auth_router
 from social_api.posts import router as posts_router
 from social_api.interactions import router as interactions_router
+from social_api.notifications import router as notifications_router
 from social_api.observations import router as observations_router
 from social_api.config import get_settings as get_social_settings
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +63,7 @@ app.include_router(social_router)
 app.include_router(auth_router)
 app.include_router(posts_router)
 app.include_router(interactions_router)
+app.include_router(notifications_router)
 app.include_router(observations_router)
 if get_social_settings().cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=get_social_settings().cors_origins,
