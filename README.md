@@ -335,3 +335,42 @@ Las imágenes válidas exponen timing_ms.attempts y timing_ms.total_with_retries
 
 Los tests usan dobles UWS/FITS sin acceso externo, e incluyen fallback,
 tiempos UWS, errores HTTP y reintentos con límites. El flujo ADQL es idéntico.
+
+## Comparador SIA2 vs TAP (diagnóstico experimental)
+
+Tras completar una búsqueda **real** del explorador, el botón
+**Medir SIA2 y comparar** consulta una sola vez el endpoint de diagnóstico
+`GET /api/diagnostics/sia2/{search_id}`. No lanza otro trabajo TAP,
+no sustituye el buscador principal y no descarga archivos FITS.
+
+El backend conserva en RAM el catálogo TAP completo asociado a esa sesión
+(no solo las épocas elegidas) y lo compara con una consulta de metadatos SIA2:
+
+- URL: https://irsa.ipac.caltech.edu/SIA
+- `POS=CIRCLE <ra> <dec> 0.0002777777777777778` (radio de 1 arcsec)
+- Colecciones: `spherex_dr1`, `spherex_dr1_deep`, `spherex_qr3`, `spherex_qr3_deep`
+- `MAXREC=5000`, formato VOTable. El backend detecta `QUERY_STATUS=ERROR`
+  incluso cuando HTTP sea 200, y marca `OVERFLOW` como incompleto.
+- Filtra por el valor exacto `energy_bandpassname=SPHEREx-D<n>` y compara
+  los productos por ruta FITS on-premises (`access_url` vs URI TAP),
+  no por fechas redondeadas.
+- Mide tiempo HTTP, parseo, número de filas, compatibilidad **sintáctica**
+  de URLs de recorte, DR1/QR3, primera/última observación, coincidencias
+  y ejemplos limitados de productos exclusivos de cada método.
+
+Las diferencias de conteo NO indican automáticamente que SIA2 esté mal:
+TAP compara un punto exacto mediante `CONTAINS(POINT, p.poly)`, mientras
+que SIA2 usa una circunferencia de 1 arcsec; SIA2 puede ir ~1 día por detrás
+de TAP durante la ingestión y TAP puede devolver una selección distinta.
+Si SIA2 devuelve `OVERFLOW`, no deben interpretarse sus cifras como totales.
+Una URL de recorte compatible en sintaxis no garantiza que el servidor FITS
+la entregue en ese momento.
+
+El resultado es privado a la sesión temporal en memoria y se almacena
+en caché para evitar repetir solicitudes SIA2 idénticas al reabrir el panel.
+El JSON mostrado al navegador excluye URLs FITS y los identificadores de
+trabajos TAP; las sesiones desaparecen al reiniciar el proceso.
+
+Pruebas: `server/tests/test_sia2_comparison.py` utiliza respuestas VOTable
+simuladas sin consumir IRSA. Un resultado real (latencia/cobertura) solo
+puede verificarse al ejecutar la comparación desde el equipo del usuario.

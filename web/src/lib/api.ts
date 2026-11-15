@@ -64,6 +64,28 @@ export type FrameTiming = {
   attempts?: number;
   total_with_retries?: number;
 };
+export type Sia2Comparison = {
+  source: 'sia2_vs_tap';
+  query: {ra:number;dec:number;size_arcmin:number;detector:number};
+  sia2: {
+    elapsed_ms:number;http_ms:number;parse_ms:number;query_status:string;
+    complete:boolean;raw_rows:number;matching_detector_rows:number;
+    valid_cutout_rows:number;unique_compatible_images:number;
+    releases:Record<string,number>;
+    date_range:{earliest:string|null;latest:string|null};
+    discarded:Record<string,number>;collections:string[];radius_arcsec:number;
+  };
+  tap: {
+    unique_images:number;selected_epochs:number;releases:Record<string,number>;
+    date_range:{earliest:string|null;latest:string|null};
+  };
+  overlap: {
+    matched:number;tap_only:number;sia2_only:number;selected_tap_matched:number;
+    tap_only_examples:{date:string|null;release:string|null}[];
+    sia2_only_examples:{date:string|null;release:string|null}[];
+  };
+  comparable:boolean;caveats:string[];
+};
 export type SkyFrame = {
   image: string; index: number; date: string; release: string; mode: 'real' | 'simulated';
   wavelength_um: number | null; bandwidth_um: number | null;
@@ -171,6 +193,8 @@ export const api = {
     get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number;timing?:TapTiming}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
   cancelSkyJob: (id:string) =>
     request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
+  compareSia2: (searchId:string,signal?:AbortSignal) =>
+    get<Sia2Comparison>(`/api/diagnostics/sia2/${encodeURIComponent(searchId)}`,false,signal),
   frame: (id:string,index:number,signal?:AbortSignal) =>
     get<SkyFrame>(`/api/frame/${encodeURIComponent(id)}/${index}`,false,signal),
 };

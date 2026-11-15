@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw
 from reproject import reproject_interp
 from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout as RequestsTimeout
+from sia2_compare import Sia2ComparisonError, query_sia2, compare_with_tap
 
 logger = logging.getLogger("astrogram.irsa")
 
@@ -72,6 +73,8 @@ class Session:
     source: str
     created_at: float = field(default_factory=time.monotonic)
     frames: dict[int, dict] = field(default_factory=dict)
+    catalog_records: list[dict] | None = None
+    sia2_comparison: dict | None = None
 
 
 _sessions: dict[str, Session] = {}
@@ -194,7 +197,10 @@ def make_search_result(ra: float, dec: float, size_arcmin: float,
                        detector: int, max_frames: int, source: str,
                        all_records: list[dict]) -> dict:
     records = evenly_spaced(all_records, max_frames)
-    session = Session(ra, dec, size_arcmin, detector, records, source)
+    session = Session(
+        ra, dec, size_arcmin, detector, records, source,
+        catalog_records=list(all_records) if source == "irsa" else None,
+    )
     token = register_session(session)
     return {
         "search_id": token, "source": source, "total_matches": len(all_records),
@@ -765,6 +771,47 @@ def cancel_search_job(ticket: str):
     except Exception:
         pass
     return None
+
+@app.get("/api/diagnostics/sia2/{search_id}")
+def compare_sia2_with_existing_tap(search_id: str):
+    """Read-only SIA2 benchmark using a completed TAP catalog already in RAM.
+
+    Does not submit a second TAP job and never downloads a FITS. Neither
+    comparison nor its cached result becomes the primary explorer search.
+    """
+    session = get_session(search_id)
+    if session.source != "irsa" or session.catalog_records is None:
+        raise HTTPException(
+            status_code=422, detail="La comparación requiere un catálogo TAP real completado"
+        )
+    with _lock:
+        cached = session.sia2_comparison
+    if cached is not None:
+        return JSONResponse(cached, headers={"Cache-Control": "private, no-store"})
+
+    try:
+        sia2 = query_sia2(session.ra, session.dec, session.size_arcmin, session.detector)
+        result = compare_with_tap(sia2, session.catalog_records, session.records)
+    except Sia2ComparisonError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (RequestsTimeout, RequestsConnectionError) as exc:
+        raise HTTPException(status_code=504,
+                            detail=f"IRSA SIA2 no respondió: {type(exc).__name__}") from exc
+    except Exception as exc:
+        logger.warning("SIA2 comparison failed: %s", type(exc).__name__, exc_info=True)
+        raise HTTPException(status_code=502,
+                            detail=f"La comparación SIA2 falló: {type(exc).__name__}") from exc
+
+    result["query"] = {
+        "ra": session.ra, "dec": session.dec,
+        "size_arcmin": session.size_arcmin, "detector": session.detector,
+    }
+    with _lock:
+        if session.sia2_comparison is None:
+            session.sia2_comparison = result
+        result = session.sia2_comparison
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
 
 @app.get("/api/frame/{search_id}/{index}")
 def frame(search_id: str, index: int):

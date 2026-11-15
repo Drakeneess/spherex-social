@@ -997,3 +997,32 @@ html,body,#root{min-width:0;max-width:100%}
   margin-top: 12px;
   justify-content: center;
 }
+
+
+/* Experimental read-only SIA2-vs-TAP benchmark shown after an IRSA search. */
+.sia-compare-card {
+  margin-top: 14px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(22, 30, 56, .78);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sia-compare-card strong { font-size: .83rem; }
+.sia-compare-card > button { width: 100%; justify-content: center; }
+.sia-compare-note { font-size: .7rem; color: #adbbdb; line-height: 1.5; overflow-wrap: anywhere; }
+.sia-compare-error { font-size: .7rem; color: #ffa4af; line-height: 1.5; overflow-wrap: anywhere; }
+.sia-compare-result { padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.sia-compare-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 9px;
+  font-size: .68rem;
+}
+.sia-compare-metrics dt { color: #adbbdb; }
+.sia-compare-metrics dd { margin: 0; color: #e3edff; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; max-width: 185px; }
+.sia-compare-caveats summary { cursor: pointer; font-size: .69rem; color: #bad0f9; }
+.sia-compare-caveats p { font-size: .66rem; color: #98a7c7; line-height: 1.5; margin-top: 8px; }

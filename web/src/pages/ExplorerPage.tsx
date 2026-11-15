@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Database, LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, ApiError, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
+import { api, ApiError, hasToken, type ObservationParams, type Sia2Comparison, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
@@ -41,6 +41,9 @@ export default function ExplorerPage({
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<SearchTrace | null>(null);
+  const [siaComparison, setSiaComparison] = useState<Sia2Comparison | null>(null);
+  const [siaCompareBusy, setSiaCompareBusy] = useState(false);
+  const [siaCompareError, setSiaCompareError] = useState('');
   const [retryUntil, setRetryUntil] = useState(0);
   const retryUntilRef = useRef(0);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -56,6 +59,7 @@ export default function ExplorerPage({
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const controller = useRef<AbortController | null>(null);
+  const siaController = useRef<AbortController | null>(null);
   const remoteJob = useRef<string | null>(null);
   const available = useMemo(
     () => Object.keys(frames).map(Number).sort((a, b) => a - b),
@@ -76,6 +80,7 @@ export default function ExplorerPage({
 
   useEffect(() => () => {
     controller.current?.abort();
+    siaController.current?.abort();
     if (remoteJob.current) void api.cancelSkyJob(remoteJob.current).catch(() => {});
   }, []);
 
@@ -85,6 +90,11 @@ export default function ExplorerPage({
       return;
     }
     controller.current?.abort();
+    siaController.current?.abort();
+    siaController.current = null;
+    setSiaComparison(null);
+    setSiaCompareBusy(false);
+    setSiaCompareError('');
     if (remoteJob.current) {
       void api.cancelSkyJob(remoteJob.current).catch(() => {});
       remoteJob.current = null;
@@ -360,6 +370,29 @@ export default function ExplorerPage({
     }
     return params;
   }
+  async function compareWithSia2() {
+    if (!result || result.source !== 'irsa' || loading || siaCompareBusy) return;
+    const request = new AbortController();
+    siaController.current?.abort();
+    siaController.current = request;
+    setSiaCompareBusy(true);
+    setSiaCompareError('');
+    setSiaComparison(null);
+    try {
+      const comparison = await api.compareSia2(result.search_id, request.signal);
+      if (!request.signal.aborted) setSiaComparison(comparison);
+    } catch (cause) {
+      if (!request.signal.aborted) {
+        setSiaCompareError(cause instanceof Error ? cause.message : 'No se pudo consultar SIA2');
+      }
+    } finally {
+      if (siaController.current === request) {
+        siaController.current = null;
+        setSiaCompareBusy(false);
+      }
+    }
+  }
+
   function retrySearch() {
     const params = readParams();
     if (params) void load(params);
@@ -447,6 +480,7 @@ export default function ExplorerPage({
     },
     loaded_epochs: available,
     marks_local_only: marks,
+    sia2_diagnostic: siaComparison,
     client_progress: trace && {
       phase: trace.phase,
       remote_phase: trace.remotePhase,
@@ -549,6 +583,51 @@ export default function ExplorerPage({
         </section>
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} retrySeconds={retrySeconds}/>
+        {result?.source === 'irsa' && !loading && <section className="sia-compare-card"
+          aria-label="Comparación SIA2 y TAP">
+          <strong>Comparar SIA2 vs. TAP</strong>
+          <p className="sia-compare-note">
+            Consulta SIA2 con las mismas coordenadas y detector, usando el catálogo TAP
+            ya recuperado. No crea otro trabajo TAP ni descarga imágenes FITS.
+          </p>
+          <button type="button" className="btn sm" disabled={siaCompareBusy}
+            onClick={() => void compareWithSia2()}>
+            {siaCompareBusy ? <><LoaderCircle size={13} className="spin"/> Consultando SIA2…</>
+              : 'Medir SIA2 y comparar'}
+          </button>
+          {siaCompareError && <p className="sia-compare-error" role="alert">{siaCompareError}</p>}
+          {siaComparison && <div className="sia-compare-result">
+            <dl className="sia-compare-metrics">
+              <dt>Consulta SIA2</dt><dd>{(siaComparison.sia2.elapsed_ms / 1000).toFixed(2)} s</dd>
+              <dt>Estado del resultado</dt><dd>{siaComparison.sia2.query_status}
+                {siaComparison.comparable ? '' : ' · incompleto'}</dd>
+              <dt>Productos únicos TAP</dt><dd>{siaComparison.tap.unique_images}</dd>
+              <dt>Productos únicos SIA2 (detector {siaComparison.query.detector})</dt>
+              <dd>{siaComparison.sia2.unique_compatible_images}</dd>
+              <dt>Productos coincidentes</dt><dd>{siaComparison.overlap.matched}</dd>
+              <dt>Solo TAP / solo SIA2</dt>
+              <dd>{siaComparison.overlap.tap_only} / {siaComparison.overlap.sia2_only}</dd>
+              <dt>Épocas seleccionadas en ambos</dt>
+              <dd>{siaComparison.overlap.selected_tap_matched}/{siaComparison.tap.selected_epochs}</dd>
+              <dt>Primera observación TAP</dt><dd>{siaComparison.tap.date_range.earliest ?? '—'}</dd>
+              <dt>Última observación TAP</dt><dd>{siaComparison.tap.date_range.latest ?? '—'}</dd>
+              <dt>Primera observación SIA2</dt><dd>{siaComparison.sia2.date_range.earliest ?? '—'}</dd>
+              <dt>Última observación SIA2</dt><dd>{siaComparison.sia2.date_range.latest ?? '—'}</dd>
+            </dl>
+            {siaComparison.overlap.tap_only_examples.length > 0 &&
+              <p className="sia-compare-note">Ejemplos presentes solo en TAP: {
+                siaComparison.overlap.tap_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
+              }</p>}
+            {siaComparison.overlap.sia2_only_examples.length > 0 &&
+              <p className="sia-compare-note">Ejemplos presentes solo en SIA2: {
+                siaComparison.overlap.sia2_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
+              }</p>}
+            <details className="sia-compare-caveats">
+              <summary>Interpretación y limitaciones</summary>
+              {siaComparison.caveats.map((note, i) => <p key={i}>{note}</p>)}
+            </details>
+          </div>}
+        </section>}
         <div className="epoch-science-note">
           Las búsquedas reales consultan NASA/IPAC IRSA. Elegir un detector no equivale a seleccionar una banda monocromática.
           Las marcas y los fotogramas no se guardan en PostgreSQL.
