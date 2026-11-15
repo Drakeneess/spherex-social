@@ -600,8 +600,7 @@ export default function ExplorerPage({
               <Save size={14}/> {saveBusy ? 'Guardando…' : 'Guardar región'}
             </button>
           </div>
-          {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
-        </div>
+        {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
         {skyState && !skyState.query.demo && result && <ExplorerFold
           title="Buscar movimiento" icon={Radar} badge="Experimental"
           summary={`${skyState.frames.filter(frame=>frame.status==='ready'&&frame.raw_available).length} épocas FITS disponibles`}
@@ -629,7 +628,7 @@ export default function ExplorerPage({
           open={folds.reveal} onToggle={open=>toggleFold('reveal',open)}
           className="epoch-reveal-fold">
           <RevealEditor
-          active={active} jobId={activeJobId.current}
+          active={active&&folds.reveal} jobId={activeJobId.current}
           index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
           hasRaw={rawAvailable} searching={loading} recipe={revealRecipe}
           originalImage={frames[revealPreviewIndex]?.image}
