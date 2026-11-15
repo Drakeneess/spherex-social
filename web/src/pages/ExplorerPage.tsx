@@ -593,7 +593,8 @@ export default function ExplorerPage({
           originalImage={frames[revealPreviewIndex]?.image}
           onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
           enabled={revealEnabled} onEnabled={setRevealEnabled}
-          onOpen={()=>setPlaying(false)}/>}
+          onOpen={()=>setPlaying(false)}
+          editableIndices={revealable} onSelectEpoch={index=>{setPlaying(false);setPosition(index)}}/>}
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">
