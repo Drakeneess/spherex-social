@@ -13,6 +13,7 @@ const {
   TASKS, TASK_EVENT, NUDGE_EVENT,
   readTasks,saveTasks,readFlag,writeFlag,storageKey,signalTask,signalNudge,
   isTaskKey,welcomeSteps,explorerSteps,gameSteps,publishingSteps,nudgeStep,
+  completedMissionCount,allMissionsCompleted,newlyCompletedAllMissions,
 }=spec;
 
 class BrowserStorage {
@@ -76,4 +77,23 @@ test('mark onboarding describes multi-epoch manual tracing, not automated object
   assert.match(explorerSteps[1].description,/dos épocas distintas/);
   assert.match(explorerSteps[1].description,/no detecta ni confirma/);
   assert.match(nudgeStep('mark').description,/Cambia de época/);
+});
+
+test('finale unlocks only on the actual first transition to six complete tasks',()=>{
+  const completed=Object.fromEntries(TASKS.map(item=>[item.key,true]));
+  const before={...completed};
+  delete before[TASKS[TASKS.length-1].key];
+  assert.equal(completedMissionCount(before),5);
+  assert.equal(completedMissionCount(completed),6);
+  assert.equal(allMissionsCompleted(before),false);
+  assert.equal(allMissionsCompleted(completed),true);
+  assert.equal(newlyCompletedAllMissions(before,completed),true);
+  assert.equal(newlyCompletedAllMissions(completed,completed),false);
+  assert.equal(newlyCompletedAllMissions({},before),false);
+  assert.equal(newlyCompletedAllMissions({},{}),false);
+});
+test('mission finale acknowledgement remains isolated per account',()=>{
+  writeFlag('account-a','missions-finale-v2');
+  assert.equal(readFlag('account-a','missions-finale-v2'),true);
+  assert.equal(readFlag('account-b','missions-finale-v2'),false);
 });
