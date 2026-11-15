@@ -17,7 +17,7 @@ export default function MissionFinale({onClose}:{onClose:()=>void}){
       ? document.activeElement:null;
     const originalOverflow=document.body.style.overflow;
     document.body.style.overflow='hidden';
-    dialogRef.current?.querySelector<HTMLButtonElement>('[data-finale-primary]')?.focus({preventScroll:true});
+    dialogRef.current?.focus({preventScroll:true});
     const handleKey=(event:KeyboardEvent)=>{
       if(event.key==='Escape'){event.preventDefault();onClose();return;}
       if(event.key!=='Tab')return;
