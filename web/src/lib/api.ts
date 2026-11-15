@@ -130,7 +130,8 @@ export type PersistentSkyJob = {
   total_matches: number|null;
   result: SkySearch|null;
   discovery: {
-    method:'sia2'|'tap'|'simulated';elapsed_ms?:number;attempts?:number;
+    method:'sia2'|'tap'|'archive'|'simulated';elapsed_ms?:number;attempts?:number;
+    archive_date?:string;catalog_source?:'sia2'|'irsa';
     query_status?:string;fallback_from?:string;sia2_error?:string;phase?:string;
   }|null;
   frames: {index:number;status:'pending'|'loading'|'ready'|'failed';raw_available?:boolean;error?:string}[];

@@ -75,16 +75,66 @@ def put_preview(job_id: UUID, frame_index: int, data_url: str) -> str:
     return key
 
 
-def get_preview(job_id: UUID, frame_index: int) -> str:
+def _missing_object(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    error = getattr(exc, "response", {}).get("Error", {})
+    return str(error.get("Code", "")) in ("NoSuchKey", "404", "NotFound")
+
+
+def _archive_asset_source(job_id: UUID) -> UUID | None:
+    """Resolve only a server-recorded exact-query alias; never expose its ID.
+
+    Ordinary searches read their own objects without any DB lookup. This is
+    invoked only after their object key is confirmed missing from storage.
+    """
+    from social_api.db import get_session_factory
+    from social_api.models import SkySearchJob
+
+    with get_session_factory()() as db:
+        row = db.get(SkySearchJob, job_id)
+        if row is None or row.status not in ("complete", "partial"):
+            return None
+        marker = (row.discovery_data or {}).get("_archive_source_job")
+        if not marker:
+            return None
+        try:
+            previous_id = UUID(str(marker))
+        except ValueError:
+            return None
+        if previous_id == job_id:
+            return None
+        previous = db.get(SkySearchJob, previous_id)
+        if (previous is None or previous.status not in ("complete", "partial")
+                or previous.demo or (previous.discovery_data or {}).get("_archive_source_job")):
+            return None
+        query = ("ra", "dec", "size_arcmin", "detector", "max_frames")
+        if any(getattr(previous, key) != getattr(row, key) for key in query):
+            return None
+        return previous_id
+
+
+def _read_preview_bytes(job_id: UUID, frame_index: int) -> bytes:
     key = _object_key(job_id, frame_index)
     settings = _s3_settings()
     if settings is None:
-        raw = (LOCAL_STORE / key).read_bytes()
-    else:
-        endpoint, bucket, region, access, secret = settings
-        raw = _client(endpoint, access, secret, region).get_object(
-            Bucket=bucket, Key=key,
-        )["Body"].read(MAX_PNG_BYTES + 1)
+        return (LOCAL_STORE / key).read_bytes()
+    endpoint, bucket, region, access, secret = settings
+    return _client(endpoint, access, secret, region).get_object(
+        Bucket=bucket, Key=key,
+    )["Body"].read(MAX_PNG_BYTES + 1)
+
+
+def get_preview(job_id: UUID, frame_index: int) -> str:
+    try:
+        raw = _read_preview_bytes(job_id, frame_index)
+    except Exception as exc:
+        if not _missing_object(exc):
+            raise
+        source = _archive_asset_source(job_id)
+        if source is None:
+            raise
+        raw = _read_preview_bytes(source, frame_index)
     if not raw.startswith(PNG_SIGNATURE) or len(raw) > MAX_PNG_BYTES:
         raise ValueError("Invalid stored PNG")
     return PNG_PREFIX + base64.b64encode(raw).decode("ascii")
@@ -158,7 +208,15 @@ def get_science_pixels(job_id: UUID, frame_index: int):
     import io
     import numpy as np
 
-    raw = _get_bytes(_science_key(job_id, frame_index, "npz"), MAX_SCIENCE_BYTES)
+    try:
+        raw = _get_bytes(_science_key(job_id, frame_index, "npz"), MAX_SCIENCE_BYTES)
+    except Exception as exc:
+        if not _missing_object(exc):
+            raise
+        source = _archive_asset_source(job_id)
+        if source is None:
+            raise
+        raw = _get_bytes(_science_key(source, frame_index, "npz"), MAX_SCIENCE_BYTES)
     with np.load(io.BytesIO(raw), allow_pickle=False) as data:
         pixels = np.asarray(data["pixels"], dtype=np.float32)
     if pixels.ndim != 2 or not all(1 <= size <= 256 for size in pixels.shape):
@@ -168,4 +226,12 @@ def get_science_pixels(job_id: UUID, frame_index: int):
 
 def get_source_fits(job_id: UUID, frame_index: int) -> bytes:
     """Internal-only access for future authenticated scientific exports."""
-    return _get_bytes(_science_key(job_id, frame_index, "fits"), MAX_FITS_BYTES)
+    try:
+        return _get_bytes(_science_key(job_id, frame_index, "fits"), MAX_FITS_BYTES)
+    except Exception as exc:
+        if not _missing_object(exc):
+            raise
+        source = _archive_asset_source(job_id)
+        if source is None:
+            raise
+        return _get_bytes(_science_key(source, frame_index, "fits"), MAX_FITS_BYTES)
