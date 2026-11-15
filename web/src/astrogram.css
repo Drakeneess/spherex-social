@@ -1773,3 +1773,47 @@ body {
   .post-external-link small{display:none}
 }
 @media(prefers-reduced-motion:reduce){.compose-drop,.post-media-dots button{transition:none}}
+
+/* Adaptive media delivery: tiny thumbnails in feed, full photo on demand. */
+.post-media-open{
+  display:grid;place-items:center;position:relative;width:100%;height:100%;
+  border:0;outline-offset:-3px;background:transparent;color:var(--muted);
+  cursor:zoom-in;min-height:0;
+}
+.post-media-open>img{width:100%;height:100%;object-fit:contain}
+.post-media-expand{position:absolute;right:12px;bottom:12px;
+  display:grid;place-items:center;width:32px;height:32px;
+  border-radius:50%;background:rgba(5,10,24,.82);color:#fff}
+.post-media-open:hover .post-media-expand{background:#354c80}
+.post-media-lightbox{
+  position:fixed;inset:0;z-index:180;background:rgba(3,5,12,.93);
+  display:flex;align-items:center;justify-content:center;padding:16px;
+}
+.post-media-lightbox-dialog{
+  display:flex;flex-direction:column;width:min(1100px,100%);
+  max-height:calc(100dvh - 32px);background:#0b1020;
+  border:1px solid var(--line);border-radius:17px;overflow:hidden;
+}
+.post-media-lightbox-header,.post-media-lightbox-bottom{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 15px;color:#cbd8f6;font-size:.8rem;
+}
+.post-media-lightbox-header{border-bottom:1px solid var(--line)}
+.post-media-lightbox-bottom{border-top:1px solid var(--line);color:var(--muted)}
+.post-media-lightbox-header button,.post-media-lightbox-bottom button{
+  border-radius:9px;padding:7px;color:var(--text);display:inline-grid;place-items:center;
+}
+.post-media-lightbox-header button:hover,.post-media-lightbox-bottom button:hover{background:#283451}
+.post-media-lightbox-bottom>div{display:flex;gap:10px}
+.post-media-lightbox-image{display:grid;place-items:center;min-height:0;flex:1;
+  background:#050814;overflow:hidden}
+.post-media-lightbox-image img{max-width:100%;max-height:min(75dvh,900px);
+  object-fit:contain;display:block}
+.compose-drop .compose-media-budget{
+  color:#a9c4e6;border-top:0;padding:0 13px 10px;
+  font-size:.70rem;align-items:flex-start;
+}
+.compose-media-budget svg{flex:none;color:var(--ok)}
+@media(max-width:640px){.post-media-lightbox{padding:5px}
+  .post-media-lightbox-dialog{max-height:calc(100dvh - 10px)}
+}

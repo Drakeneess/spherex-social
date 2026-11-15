@@ -20,7 +20,9 @@ async function encodePhoto(file:File):Promise<string>{
   const bitmap=await createImageBitmap(file);
   try{
     if(bitmap.width*bitmap.height>16_000_000)throw new Error('La imagen supera 16 megapíxeles.');
-    const factor=Math.min(1,1920/Math.max(bitmap.width,bitmap.height));
+    // Transport optimization only; the server strictly enforces the
+    // final S3 budget for both the main photo and its thumbnail.
+    const factor=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
     const canvas=document.createElement('canvas');
     canvas.width=Math.max(1,Math.round(bitmap.width*factor));
     canvas.height=Math.max(1,Math.round(bitmap.height*factor));
@@ -200,7 +202,11 @@ export default function PublishModal({region,onClose,onDone}:Props){
                 <Telescope size={19}/> Observación {attach&&<Check size={14}/>}
               </button>}
             </div>
-            <p><UploadCloud size={15}/> Arrastra imágenes aquí o selecciona Fotos · JPEG, PNG y WebP</p>
+            <p><UploadCloud size={15}/> Arrastra fotos o selecciónalas · hasta 4 · optimización automática</p>
+            <p className="compose-media-budget">
+              <Check size={14}/> Las fotos se guardan como WebP con un límite total de 3 MiB
+              incluyendo miniaturas. Los archivos originales no se almacenan.
+            </p>
           </div>
 
           {showLink&&<div className="compose-optional">

@@ -273,8 +273,10 @@ export const api = {
     sky_job_id?:string|null;display_recipe?:RevealRecipe|null;
     images?:{data_url:string}[];link_url?:string|null;
   }) => write<Post>('POST','/v1/posts',data),
-  postMediaData: (postId:string,mediaId:string) =>
-    get<{data_url:string}>(`/v1/posts/${encodeURIComponent(postId)}/media/${encodeURIComponent(mediaId)}`,hasToken()),
+  postMediaData: (postId:string,mediaId:string,size:'thumbnail'|'full'='thumbnail') =>
+    get<{data_url:string}>(
+      `/v1/posts/${encodeURIComponent(postId)}/media/${encodeURIComponent(mediaId)}?size=${size}`,
+      hasToken()),
   preparePostBlink: (postId:string,signal?:AbortSignal) =>
     request<PostBlinkInfo>(`/v1/posts/${encodeURIComponent(postId)}/blink`,
       {method:'POST'},hasToken(),signal),
