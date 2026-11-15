@@ -53,7 +53,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
   const fileRef=useRef<HTMLInputElement>(null);
   const photoCounter=useRef(0);
   const tags=extractPostHashtags(caption);
-  const hasContent=Boolean(caption.trim()||photos.length||link.trim()||(attach&&region));
+  const hasContent=Boolean(caption.trim()||photos.length||(showLink&&link.trim())||(attach&&region));
 
   useEffect(()=>{
     const previous=document.body.style.overflow;
@@ -118,7 +118,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
         visibility,observation_id,
         sky_job_id:attach&&region?.sky_job_id?region.sky_job_id:null,
         display_recipe:attach&&region?.display_recipe?region.display_recipe:null,
-        link_url:link.trim()||null,
+        link_url:showLink?(link.trim()||null):null,
         images:photos.map(photo=>({data_url:photo.data_url})),
       });
       signalTask('post');
