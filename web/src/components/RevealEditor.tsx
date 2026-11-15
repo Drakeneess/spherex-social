@@ -7,7 +7,7 @@ type Props = {
   active:boolean;jobId:string|null;index:number;rawAvailable:boolean;hasRaw:boolean;searching:boolean;
   recipe:RevealRecipe;onChange:(recipe:RevealRecipe)=>void;
   enabled:boolean;onEnabled:(value:boolean)=>void;
-  originalImage?:string;
+  originalImage?:string;onOpen?:()=>void;
 };
 
 const palettes: {id:RevealRecipe['palette'];name:string;hint:string}[] = [
@@ -24,7 +24,7 @@ const formats: {id:RevealRecipe['format'];name:string;ratio:string}[] = [
 ];
 
 export default function RevealEditor({
-  active,jobId,index,rawAvailable,hasRaw,searching,recipe,onChange,enabled,onEnabled,originalImage,
+  active,jobId,index,rawAvailable,hasRaw,searching,recipe,onChange,enabled,onEnabled,originalImage,onOpen,
 }:Props){
   const [open,setOpen]=useState(false);
   const [showOriginal,setShowOriginal]=useState(false);
@@ -136,7 +136,7 @@ export default function RevealEditor({
             <span>{loading?'Actualizando vista…':rawAvailable?'Edición disponible':'Esperando una época editable'}</span>
           </div>
         </div>
-        <button type="button" className="btn reveal-open" onClick={()=>setOpen(true)}>
+        <button type="button" className="btn reveal-open" onClick={()=>{onOpen?.();setOpen(true);}}>
           <SlidersHorizontal size={16}/> Abrir estudio <ChevronRight size={16}/>
         </button>
         <label className="reveal-compact-toggle">
