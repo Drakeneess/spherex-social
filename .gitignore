@@ -11,3 +11,22 @@ __pycache__/
 .DS_Store
 .coverage
 *.log
+
+# Local scientific assets (real FITS and generated previews belong outside Git)
+.sky-frames/
+**/.sky-frames/
+
+# Local artifacts and tool caches
+*.tsbuildinfo
+*.db
+*.db-journal
+*.sqlite
+.coverage.*
+coverage/
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.vite/
+.cache/
+.DS_Store?
+Thumbs.db
