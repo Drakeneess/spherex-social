@@ -81,7 +81,7 @@ const RAW:Record<string,RawAtlas>={
   },
   taurus:{
     targets:TAURUS_TARGETS.map(t=>({...t})),
-    lines:TAURUS_FIGURE_LINES.map(([a,b])=>[a,b]),
+    lines:TAURUS_FIGURE_LINES.map(([a,b]):[string,string]=>[a,b]),
     centerRA:67.65,
   },
   gemini:{
