@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bell, Bookmark, Check, LogOut, Settings, Users } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
 import BrandLogo from './components/BrandLogo';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
+import { feedSidebarStickyTop } from './lib/sidebarScroll';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats, type RevealRecipe } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
@@ -158,6 +159,28 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
   const [more,setMore]=useState(true);
   const streak=getGameStreak();
   const completed=TASKS.filter(task=>tasks[task.key]).length;
+  const sidebarRef=useRef<HTMLElement|null>(null);
+  useEffect(()=>{
+    const sidebar=sidebarRef.current;
+    if(!sidebar)return;
+    // Tall sidebars must scroll naturally until the bottom becomes visible;
+    // after that they can stick above the viewport's bottom safe margin.
+    // A short sidebar keeps its familiar top-sticky behaviour.
+    const updatePosition=()=>{
+      const height=sidebar.getBoundingClientRect().height;
+      const offset=feedSidebarStickyTop(window.innerHeight,height);
+      sidebar.style.setProperty('--feed-side-sticky-top',`${offset}px`);
+    };
+    const observer=typeof ResizeObserver!=='undefined'
+      ?new ResizeObserver(updatePosition):null;
+    observer?.observe(sidebar);
+    window.addEventListener('resize',updatePosition);
+    updatePosition();
+    return()=>{
+      observer?.disconnect();
+      window.removeEventListener('resize',updatePosition);
+    };
+  },[guideHidden]);
   async function fetchFeed(reset=false){
     setLoading(true);setError('');
     try{
@@ -177,7 +200,7 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
       {!loading&&more&&<button type="button" className="btn more-posts" onClick={()=>void fetchFeed()}>Cargar más publicaciones</button>}
       {!loading&&posts.length>0&&<button type="button" className="refresh-feed" onClick={()=>void fetchFeed(true)}>Actualizar feed</button>}
     </main>
-    <aside className="side" aria-label="Explorar y perfil">
+    <aside ref={sidebarRef} className="side" aria-label="Explorar y perfil">
       {!guideHidden && <section className="card first-steps" data-tour="first-steps">
         <div className="card-h"><span><AstroGlyph name="ship" size={18}/> Primeros pasos</span>
           <span className="chip">{completed}/{TASKS.length}</span></div>

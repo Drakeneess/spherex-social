@@ -1580,3 +1580,22 @@ body {
   }
   .ag-onboard-confetti{display:none}
 }
+
+/* Long feed sidebar: a fixed top:76px made its lower cards inaccessible
+   until reaching the very end of a potentially endless feed.
+   Its dynamic negative top offset lets the column scroll with the document
+   until its last card reaches the bottom of the viewport, then stick there.
+   Shorter sidebars continue to stick beneath the header. */
+@media (min-width:981px) {
+  .astrogram-shell .feed-layout > .side {
+    position:sticky;
+    align-self:start;
+    top:var(--feed-side-sticky-top,76px);
+  }
+}
+@media (max-width:980px) {
+  .astrogram-shell .feed-layout > .side {
+    position:static;
+    top:auto;
+  }
+}
