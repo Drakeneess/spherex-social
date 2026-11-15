@@ -7,7 +7,7 @@ import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { feedSidebarStickyTop } from './lib/sidebarScroll';
 import { constellationForBirthday } from './lib/zodiac';
-import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
+import { api, hasToken, type FeedMode, type Post, type Profile, type UserStats } from './lib/api';
 import { startRealtime, subscribeRealtime, REALTIME_EVENT } from './lib/realtime';
 import PostCard, { Avatar, updateAvatarCache } from './components/PostCard';
 import ProfileEditor from './components/ProfileEditor';
@@ -122,6 +122,9 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
   const [error,setError]=useState('');
   const [offset,setOffset]=useState(0);
   const [more,setMore]=useState(true);
+  const [mode,setMode]=useState<FeedMode>('for_you');
+  const effectiveMode:FeedMode=tag?'recent':mode;
+  const requestRef=useRef<AbortController|null>(null);
   const streak=getGameStreak();
   const completed=TASKS.filter(task=>tasks[task.key]).length;
   const sidebarRef=useRef<HTMLElement|null>(null);
@@ -147,37 +150,67 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
     };
   },[guideHidden]);
   async function fetchFeed(reset=false){
+    requestRef.current?.abort();
+    const controller=new AbortController();
+    requestRef.current=controller;
     setLoading(true);setError('');
+    if(reset){setPosts([]);setOffset(0);setMore(true);}
     try{
       const nextOffset=reset?0:offset;
-      const data=await api.feed(10,nextOffset,tag);
+      const data=await api.feed(10,nextOffset,tag,effectiveMode,controller.signal);
+      if(controller.signal.aborted)return;
       setPosts(prev=>reset?data:[...prev,...data.filter(p=>!prev.some(o=>o.id===p.id))]);
-      setOffset(nextOffset+data.length);setMore(data.length===10);
-    }catch(e){setError(message(e));}finally{setLoading(false);}
+      setOffset(nextOffset+data.length);
+      setMore(data.length===10);
+    }catch(e){
+      if(!controller.signal.aborted)setError(message(e));
+    }finally{
+      if(requestRef.current===controller){
+        requestRef.current=null;
+        setLoading(false);
+      }
+    }
   }
-  useEffect(()=>{void fetchFeed(true);},[]);
+  useEffect(()=>{
+    void fetchFeed(true);
+    return()=>requestRef.current?.abort();
+  },[effectiveMode,tag]);
   useEffect(()=>{
     let timer:number|undefined;
     let active=true;
     const unsubscribe=subscribeRealtime(change=>{
-      if(!['resync','feed','interaction','comments','profile_posts'].includes(change.kind))return;
+      if(!['resync','feed','interaction','comments','profile_posts','profile_stats','bookmarks'].includes(change.kind))return;
       window.clearTimeout(timer);
       timer=window.setTimeout(()=>{
+        if(!active || requestRef.current)return;
         const limit=Math.min(50,Math.max(10,offset));
-        void api.feed(limit,0,tag).then(data=>{
+        void api.feed(limit,0,tag,effectiveMode).then(data=>{
           if(!active)return;
           setPosts(data);setOffset(data.length);setMore(data.length===limit);
-        }).catch(()=>{/* Preserve the last successful feed while offline. */});
-      },300);
+        }).catch(()=>{/* Preserve last known feed during brief outages. */});
+      },450);
     });
     return()=>{active=false;window.clearTimeout(timer);unsubscribe();};
-  },[offset,tag]);
+  },[offset,tag,effectiveMode]);
   return <div className="wrap feed-layout">
     <main className="feed" aria-label="Feed AstroGram">
+      {!tag&&<div className="feed-mode-tabs" role="group" aria-label="Orden de las publicaciones">
+        <button type="button" aria-pressed={effectiveMode==='for_you'}
+          className={effectiveMode==='for_you'?'active':''}
+          onClick={()=>setMode('for_you')}>Para ti</button>
+        <button type="button" aria-pressed={effectiveMode==='following'}
+          className={effectiveMode==='following'?'active':''}
+          onClick={()=>setMode('following')}>Siguiendo</button>
+        <button type="button" aria-pressed={effectiveMode==='recent'}
+          className={effectiveMode==='recent'?'active':''}
+          onClick={()=>setMode('recent')}>Recientes</button>
+      </div>}
       {tag&&<div className="feed-tag-filter"><span>Publicaciones con <b>#{tag}</b></span>
         <button type="button" onClick={()=>go('home')}>Mostrar todas</button></div>}
       {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin} currentUsername={user.username}/>)}
-      {posts.length===0&&!loading&&!error&&<div className="card empty">Aún no hay publicaciones públicas. ¡Comparte la primera observación!</div>}
+      {posts.length===0&&!loading&&!error&&<div className="card empty">{effectiveMode==='following'
+        ? 'Aquí aparecerán las publicaciones públicas de los astroamigos que sigues.'
+        : 'Aún no hay publicaciones públicas. ¡Comparte la primera observación!'}</div>}
       {error&&<p className="form-error" role="alert">{error}</p>}
       {loading&&<div className="card empty">Cargando publicaciones…</div>}
       {!loading&&more&&<button type="button" className="btn more-posts" onClick={()=>void fetchFeed()}>Cargar más publicaciones</button>}
