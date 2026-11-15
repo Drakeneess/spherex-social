@@ -59,6 +59,7 @@ export type Post = {
   reposts_count: number;
   reposted_by_me: boolean;
   bookmarked_by_me: boolean;
+  liked_by_me: boolean;
   reposted_by: string | null;
   reposted_at: string | null;
 };
@@ -170,6 +171,7 @@ export class ApiError extends Error {
 }
 const TOKEN_KEY = 'astrogram.access_token';
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+export const realtimeBase = BASE;
 export const hasToken = () => Boolean(sessionStorage.getItem(TOKEN_KEY));
 export const clearToken = () => sessionStorage.removeItem(TOKEN_KEY);
 
@@ -195,6 +197,8 @@ async function renewAccess(): Promise<string | null> {
   try{return await refreshInFlight;}
   finally{refreshInFlight=null;}
 }
+
+export const realtimeToken = () => renewAccess();
 
 const messages: Record<number, string> = {
   401: 'Sesión vencida o credenciales incorrectas', 403: 'No tienes permiso',
