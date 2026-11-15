@@ -136,10 +136,14 @@ async def stream_events(
 
     async def stream():
         queue = hub.subscribe()
+        expires_at = asyncio.get_running_loop().time() + 600
         try:
             # A fresh connection always reconciles potentially missed events.
             yield "retry: 2000\nevent: ready\ndata: {}\n\n"
             while not await request.is_disconnected():
+                # Force periodic JWT/session revalidation on a new connection.
+                if asyncio.get_running_loop().time() >= expires_at:
+                    return
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15)
                 except asyncio.TimeoutError:
