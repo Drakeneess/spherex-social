@@ -4,6 +4,9 @@ export type Profile = {
   username: string;
   display_name: string;
   bio: string | null;
+  website: string|null;
+  avatar_version: string|null;
+  cover_version: string|null;
   created_at: string;
   email?: string;
 };
@@ -267,7 +270,14 @@ export const api = {
     try{localStorage.setItem('astrogram.auth.logout',String(Date.now()));}catch{}
   },
   me: () => get<Profile>('/v1/users/me', true),
-  patchMe: (data: {display_name?:string;bio?:string|null}) => write<Profile>('PATCH','/v1/users/me',data),
+  patchMe: (data: {display_name?:string;bio?:string|null;website?:string|null}) =>
+    write<Profile>('PATCH','/v1/users/me',data),
+  profileMediaUrl: (username:string,kind:'avatar'|'cover',version:string) =>
+    `${BASE}/v1/users/${encodeURIComponent(username)}/media/${kind}?v=${encodeURIComponent(version)}`,
+  uploadProfileMedia: (kind:'avatar'|'cover',data_url:string) =>
+    write<Profile>('POST',`/v1/users/me/media/${kind}`,{data_url}),
+  deleteProfileMedia: (kind:'avatar'|'cover') =>
+    write<Profile>('DELETE',`/v1/users/me/media/${kind}`),
   user: (username: string) => get<Profile>(`/v1/users/${encodeURIComponent(username)}`),
   stats: (username: string) => get<UserStats>(`/v1/users/${encodeURIComponent(username)}/stats`, hasToken()),
   follow: (username: string) => write<void>('POST',`/v1/users/${encodeURIComponent(username)}/follow`),

@@ -8,6 +8,7 @@ import { getGameStreak } from './lib/gameStreak';
 import { feedSidebarStickyTop } from './lib/sidebarScroll';
 import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
+import ProfileEditor from './components/ProfileEditor';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
 import NotificationsPage from './components/NotificationsPage';
@@ -194,7 +195,7 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
         </ul>
       </section>
       <button className="card mini-profile" type="button" onClick={()=>onProfile(user.username)}>
-        <Avatar name={user.username} size={48}/>
+        <Avatar name={user.username} version={user.avatar_version} size={48}/>
         <span className="mini-profile-details"><b>{user.display_name}</b><small>@{user.username}</small></span>
       </button>
       <p className="feed-disclaimer">Las publicaciones con observación muestran vistas reales preliminares de SPHEREx cuando hay al menos dos épocas. El parpadeo no confirma por sí solo movimiento propio.</p>
@@ -238,14 +239,28 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
   return <main className="wrap single profile-layout">
     {error&&<div className="form-error" role="alert">{error}</div>}
     {!person?<div className="card empty">Cargando perfil…</div>:<>
-      <div className="card phead"><div className="profile-avatar"><Avatar name={person.username} size={84}/></div><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
+      <div className="card phead profile-hero">
+        <div className="profile-cover-banner">
+          {person.cover_version
+            ? <img src={api.profileMediaUrl(person.username,'cover',person.cover_version)}
+                alt="Portada del perfil" decoding="async"/>
+            : <div className="profile-cover-placeholder" aria-hidden="true"><AstroGlyph name="galaxy" size={54}/></div>}
+        </div>
+        <div className="profile-hero-content">
+          <div className="profile-avatar"><Avatar name={person.username} version={person.avatar_version} size={90}/></div>
+          <div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
         <p className={person.bio?'':'profile-bio-placeholder'}>{person.bio||(mine?'Añade una bio para contarle al universo quién eres.':'Sin bio todavía.')}</p>
+        {person.website&&<a className="profile-website" href={person.website}
+          target="_blank" rel="noopener noreferrer nofollow">
+          <AstroGlyph name="spark" size={15}/>
+          {(()=>{try{return new URL(person.website).hostname;}catch{return 'Enlace personal';}})()}
+        </a>}
         <div className="stats"><span><b>{posts.length}</b> publicaciones y compartidos</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
           <span><b>{stats?.following_count??0}</b> siguiendo</span>
           <span><b>{new Date(person.created_at).toLocaleDateString('es',{month:'short',year:'numeric'})}</b> se unió</span></div>
         <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
-      </div></div>
+      </div></div></div>
       <div className="profile-observation-heading card-h"><span>Observaciones y compartidos</span><span className="chip">{posts.length}</span></div>
       <div className="profile-posts">
         {posts.map(post=><div key={post.id} className="profile-tile" role="button" tabIndex={0}
@@ -302,23 +317,9 @@ function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
   user:Profile;onUpdate:(p:Profile)=>void;onLogout:()=>void;
   onReplayTour:()=>void;onShowGuide:()=>void;
 }){
-  const [name,setName]=useState(user.display_name),[bio,setBio]=useState(user.bio??'');
-  const [error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
-  async function update(event:FormEvent){
-    event.preventDefault();setSaved(false);setError('');setBusy(true);
-    try{const updated=await api.patchMe({display_name:name.trim(),bio:bio.trim()||null});
-      onUpdate(updated);if(updated.bio?.trim())signalTask('bio');setSaved(true);}
-    catch(e){setError(message(e))}finally{setBusy(false)}
-  }
   return <main className="wrap narrow settings-page">
     <div className="card"><div className="card-h"><span><AstroGlyph name="gear" size={17}/> Ajustes</span><span className="chip">@{user.username}</span></div>
-      <form className="sec" onSubmit={e=>void update(e)}>
-        <h3>Editar perfil</h3><p>Actualiza tu nombre visible y biografía.</p>
-        <div className="field"><label htmlFor="editName">Nombre para mostrar</label><input id="editName" minLength={1} maxLength={80} value={name} onChange={e=>setName(e.target.value)} required/></div>
-        <div className="field"><label htmlFor="bio">Biografía</label><textarea id="bio" maxLength={500} value={bio} onChange={e=>setBio(e.target.value)}/></div>
-        {error&&<p className="form-error" role="alert">{error}</p>}{saved&&<p className="success-note">Cambios guardados.</p>}
-        <button className="btn p" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar perfil'}</button>
-      </form>
+      <ProfileEditor user={user} onUpdate={onUpdate}/>
       <div className="sec onboarding-settings">
         <h3>Aprender AstroGram</h3>
         <p>Puedes repetir la guía de bienvenida o recuperar las misiones que ocultaste.
@@ -580,7 +581,7 @@ export default function App(){
               {unreadCount>99?'99+':unreadCount}</span>}
           </button>
           <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
-            <Avatar name={user.username} size={26}/><span className="t">Perfil</span></button>
+            <Avatar name={user.username} version={user.avatar_version} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
             <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
           <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()}>
