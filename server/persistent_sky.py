@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import numpy as np
 import threading
 import time
 from functools import lru_cache
@@ -182,6 +183,12 @@ def _analyze_terminal_job(job_id: uuid.UUID) -> dict:
     for index in indices:
         try:
             pixels = get_science_pixels(job_id, index)
+            # Edge cutouts can lack most of their footprint. Exclude them
+            # rather than failing every otherwise-usable science frame.
+            finite = np.isfinite(pixels)
+            if float(np.count_nonzero(finite)) / pixels.size < 0.65:
+                skipped += 1
+                continue
             frames.append((index, float(timestamps[index]), pixels))
         except Exception:
             skipped += 1
