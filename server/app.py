@@ -931,6 +931,10 @@ def frame(search_id: str, index: int):
             logger.warning("FITS frame error index=%s stage=desconocida type=%s",
                            index, type(exc).__name__)
             raise HTTPException(status_code=502, detail=f"FITS falló: {type(exc).__name__}") from exc
+    # Legacy ephemeral frame API returns JSON, never science bytes or numpy arrays.
+    # Durable jobs archive those through persistent_sky._produce_frame instead.
+    rendered.pop("science_fits", None)
+    rendered.pop("science_pixels", None)
     if "timing_ms" in rendered:
         rendered["timing_ms"] = {
             **rendered["timing_ms"], "attempts": attempts,
