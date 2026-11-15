@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock3, LoaderCircle, Orbit, XCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock3, Orbit, XCircle } from 'lucide-react';
 import type { FrameTiming, Sia2Discovery, TapTiming } from '../lib/api';
 import { progressSummary } from './BackgroundSkyDock';
 
