@@ -3035,3 +3035,31 @@ body {
 @media(prefers-reduced-motion:reduce){
   .sound-previews button{transition:none}
 }
+
+
+/* Always-available sound toggle: usable by guests as well as signed-in users. */
+.astrogram-shell .navbar .nav button.sound-quick-toggle{
+  color:#a2c8f3;border:1px solid rgba(129,175,244,.25);
+  background:rgba(86,128,192,.09);
+}
+.astrogram-shell .navbar .nav button.sound-quick-toggle:hover{
+  color:#eff6ff;background:rgba(90,176,255,.16);border-color:rgba(145,192,255,.55);
+}
+.astrogram-shell .navbar .nav button.sound-quick-toggle[aria-pressed="false"]{
+  color:#8695b0;background:rgba(31,40,61,.5);
+}
+.authbox .auth-sound-toggle{
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  margin:12px auto 0;padding:9px 13px;
+  color:#a0badd;font-size:.79rem;font-weight:650;
+  border:1px solid #394865;border-radius:10px;
+  background:#131c30;
+}
+.authbox .auth-sound-toggle:hover{color:#fff;background:#263655;border-color:#759de0}
+.authbox .auth-sound-toggle[aria-pressed="false"]{color:#8e9baf}
+@media(max-width:680px){
+  .astrogram-shell .navbar .nav button.sound-quick-toggle{
+    min-width:0;min-height:44px;padding:6px 2px;
+    background:transparent;border:0;border-radius:10px;
+  }
+}
