@@ -44,7 +44,9 @@ export default function OnboardingTour({spec,onClose}:{spec:TourSpec;onClose:(co
     return()=>window.removeEventListener('keydown',onKey);
   },[onClose,spec.soft,spec.steps.length]);
   useEffect(()=>{
-    if(!spec.soft)return;
+    // Brief contextual nudges fade automatically. The multi-step publish
+    // tutorial remains until the author advances or closes it.
+    if(!spec.soft||spec.steps.length!==1)return;
     const timer=window.setTimeout(()=>onClose(false),9000);
     return()=>window.clearTimeout(timer);
   },[spec.soft,onClose]);
