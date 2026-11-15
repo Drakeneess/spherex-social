@@ -23,6 +23,10 @@ export type Post = {
   created_at: string;
   likes_count: number;
   comments_count: number;
+  reposts_count: number;
+  reposted_by_me: boolean;
+  reposted_by: string | null;
+  reposted_at: string | null;
 };
 export type Observation = {
   id: string;
@@ -186,7 +190,7 @@ export const api = {
   stats: (username: string) => get<UserStats>(`/v1/users/${encodeURIComponent(username)}/stats`, hasToken()),
   follow: (username: string) => write<void>('POST',`/v1/users/${encodeURIComponent(username)}/follow`),
   unfollow: (username: string) => write<void>('DELETE',`/v1/users/${encodeURIComponent(username)}/follow`),
-  feed: (limit = 20, offset = 0) => get<Post[]>(`/v1/feed?limit=${limit}&offset=${offset}`),
+  feed: (limit = 20, offset = 0) => get<Post[]>(`/v1/feed?limit=${limit}&offset=${offset}`,hasToken()),
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),
   createPost: (data: {
     caption:string;visibility:Post['visibility'];observation_id:string|null;
@@ -197,6 +201,8 @@ export const api = {
       {method:'POST'},hasToken(),signal),
   like: (id:string) => write<void>('POST',`/v1/posts/${id}/like`),
   unlike: (id:string) => write<void>('DELETE',`/v1/posts/${id}/like`),
+  repost: (id:string) => write<void>('POST',`/v1/posts/${id}/repost`),
+  unrepost: (id:string) => write<void>('DELETE',`/v1/posts/${id}/repost`),
   bookmark: (id:string) => write<void>('POST',`/v1/posts/${id}/bookmark`),
   unbookmark: (id:string) => write<void>('DELETE',`/v1/posts/${id}/bookmark`),
   bookmarks: () => get<Post[]>('/v1/users/me/bookmarks',true),

@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Post, User
-from .posts import PostOut, counts_by_post, optional_user, reposted_ids, serialize
+from .posts import PostOut, counts_by_post, serialize
 
 router = APIRouter(prefix='/v1', tags=['social'])
 
@@ -29,7 +29,6 @@ def feed(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
-    viewer: User | None = Depends(optional_user),
 ):
     # Chronological public feed: personalization comes later.
     rows = db.execute(
@@ -40,7 +39,4 @@ def feed(
         .limit(limit).offset(offset)
     ).all()
     counts = counts_by_post(db, [post.id for post, _ in rows])
-    ids = [post.id for post, _ in rows]
-    viewer_reposts = reposted_ids(db, viewer, ids)
-    return [serialize(post, username, counts, viewer_reposts=viewer_reposts)
-            for post, username in rows]
+    return [serialize(post, username, counts) for post, username in rows]

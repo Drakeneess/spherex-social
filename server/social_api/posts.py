@@ -9,12 +9,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import bearer, current_user
 from .db import get_db
-from .models import Comment, Observation, Post, PostLike, PostRepost, SkySearchJob, User
+from .models import Comment, Observation, Post, PostLike, SkySearchJob, User
 
 router = APIRouter(prefix='/v1', tags=['posts'])
 Visibility = Literal['public', 'unlisted', 'private']
@@ -70,14 +70,10 @@ class PostOut(BaseModel):
     created_at: datetime
     likes_count: int = 0
     comments_count: int = 0
-    reposts_count: int = 0
-    reposted_by_me: bool = False
-    reposted_by: str | None = None
-    reposted_at: datetime | None = None
 
 
-def counts_by_post(db: Session, post_ids: list[UUID]) -> dict[UUID, tuple[int, int, int]]:
-    """Aggregate interactions for each page without N+1 queries."""
+def counts_by_post(db: Session, post_ids: list[UUID]) -> dict[UUID, tuple[int, int]]:
+    """Aggregate interactions in two queries for the whole page (avoid N+1)."""
     if not post_ids:
         return {}
     likes = dict(db.execute(
@@ -90,24 +86,7 @@ def counts_by_post(db: Session, post_ids: list[UUID]) -> dict[UUID, tuple[int, i
         .where(Comment.post_id.in_(post_ids))
         .group_by(Comment.post_id)
     ).all())
-    reposts = dict(db.execute(
-        select(PostRepost.post_id, func.count())
-        .where(PostRepost.post_id.in_(post_ids))
-        .group_by(PostRepost.post_id)
-    ).all())
-    return {
-        pid: (int(likes.get(pid, 0)), int(comments.get(pid, 0)), int(reposts.get(pid, 0)))
-        for pid in post_ids
-    }
-
-
-def reposted_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[UUID]:
-    if viewer is None or not post_ids:
-        return set()
-    return set(db.scalars(
-        select(PostRepost.post_id)
-        .where(PostRepost.user_id == viewer.id, PostRepost.post_id.in_(post_ids))
-    ).all())
+    return {pid: (int(likes.get(pid, 0)), int(comments.get(pid, 0))) for pid in post_ids}
 
 
 def optional_user(
@@ -118,18 +97,12 @@ def optional_user(
     return None if credentials is None else current_user(credentials, db)
 
 
-def serialize(
-    post: Post, username: str, counts: dict[UUID, tuple[int, int, int]] | None = None,
-    *, viewer_reposts: set[UUID] | None = None,
-    reposted_by: str | None = None, reposted_at: datetime | None = None,
-) -> PostOut:
-    likes, comments, reposts = (counts or {}).get(post.id, (0, 0, 0))
+def serialize(post: Post, username: str, counts: dict[UUID, tuple[int, int]] | None = None) -> PostOut:
+    likes, comments = (counts or {}).get(post.id, (0, 0))
     return PostOut(
         id=post.id, username=username, caption=post.caption,
         observation_id=post.observation_id, visibility=post.visibility,
         created_at=post.created_at, likes_count=likes, comments_count=comments,
-        reposts_count=reposts, reposted_by_me=post.id in (viewer_reposts or set()),
-        reposted_by=reposted_by, reposted_at=reposted_at,
     )
 
 
@@ -202,10 +175,7 @@ def get_post(
     if post.visibility == 'private' and (viewer is None or viewer.id != post.author_id):
         raise HTTPException(status_code=404, detail='Post not found')
     # Unlisted posts can be accessed via their direct link.
-    return serialize(
-        post, username, counts_by_post(db, [post.id]),
-        viewer_reposts=reposted_ids(db, viewer, [post.id]),
-    )
+    return serialize(post, username, counts_by_post(db, [post.id]))
 
 
 @router.patch('/posts/{post_id}', response_model=PostOut)
@@ -254,43 +224,14 @@ def user_posts(
     owner = db.scalar(select(User).where(User.username == username.strip().lower()))
     if owner is None:
         raise HTTPException(status_code=404, detail='User not found')
-    # A profile is one chronologically ordered timeline of authored posts and reposts.
-    # The original post remains the sole source of content, likes and SPHEREx frames.
-    authored = select(
-        Post.id.label('post_id'), Post.created_at.label('activity_at'),
-        literal(False).label('is_repost'),
-    ).where(Post.author_id == owner.id)
+    stmt = select(Post).where(Post.author_id == owner.id)
     if viewer is None or viewer.id != owner.id:
-        authored = authored.where(Post.visibility == 'public')
-    shared = (
-        select(
-            PostRepost.post_id.label('post_id'),
-            PostRepost.created_at.label('activity_at'),
-            literal(True).label('is_repost'),
-        )
-        .join(Post, Post.id == PostRepost.post_id)
-        .where(PostRepost.user_id == owner.id, Post.visibility == 'public',
-               Post.author_id != owner.id)
-    )
-    activity = union_all(authored, shared).subquery()
-    rows = db.execute(
-        select(Post, User.username, activity.c.activity_at, activity.c.is_repost)
-        .join(activity, activity.c.post_id == Post.id)
-        .join(User, User.id == Post.author_id)
-        .order_by(activity.c.activity_at.desc(), Post.id.desc())
-        .limit(limit).offset(offset)
+        stmt = stmt.where(Post.visibility == 'public')
+    posts = db.scalars(
+        stmt.order_by(Post.created_at.desc(), Post.id.desc()).limit(limit).offset(offset)
     ).all()
-    ids = [post.id for post, _, _, _ in rows]
-    counts = counts_by_post(db, ids)
-    viewer_reposts = reposted_ids(db, viewer, ids)
-    return [
-        serialize(
-            post, author, counts, viewer_reposts=viewer_reposts,
-            reposted_by=owner.username if is_repost else None,
-            reposted_at=activity_at if is_repost else None,
-        )
-        for post, author, activity_at, is_repost in rows
-    ]
+    counts = counts_by_post(db, [post.id for post in posts])
+    return [serialize(post, owner.username, counts) for post in posts]
 
 
 @router.post('/posts/{post_id}/blink')
