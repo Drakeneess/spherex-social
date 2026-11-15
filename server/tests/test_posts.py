@@ -435,7 +435,7 @@ def test_multi_photo_post_is_persistent_and_private_files_follow_post_permission
     import base64
     import io
     from PIL import Image
-    from post_storage import media_key
+    from post_storage import media_key, thumbnail_key, MAX_THUMB_BYTES
     client,engine,_,_,headers=env
     _local_photo_storage(monkeypatch,tmp_path)
     created=publish(client,headers['alpha'],'Observé #Saturno #planetAS #saturno',
@@ -461,6 +461,13 @@ def test_multi_photo_post_is_persistent_and_private_files_follow_post_permission
         assert image.format=='WEBP' and image.size==(24,16)
         assert image.info.get('exif') is None
     assert (tmp_path/media_key(UUID(media))).exists()
+    thumb_file=tmp_path/thumbnail_key(media_key(UUID(media)))
+    assert thumb_file.exists() and thumb_file.stat().st_size<=MAX_THUMB_BYTES
+    thumb=client.get(path+'?size=thumbnail')
+    assert thumb.status_code==200,thumb.text
+    with Image.open(io.BytesIO(base64.b64decode(thumb.json()['data_url'].split(',',1)[1]))) as small:
+        assert small.format=='WEBP' and max(small.size)<=400
+    assert client.get(path+'?size=unknown').status_code==422
     assert client.get(f"/v1/posts/{post['id']}/media/{uuid4()}").status_code==404
     assert client.get(f"/v1/posts/{uuid4()}/media/{media}").status_code==404
 
@@ -472,11 +479,28 @@ def test_multi_photo_post_is_persistent_and_private_files_follow_post_permission
     assert client.get(hidden_url).status_code==404
     assert client.get(hidden_url,headers=headers['beta']).status_code==404
     assert client.get(hidden_url,headers=headers['alpha']).status_code==200
+    assert client.get(hidden_url+'?size=thumbnail').status_code==404
+    assert client.get(hidden_url+'?size=thumbnail',headers=headers['beta']).status_code==404
+    assert client.get(hidden_url+'?size=thumbnail',headers=headers['alpha']).status_code==200
     assert all(p['id']!=hidden['id'] for p in client.get('/v1/feed').json())
 
     assert client.delete(f"/v1/posts/{post['id']}",headers=headers['alpha']).status_code==204
     assert client.get(path).status_code==404
     assert not (tmp_path/media_key(UUID(media))).exists()
+    assert not thumb_file.exists()
+
+
+def test_four_photos_never_exceed_three_mib_of_bucket_storage(env,monkeypatch,tmp_path):
+    client,_,_,_,headers=env
+    _local_photo_storage(monkeypatch,tmp_path)
+    response=publish(client,headers['alpha'],'Cielo compartido',
+        images=[{'data_url':_photo_url((i*30,120,180))} for i in range(4)])
+    assert response.status_code==201,response.text
+    images=response.json()['media']
+    assert len(images)==4
+    object_paths=list((tmp_path/'social/media/v1').glob('*.webp'))
+    assert len(object_paths)==8
+    assert sum(path.stat().st_size for path in object_paths)<=3*1024*1024
 
 
 def test_text_only_links_and_hashtag_updates(env):

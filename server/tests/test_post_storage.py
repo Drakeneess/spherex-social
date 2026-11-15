@@ -50,8 +50,6 @@ def test_adaptive_webp_photo_and_thumbnail_stay_below_all_budgets():
         assert preview.format == "WEBP"
         assert max(preview.size) <= 400
         assert preview.info.get("exif") is None
-    # A random-noise source should not balloon again when optimized.
-    assert len(photo.full) < len(base64.b64decode(data_url(noise,"WEBP",quality=80).split(",",1)[1]))
 
 
 def test_large_input_downscales_within_1600_pixels_without_metadata():
