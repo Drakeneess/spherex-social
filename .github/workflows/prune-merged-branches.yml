@@ -1,0 +1,103 @@
+# One-time cleanup of previously merged pull-request branches.
+# Runs when this workflow first lands on main; manual re-runs are safe.
+# A branch is deleted ONLY if its current SHA exactly equals the head SHA
+# of an already merged same-repository PR targeting main.
+name: Clean merged branches
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/prune-merged-branches.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: prune-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Delete verified merged heads
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const canonical = `${owner}/${repo}`;
+            const info = await github.rest.repos.get({ owner, repo });
+            const protectedName = info.data.default_branch;
+            if (protectedName !== "main") {
+              core.setFailed("Unexpected default branch; refusing to delete refs.");
+              return;
+            }
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "closed", per_page: 100,
+            });
+            const mergedHeads = new Map();
+            for (const pr of prs) {
+              if (!pr.merged_at || pr.base.ref !== protectedName ||
+                  pr.head.repo?.full_name !== canonical) continue;
+              const key = pr.head.ref;
+              const matches = mergedHeads.get(key) ?? new Set();
+              matches.add(pr.head.sha);
+              mergedHeads.set(key, matches);
+            }
+
+            let deleted = 0;
+            let preserved = 0;
+            let failed = 0;
+            const lines = ["| Branch | Result |", "|---|---|"];
+            for (const branch of branches) {
+              const name = branch.name;
+              if (name === protectedName || branch.protected) {
+                preserved++;
+                continue;
+              }
+              const approvedHeads = mergedHeads.get(name);
+              if (!approvedHeads?.has(branch.commit.sha)) {
+                preserved++;
+                core.notice(`Preserved unmerged or modified branch: ${name}`);
+                continue;
+              }
+              try {
+                // Re-read immediately before deletion. No force-push or
+                // deletion of a newly updated branch after our earlier list.
+                const current = await github.rest.git.getRef({
+                  owner, repo, ref: `heads/${name}`,
+                });
+                if (!approvedHeads.has(current.data.object.sha) ||
+                    current.data.object.sha !== branch.commit.sha) {
+                  preserved++;
+                  core.warning(`Branch moved, preserved: ${name}`);
+                  continue;
+                }
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: `heads/${name}`,
+                });
+                deleted++;
+                lines.push(`| \`${name}\` | Deleted (merged PR) |`);
+                core.info(`Deleted merged branch: ${name}`);
+              } catch (error) {
+                failed++;
+                core.warning(`Could not delete ${name}: ${error.message}`);
+                lines.push(`| \`${name}\` | Failed (check permissions) |`);
+              }
+            }
+            await core.summary
+              .addHeading("AstroGram branch cleanup")
+              .addRaw(`Deleted: **${deleted}** · Preserved: **${preserved}** · Failed: **${failed}**\n\n`)
+              .addRaw(lines.join("\n"))
+              .write();
+            if (failed) {
+              core.setFailed(`${failed} verified merged branches could not be deleted.`);
+            }
