@@ -216,7 +216,9 @@ export default function ExplorerPage({
               count: state.result?.count,
               catalogMs: state.result ? state.discovery?.elapsed_ms ?? 0 : undefined,
               catalogError: state.error ?? undefined,
-              catalogWarning: state.discovery?.method==='tap'
+              catalogWarning: state.discovery?.method==='archive'
+                ? 'SIA2 y TAP no respondieron. Mostrando observaciones anteriores conservadas en AstroGram.'
+                : state.discovery?.method==='tap'
                 ? 'SIA2 no respondió; se está utilizando TAP asíncrono.' : undefined,
               remotePhase: state.discovery?.method==='tap'
                 ? state.discovery.phase : undefined,
@@ -238,7 +240,10 @@ export default function ExplorerPage({
             // Client hydration is bounded independently of its workers.
             await Promise.allSettled(pending.slice(0, 3).map(hydrateFrame));
             if (completed) {
-              if (state.status === 'empty') setNotice('No se encontraron observaciones en esta región.');
+              if (state.discovery?.method === 'archive' && state.status !== 'failed') {
+                const recovered = state.frames.filter(item=>item.status==='ready').length;
+                setNotice(`IRSA no respondió. Recuperamos ${recovered} imágenes reales del archivo de AstroGram, no de una consulta nueva.`);
+              } else if (state.status === 'empty') setNotice('No se encontraron observaciones en esta región.');
               else if (state.status === 'partial') setNotice('Algunas imágenes no pudieron recuperarse.');
               else if (state.status === 'failed') setError(state.error || 'No pudimos completar esta búsqueda. Inténtalo de nuevo.');
               else if (state.discovery?.method==='tap')
