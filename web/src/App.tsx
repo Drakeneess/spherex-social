@@ -9,6 +9,7 @@ import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
+import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 import OnboardingTour from './components/OnboardingTour';
@@ -396,7 +397,7 @@ export default function App(){
     const status=backgroundStatus;
     const phase=status?.trace?.phase;
     if(!phase)return;
-    const finished=['complete','partial','empty','failed','cancelled'].includes(phase);
+    const finished=isTerminalSkyPhase(phase);
     if(!finished)return;
     if(status?.restored || route.page==='explore'){
       setDockDismissed(true);
@@ -614,10 +615,7 @@ export default function App(){
         <AstroGlyph name={i%2===0?'spark':'ship'} size={20}/>
       </span>)}</div>}
     {tour&&user&&<OnboardingTour key={tour.key} spec={tour} onClose={closeTour}/>}
-    {!explorerVisible && !dockDismissed && backgroundStatus?.trace &&
-      (!backgroundStatus.restored ||
-        (backgroundStatus.loading &&
-          ['catalog','frames'].includes(backgroundStatus.trace.phase))) &&
+    {shouldShowSkyDock(backgroundStatus,explorerVisible,dockDismissed) &&
       <BackgroundSkyDock status={backgroundStatus} onOpen={()=>{
           setDockDismissed(true);go('explore');
         }} onDismiss={()=>setDockDismissed(true)}/>}
