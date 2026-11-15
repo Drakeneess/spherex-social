@@ -104,7 +104,7 @@ export default function RevealEditor({
   },[open]);
 
   useEffect(()=>{if(!active)setOpen(false);},[active]);
-  const change=<K extends keyof RevealRecipe>(field:K,value:RevealRecipe[K])=>{
+  const change=<K extends keyof RevealRecipe,>(field:K,value:RevealRecipe[K])=>{
     onChange({...recipe,[field]:value});
     setShowOriginal(false);
   };
