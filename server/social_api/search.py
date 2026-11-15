@@ -35,7 +35,6 @@ class PostHit(BaseModel):
     caption: str
     created_at: datetime
     observation_id: UUID | None
-    has_media: bool = False
 
 
 class HashtagHit(BaseModel):
