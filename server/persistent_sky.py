@@ -29,6 +29,8 @@ from social_api.models import SkySearchJob
 from sky_storage import get_preview, put_preview, put_science, get_science_pixels
 from sky_reveal import RevealRecipe, reveal_png
 from sky_candidate_search import analyze_motion
+from sia2_compare import Sia2ComparisonError
+from tap_discovery import TapFallbackError, retrieve_tap_catalog
 
 router = APIRouter(prefix="/api/sky/jobs", tags=["persistent sky exploration"])
 logger = logging.getLogger("astrogram.sky.persistent")
@@ -78,7 +80,10 @@ def _snapshot(row: SkySearchJob) -> dict:
         },
         "total_matches": row.total_matches,
         "result": row.result_data,
-        "discovery": row.discovery_data,
+        "discovery": {
+            key: value for key, value in (row.discovery_data or {}).items()
+            if not key.startswith("_")
+        } if row.discovery_data else None,
         "frames": [
             {"index": item["index"], "status": item["status"],
              "raw_available": bool((item.get("metadata") or {}).get("raw_available")),
@@ -340,41 +345,72 @@ def _heartbeat(job_id: uuid.UUID, worker: str, done: threading.Event):
             logger.warning("Sky worker heartbeat failed", exc_info=True)
 
 
-def _discover(row: SkySearchJob) -> tuple[list[dict], dict, dict]:
+def _discover(row: SkySearchJob, worker: str) -> tuple[list[dict], dict, dict]:
     from app import (demo_records, evenly_spaced, ensure_irsa_cutout_url,
                      query_sia2)
+
     if row.demo:
         all_records = demo_records()
         discovery = {"method": "simulated"}
+        source = "simulated"
     else:
-        sia = query_sia2(row.ra, row.dec, row.size_arcmin, row.detector)
-        if not sia["complete"]:
-            raise ValueError("El catálogo devolvió resultados incompletos")
-        all_records = []
-        for item in sia["records"]:
-            mjd = item.get("mjd")
-            if mjd is None or not math.isfinite(mjd) or not item.get("date"):
-                continue
-            url = ("https://irsa.ipac.caltech.edu" + item["path"]
-                   + f"?center={row.ra},{row.dec}d&size={row.size_arcmin / 60}")
-            if not ensure_irsa_cutout_url(url):
-                continue
-            all_records.append({
-                "url": url, "mjd": mjd, "date": item["date"],
-                "release": item["release"],
-            })
-        if sia["matching_detector_rows"] and not all_records:
-            raise ValueError("El catálogo no devolvió imágenes utilizables")
-        all_records.sort(key=lambda item: item["mjd"])
-        discovery = {
-            "method": "sia2", "elapsed_ms": sia["elapsed_ms"],
-            "query_status": sia["query_status"],
-            "attempts": sia["attempts"],
-        }
+        # Persist TAP intent before the remote POST. On restart, recover the
+        # same UWS URL and NEVER create a duplicate job in response to a 502.
+        previous = row.discovery_data or {}
+
+        def persist_tap(state: dict):
+            _write(row.id, worker, source="irsa", discovery_data=state)
+
+        if previous.get("_tap_submission_started"):
+            all_records, discovery = retrieve_tap_catalog(
+                row.ra, row.dec, row.size_arcmin, row.detector,
+                previous, persist_tap,
+            )
+        else:
+            try:
+                sia = query_sia2(row.ra, row.dec, row.size_arcmin, row.detector)
+                if not sia["complete"]:
+                    raise Sia2ComparisonError(
+                        "SIA2 devolvió un resultado incompleto o truncado"
+                    )
+                all_records = []
+                for item in sia["records"]:
+                    mjd = item.get("mjd")
+                    if mjd is None or not math.isfinite(mjd) or not item.get("date"):
+                        continue
+                    url = ("https://irsa.ipac.caltech.edu" + item["path"]
+                           + f"?center={row.ra},{row.dec}d&size={row.size_arcmin / 60}")
+                    if not ensure_irsa_cutout_url(url):
+                        continue
+                    all_records.append({
+                        "url": url, "mjd": mjd, "date": item["date"],
+                        "release": item["release"],
+                    })
+                if sia["matching_detector_rows"] and not all_records:
+                    raise Sia2ComparisonError(
+                        "SIA2 no devolvió imágenes válidas para el detector"
+                    )
+                all_records.sort(key=lambda item: item["mjd"])
+                discovery = {
+                    "method": "sia2", "elapsed_ms": sia["elapsed_ms"],
+                    "query_status": sia["query_status"],
+                    "attempts": sia["attempts"],
+                }
+            except Sia2ComparisonError as exc:
+                logger.warning(
+                    "SIA2 catalog unavailable, trying TAP async fallback: %s",
+                    str(exc)[:150],
+                )
+                all_records, discovery = retrieve_tap_catalog(
+                    row.ra, row.dec, row.size_arcmin, row.detector,
+                    previous, persist_tap, sia2_failure=str(exc),
+                )
+        source = "sia2" if discovery["method"] == "sia2" else "irsa"
+
     selected = evenly_spaced(all_records, row.max_frames)
     result = {
         "search_id": str(row.id),
-        "source": "simulated" if row.demo else "sia2",
+        "source": source,
         "total_matches": len(all_records), "count": len(selected),
         "ra": row.ra, "dec": row.dec, "detector": row.detector,
         "observations": [
@@ -394,7 +430,7 @@ def _produce_frame(job_id: uuid.UUID, row: SkySearchJob, records: list[dict], in
     else:
         session = PreviewSession(
             row.ra, row.dec, row.size_arcmin,
-            row.detector, records, "sia2", archive_science=True,
+            row.detector, records, row.source, archive_science=True,
         )
         for attempt in range(1, MAX_FITS_ATTEMPTS + 1):
             try:
@@ -434,10 +470,11 @@ def _process(job_id: uuid.UUID, worker: str):
             return
         if row.records_data is None:
             _write(job_id, worker, status="catalog")
-            records, result, discovery = _discover(row)
+            records, result, discovery = _discover(row, worker)
             initial = [{"index": i, "status": "pending"} for i in range(len(records))]
             _write(job_id, worker, records_data=records, result_data=result,
-                   discovery_data=discovery, total_matches=result["total_matches"],
+                   discovery_data=discovery, source=result["source"],
+                   total_matches=result["total_matches"],
                    frame_states=initial,
                    status="frames" if records else "empty")
             if not records:
@@ -494,7 +531,8 @@ def _run(job_id: uuid.UUID):
                        exc_info=True)
         try:
             _write(job_id, worker, status="failed",
-                   error_message="No se pudo completar la búsqueda astronómica")
+                   error_message=(str(exc) if isinstance(exc, TapFallbackError)
+                                  else "No se pudo completar la búsqueda astronómica"))
         except JobStopped:
             pass
     finally:
