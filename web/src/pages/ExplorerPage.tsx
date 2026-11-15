@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Database, LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
+import { api, ApiError, hasToken, type ObservationParams, type Sia2Comparison, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
+import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 
 const presets = [
   { name: 'WISE 0855', ra: 133.795129, dec: -7.245147 },
@@ -12,6 +13,7 @@ const presets = [
 
 type Params = {
   ra: number; dec: number; size: number; detector: number; frames: number; demo: boolean;
+  catalogMethod: 'sia2' | 'tap';
 };
 
 export default function ExplorerPage({
@@ -29,6 +31,7 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
+  const [catalogMethod, setCatalogMethod] = useState<'sia2' | 'tap'>('sia2');
 
   const [result, setResult] = useState<SkySearch | null>(null);
   const [frames, setFrames] = useState<Record<number, SkyFrame>>({});
@@ -39,12 +42,27 @@ export default function ExplorerPage({
   const [compare, setCompare] = useState(false);
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
+  const [trace, setTrace] = useState<SearchTrace | null>(null);
+  const [siaComparison, setSiaComparison] = useState<Sia2Comparison | null>(null);
+  const [siaCompareBusy, setSiaCompareBusy] = useState(false);
+  const [siaCompareError, setSiaCompareError] = useState('');
+  const [retryUntil, setRetryUntil] = useState(0);
+  const retryUntilRef = useRef(0);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (retryUntil <= Date.now()) return;
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [retryUntil]);
+  const retrySeconds = Math.max(0, Math.ceil((retryUntil - nowTick) / 1000));
   const [saveBusy, setSaveBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const controller = useRef<AbortController | null>(null);
+  const siaController = useRef<AbortController | null>(null);
+  const remoteJob = useRef<string | null>(null);
   const available = useMemo(
     () => Object.keys(frames).map(Number).sort((a, b) => a - b),
     [frames],
@@ -62,13 +80,38 @@ export default function ExplorerPage({
     return () => window.clearInterval(interval);
   }, [playing, fps, available]);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => {
+    controller.current?.abort();
+    siaController.current?.abort();
+    if (remoteJob.current) void api.cancelSkyJob(remoteJob.current).catch(() => {});
+  }, []);
 
   const load = useCallback(async (params: Params) => {
+    if (!params.demo && params.catalogMethod === 'tap' &&
+        Date.now() < retryUntilRef.current) {
+      setError('TAP continúa en espera de reintento. Puedes buscar con SIA2 mientras tanto.');
+      return;
+    }
     controller.current?.abort();
+    siaController.current?.abort();
+    siaController.current = null;
+    setSiaComparison(null);
+    setSiaCompareBusy(false);
+    setSiaCompareError('');
+    if (remoteJob.current) {
+      void api.cancelSkyJob(remoteJob.current).catch(() => {});
+      remoteJob.current = null;
+    }
     const request = new AbortController();
     controller.current = request;
+    const startedAt = Date.now();
     setLoading(true);
+    retryUntilRef.current = 0;
+    setRetryUntil(0);
+    setTrace({
+      phase: 'catalog', startedAt,
+      source: params.demo ? 'simulated' : params.catalogMethod === 'tap' ? 'irsa' : 'sia2', frames: [],
+    });
     setPlaying(false);
     setCompare(false);
     setPosition(0);
@@ -79,32 +122,160 @@ export default function ExplorerPage({
     setSavedId(null);
     setNotice('');
     setError('');
-    try {
-      const search = await api.searchSky(params, request.signal);
+
+    const frameErrorMessage = (cause: unknown) =>
+      cause instanceof Error ? cause.message.slice(0, 220) : 'Error inesperado';
+
+    // Ignore stale state changes if a newer search replaced this request.
+    const updateTrace = (fn: (old: SearchTrace) => SearchTrace) => {
       if (request.signal.aborted) return;
+      setTrace(previous =>
+        previous && previous.startedAt === startedAt ? fn(previous) : previous
+      );
+    };
+
+    let fallbackFailure = '';
+    let tapAttempted = false;
+    try {
+      const catalogStartedAt = Date.now();
+      let search: SkySearch | null = null;
+      if (params.demo) {
+        search = await api.searchSky(params, request.signal);
+      } else {
+        if (params.catalogMethod === 'sia2') {
+          try {
+            search = await api.searchSia2(params, request.signal);
+          } catch (cause) {
+            if (request.signal.aborted) return;
+            if (!(cause instanceof ApiError) || ![502, 503, 504].includes(cause.status)) {
+              throw cause;
+            }
+            fallbackFailure = frameErrorMessage(cause);
+            updateTrace(old => ({
+              ...old, source: 'irsa', remotePhase: undefined,
+              catalogWarning: `SIA2 no disponible (${fallbackFailure}). Consultando TAP como respaldo.`,
+            }));
+          }
+        }
+        if (search === null) {
+          // Exactly one TAP submission; never retry this non-idempotent POST.
+          tapAttempted = true;
+          const started = await api.startSkyJob(params, request.signal);
+          if (request.signal.aborted) return;
+          remoteJob.current = started.job_id;
+          updateTrace(old => ({
+            ...old, source: 'irsa', remotePhase: started.phase, tapTiming: started.timing,
+          }));
+          while (true) {
+            if (request.signal.aborted) return;
+            const snapshot = await api.pollSkyJob(started.job_id, request.signal);
+            if (request.signal.aborted) return;
+            updateTrace(old => ({
+              ...old,
+              remotePhase: snapshot.phase,
+              remoteWarning: snapshot.warning,
+              retryAfterSeconds: snapshot.retry_after_seconds,
+              tapTiming: snapshot.timing ?? old.tapTiming,
+            }));
+            if (snapshot.phase === 'COMPLETED') {
+              if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
+              search = snapshot.result;
+              remoteJob.current = null;
+              void api.cancelSkyJob(started.job_id).catch(() => {});
+              break;
+            }
+            if (snapshot.phase === 'ERROR' || snapshot.phase === 'ABORTED') {
+              throw new Error(snapshot.error ?? 'El trabajo TAP terminó sin resultados');
+            }
+            if (Date.now() - catalogStartedAt > 15 * 60_000) {
+              throw new Error('El catálogo continúa procesando tras 15 minutos. Cancela o repite la búsqueda.');
+            }
+            await new Promise<void>((resolve, reject) => {
+              const timer = window.setTimeout(() => {
+                request.signal.removeEventListener('abort', onAbort);
+                resolve();
+              }, Math.max(2500, (snapshot.retry_after_seconds ?? 0) * 1000));
+              const onAbort = () => {
+                window.clearTimeout(timer);
+                request.signal.removeEventListener('abort', onAbort);
+                reject(new DOMException('Búsqueda cancelada', 'AbortError'));
+              };
+              request.signal.addEventListener('abort', onAbort, { once: true });
+              if (request.signal.aborted) onAbort();
+            });
+          }
+        }
+      }
+      if (!search) throw new Error('El catálogo no devolvió una respuesta válida');
+      if (request.signal.aborted) return;
+      const catalogMs = Date.now() - catalogStartedAt;
       setResult(search);
       setActiveParams(params);
+      updateTrace(previous => ({
+        ...previous,
+        source: search.source,
+        sia2Timing: search.discovery,
+        phase: search.count > 0 ? 'frames' : 'empty',
+        catalogMs,
+        totalMatches: search.total_matches,
+        count: search.count,
+        frames: Array.from({ length: search.count }, (_, index) =>
+          ({ index, status: 'pending' as const })),
+        ...(search.count === 0 ? { finishedAt: Date.now() } : {}),
+      }));
       if (search.count === 0) {
-        setNotice('IRSA no devolvió épocas para este campo y detector.');
+        setNotice('El catálogo consultado no devolvió épocas para este campo y detector.');
         return;
       }
       let cursor = 0;
       const failures: number[] = [];
       let successes = 0;
-      // Bounded concurrency limits downloads and allows rendering frames as
-      // they arrive; a single bad cutout must not discard the other epochs.
+
+      // At most three independent /api/frame requests. The backend sends
+      // completed PNGs, not intermediate FITS-processing events.
       const worker = async () => {
         while (!request.signal.aborted) {
           const index = cursor++;
           if (index >= search.count) return;
+          const frameStartedAt = Date.now();
+          updateTrace(previous => ({
+            ...previous,
+            frames: previous.frames.map(frame =>
+              frame.index === index
+                ? { ...frame, status: 'loading', startedAt: frameStartedAt }
+                : frame
+            ),
+          }));
           try {
             const frame = await api.frame(search.search_id, index, request.signal);
             if (!request.signal.aborted) {
               setFrames(previous => ({ ...previous, [index]: frame }));
               successes += 1;
+              updateTrace(previous => ({
+                ...previous,
+                frames: previous.frames.map(entry =>
+                  entry.index === index
+                    ? { ...entry, status: 'ready', durationMs: Date.now() - frameStartedAt, serverTiming: frame.timing_ms }
+                    : entry
+                ),
+              }));
             }
-          } catch {
-            if (!request.signal.aborted) failures.push(index);
+          } catch (cause) {
+            if (!request.signal.aborted) {
+              failures.push(index);
+              updateTrace(previous => ({
+                ...previous,
+                frames: previous.frames.map(entry =>
+                  entry.index === index
+                    ? {
+                      ...entry, status: 'failed',
+                      durationMs: Date.now() - frameStartedAt,
+                      error: frameErrorMessage(cause),
+                    }
+                    : entry
+                ),
+              }));
+            }
           }
         }
       };
@@ -112,22 +283,62 @@ export default function ExplorerPage({
         Array.from({ length: Math.min(3, search.count) }, () => worker()),
       );
       if (request.signal.aborted) return;
+
+      updateTrace(previous => ({
+        ...previous,
+        phase: successes === 0 ? 'failed' : failures.length ? 'partial' : 'complete',
+        finishedAt: Date.now(),
+      }));
       if (successes === 0) {
-        setError('No se pudo cargar ninguna imagen. Consulta los datos técnicos o realiza otra búsqueda.');
+        setError('No se pudo cargar ninguna imagen. Abre el detalle por época para ver los errores de cada solicitud.');
       } else {
         if (failures.length) {
-          setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Se reproducirán las disponibles.`);
+          setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Puedes consultar las disponibles.`);
         }
         if (successes >= 2) setPlaying(true);
       }
     } catch (cause) {
+      if (remoteJob.current) {
+        void api.cancelSkyJob(remoteJob.current).catch(() => {});
+        remoteJob.current = null;
+      }
       if (!request.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : 'No se pudo consultar IRSA');
+        const detail = frameErrorMessage(cause);
+        if (tapAttempted && cause instanceof ApiError && cause.status === 503) {
+          // Retry only after a separate user action. POST /TAP/async is not
+          // idempotent and auto-retrying could create orphaned remote jobs.
+          const deadline = Date.now() + 30_000;
+          retryUntilRef.current = deadline;
+          setRetryUntil(deadline);
+          setNowTick(Date.now());
+        }
+        const fullDetail = fallbackFailure
+          ? `SIA2 falló: ${fallbackFailure}. TAP tampoco pudo completar la búsqueda: ${detail}`
+          : detail;
+        setError(fullDetail);
+        updateTrace(previous => ({
+          ...previous, phase: 'failed', catalogError: fullDetail, finishedAt: Date.now(),
+        }));
       }
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
   }, []);
+
+  function cancelSearch() {
+    if (!controller.current || controller.current.signal.aborted) return;
+    controller.current.abort();
+    if (remoteJob.current) {
+      void api.cancelSkyJob(remoteJob.current).catch(() => {});
+      remoteJob.current = null;
+    }
+    setLoading(false);
+    setPlaying(false);
+    setTrace(previous => previous && ['catalog', 'frames'].includes(previous.phase)
+      ? { ...previous, phase: 'cancelled', finishedAt: Date.now() }
+      : previous);
+    setNotice('Solicitud cancelada desde el navegador; las imágenes ya recibidas siguen disponibles.');
+  }
 
   useEffect(() => {
     if (!observationId) return;
@@ -142,7 +353,7 @@ export default function ExplorerPage({
       setDemo(false);
       void load({
         ra: saved.ra_deg, dec: saved.dec_deg, size: saved.fov_arcmin,
-        detector: saved.detector, frames: 12, demo: false,
+        detector: saved.detector, frames: 12, demo: false, catalogMethod: 'sia2',
       });
       setSavedId(saved.id);
     }).catch(cause => {
@@ -156,7 +367,8 @@ export default function ExplorerPage({
     if (!Number.isFinite(initialRa) || !Number.isFinite(initialDec)) return;
     setRa(String(initialRa));
     setDec(String(initialDec));
-    void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2, frames: 12, demo: false });
+    void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2,
+      frames: 12, demo: false, catalogMethod: 'sia2' });
     return () => controller.current?.abort();
   }, [observationId, initialRa, initialDec, load]);
 
@@ -174,7 +386,7 @@ export default function ExplorerPage({
     }
     const params = {
       ra: Number(ra), dec: Number(dec), size: Number(size),
-      detector: Number(detector), frames: Number(epochs), demo,
+      detector: Number(detector), frames: Number(epochs), demo, catalogMethod,
     };
     if (!Number.isFinite(params.ra) || params.ra < 0 || params.ra >= 360 ||
         !Number.isFinite(params.dec) || params.dec < -90 || params.dec > 90 ||
@@ -186,6 +398,34 @@ export default function ExplorerPage({
     }
     return params;
   }
+  async function compareWithSia2() {
+    if (!result || result.source !== 'irsa' || loading || siaCompareBusy) return;
+    const request = new AbortController();
+    siaController.current?.abort();
+    siaController.current = request;
+    setSiaCompareBusy(true);
+    setSiaCompareError('');
+    setSiaComparison(null);
+    try {
+      const comparison = await api.compareSia2(result.search_id, request.signal);
+      if (!request.signal.aborted) setSiaComparison(comparison);
+    } catch (cause) {
+      if (!request.signal.aborted) {
+        setSiaCompareError(cause instanceof Error ? cause.message : 'No se pudo consultar SIA2');
+      }
+    } finally {
+      if (siaController.current === request) {
+        siaController.current = null;
+        setSiaCompareBusy(false);
+      }
+    }
+  }
+
+  function retrySearch() {
+    const params = readParams();
+    if (params) void load(params);
+  }
+
   function runSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = readParams();
@@ -196,7 +436,7 @@ export default function ExplorerPage({
     setDec(String(preset.dec));
     const params = {
       ra: preset.ra, dec: preset.dec, size: Number(size),
-      detector: Number(detector), frames: Number(epochs), demo,
+      detector: Number(detector), frames: Number(epochs), demo, catalogMethod,
     };
     if (params.size >= 1 && params.size <= 12 && params.detector >= 1 &&
         params.detector <= 6 && Number.isInteger(params.frames) &&
@@ -268,6 +508,20 @@ export default function ExplorerPage({
     },
     loaded_epochs: available,
     marks_local_only: marks,
+    sia2_diagnostic: siaComparison,
+    client_progress: trace && {
+      phase: trace.phase,
+      remote_phase: trace.remotePhase,
+      remote_warning: trace.remoteWarning,
+      retry_after_seconds: trace.retryAfterSeconds,
+      tap_timing: trace.tapTiming,
+      sia2_timing: trace.sia2Timing,
+      catalog_warning: trace.catalogWarning,
+      catalog_ms: trace.catalogMs,
+      count: trace.count,
+      frames: trace.frames,
+      elapsed_ms: (trace.finishedAt ?? Date.now()) - trace.startedAt,
+    },
   } : null;
 
   return <main className="wrap single epoch-explorer">
@@ -304,7 +558,8 @@ export default function ExplorerPage({
         </div>
         <div className="epoch-help">Las estrellas se quedan quietas; lo que se mueve es el hallazgo.
           Toca la imagen para <strong>marcar</strong> su posición en cada época.
-          {result?.source === 'irsa' && ' Para comparar movimiento real, verifica la calidad y calibración de cada imagen.'}
+          {result?.source !== 'simulated' && result &&
+            ' Para comparar movimiento real, verifica la calidad y calibración de cada imagen.'}
         </div>
       </section>
 
@@ -313,7 +568,8 @@ export default function ExplorerPage({
           <div className="card-h"><span>Buscar en el cielo</span></div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick">
-              {presets.map(preset => <button key={preset.name} type="button" disabled={loading}
+              {presets.map(preset => <button key={preset.name} type="button"
+                disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
             </div>
             <div className="two">
@@ -340,9 +596,23 @@ export default function ExplorerPage({
               <label className="epoch-demo"><input type="checkbox" checked={demo}
                 onChange={event => setDemo(event.target.checked)}/> Modo demo API</label>
             </div>
-            <button className="btn p full" disabled={loading} type="submit">
+            <div className="field">
+              <label htmlFor="epoch-method">Catálogo astronómico</label>
+              <select id="epoch-method" value={catalogMethod} disabled={loading || demo}
+                onChange={event => setCatalogMethod(event.target.value as 'sia2' | 'tap')}>
+                <option value="sia2">SIA2 (rápido · predeterminado)</option>
+                <option value="tap">TAP asíncrono (comparación manual)</option>
+              </select>
+              {!demo && <small>SIA2 intenta primero la búsqueda directa; si el servicio falla,
+                TAP funciona como respaldo. TAP manual permite comparar ambos catálogos.</small>}
+            </div>
+            <button className="btn p full"
+              disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
+              type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
-              {loading ? 'Consultando IRSA…' : 'Buscar'}
+              {loading ? 'Procesando búsqueda…'
+                : retrySeconds > 0 && !demo && catalogMethod === 'tap'
+                  ? `Reintentar TAP en ${retrySeconds} s` : 'Buscar'}
             </button>
           </form>
           <div className="epoch-secondary-actions">
@@ -357,6 +627,60 @@ export default function ExplorerPage({
             <pre>{technical ? JSON.stringify(technical, null, 2) : '–'}</pre>
           </details>
         </section>
+        <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
+          onRetry={retrySearch} retrySeconds={retrySeconds}/>
+        {result?.source === 'irsa' && !loading && <section className="sia-compare-card"
+          aria-label="Comparación SIA2 y TAP">
+          <strong>Comparar SIA2 vs. TAP</strong>
+          <p className="sia-compare-note">
+            Consulta SIA2 con las mismas coordenadas y detector, usando el catálogo TAP
+            ya recuperado. No crea otro trabajo TAP ni descarga imágenes FITS.
+          </p>
+          <button type="button" className="btn sm" disabled={siaCompareBusy}
+            onClick={() => void compareWithSia2()}>
+            {siaCompareBusy ? <><LoaderCircle size={13} className="spin"/> Consultando SIA2…</>
+              : 'Medir SIA2 y comparar'}
+          </button>
+          {siaCompareError && <p className="sia-compare-error" role="alert">{siaCompareError}</p>}
+          {siaComparison && <div className="sia-compare-result">
+            <dl className="sia-compare-metrics">
+              <dt>Consulta SIA2</dt><dd>{(siaComparison.sia2.elapsed_ms / 1000).toFixed(2)} s</dd>
+              <dt>Intentos HTTP SIA2</dt><dd>{siaComparison.sia2.attempts}</dd>
+              {siaComparison.sia2.retry_events.length > 0 && <>
+                <dt>Errores temporales recuperados</dt>
+                <dd>{siaComparison.sia2.retry_events.map(
+                  item => `#${item.attempt}: ${item.failure}`
+                ).join(' · ')}</dd>
+              </>}
+              <dt>Estado del resultado</dt><dd>{siaComparison.sia2.query_status}
+                {siaComparison.comparable ? '' : ' · incompleto'}</dd>
+              <dt>Productos únicos TAP</dt><dd>{siaComparison.tap.unique_images}</dd>
+              <dt>Productos únicos SIA2 (detector {siaComparison.query.detector})</dt>
+              <dd>{siaComparison.sia2.unique_compatible_images}</dd>
+              <dt>Productos coincidentes</dt><dd>{siaComparison.overlap.matched}</dd>
+              <dt>Solo TAP / solo SIA2</dt>
+              <dd>{siaComparison.overlap.tap_only} / {siaComparison.overlap.sia2_only}</dd>
+              <dt>Épocas seleccionadas en ambos</dt>
+              <dd>{siaComparison.overlap.selected_tap_matched}/{siaComparison.tap.selected_epochs}</dd>
+              <dt>Primera observación TAP</dt><dd>{siaComparison.tap.date_range.earliest ?? '—'}</dd>
+              <dt>Última observación TAP</dt><dd>{siaComparison.tap.date_range.latest ?? '—'}</dd>
+              <dt>Primera observación SIA2</dt><dd>{siaComparison.sia2.date_range.earliest ?? '—'}</dd>
+              <dt>Última observación SIA2</dt><dd>{siaComparison.sia2.date_range.latest ?? '—'}</dd>
+            </dl>
+            {siaComparison.overlap.tap_only_examples.length > 0 &&
+              <p className="sia-compare-note">Ejemplos presentes solo en TAP: {
+                siaComparison.overlap.tap_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
+              }</p>}
+            {siaComparison.overlap.sia2_only_examples.length > 0 &&
+              <p className="sia-compare-note">Ejemplos presentes solo en SIA2: {
+                siaComparison.overlap.sia2_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
+              }</p>}
+            <details className="sia-compare-caveats">
+              <summary>Interpretación y limitaciones</summary>
+              {siaComparison.caveats.map((note, i) => <p key={i}>{note}</p>)}
+            </details>
+          </div>}
+        </section>}
         <div className="epoch-science-note">
           Las búsquedas reales consultan NASA/IPAC IRSA. Elegir un detector no equivale a seleccionar una banda monocromática.
           Las marcas y los fotogramas no se guardan en PostgreSQL.

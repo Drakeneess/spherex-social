@@ -44,7 +44,7 @@ Docker Desktop requerido para PostgreSQL local.
 docker compose up -d postgres
 cd server
 Copy-Item .env.example .env
-py -3.12 -m venv .venv
+python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 alembic upgrade head
@@ -196,3 +196,235 @@ La vista **Explorar** está adaptada a la composición de `INT.html`, con un vis
 - La búsqueda y los recortes SPHEREx son **quicklooks orientativos**, no fotometría calibrada ni una detección confirmada.
 
 Para comprobarlo: `cd web; npm run dev` y abrir `http://127.0.0.1:5173/#/explore`. Primero probar `Modo demo API`, después desactivarlo para consultar IRSA si el servicio dispone de imágenes para esas coordenadas.
+
+
+## Observabilidad de búsquedas IRSA — rama `feat/irsa-search-progress`
+
+Durante una búsqueda, el explorador muestra un panel **Estado de la consulta**:
+
+- Catálogo (`GET /api/search`): tiempo transcurrido y duración real observada por el navegador. Mientras la API consulta IRSA/TAP, **no inventamos porcentajes**.
+- Fotogramas (`GET /api/frame/{search_id}/{index}`): cantidad en cola, en curso, recibida o fallida, y duración de cada solicitud; el avance `X/Y` representa **respuestas finalizadas**, no progreso interno de Astropy/FITS.
+- Visor: número de imágenes ya recibidas que pueden seleccionarse; una falla parcial no borra las otras épocas.
+- **Cancelar búsqueda** interrumpe las peticiones del navegador mediante `AbortController`. Un procesamiento ya iniciado puede seguir brevemente en Railway porque FastAPI trabaja de forma síncrona.
+- No se exponen secretos, URL internas de FITS ni tokens en el panel. La tabla de tiempos se puede desplegar para diagnosticar demoras.
+- El modo demo continúa siendo explícito; los errores de IRSA no se sustituyen silenciosamente por imágenes sintéticas.
+
+**Consulta TAP asíncrona (corrección del timeout):** el explorador utiliza `POST /api/search/jobs` para iniciar un trabajo de IRSA TAP `/async`, luego `GET /api/search/jobs/{job_id}` cada 2,5 segundos para conocer `QUEUED`, `EXECUTING` o `COMPLETED`. Solo después descarga los fotogramas. La llamada síncrona `GET /api/search` se mantiene por compatibilidad, pero IRSA impone un límite oficial de 5 minutos a TAP `/sync`.
+
+**Cancelación:** `DELETE /api/search/jobs/{job_id}` intenta abortar y eliminar el trabajo remoto; libera también su identificador local. Las búsquedas completadas crean una sesión separada para visualizar sus fotogramas.
+
+**Limitación actual:** los identificadores de trabajos y las sesiones de imagen están en memoria del proceso Railway, **no** en una cola persistente/Redis/PostgreSQL. Un reinicio, múltiples réplicas o una expiración (30 min) pueden perder el estado local. Tampoco hay WebSocket/SSE que exponga los subpasos internos de descarga y reproyección de un FITS. Para lanzamiento público se necesita persistencia de trabajos, rate limiting y limpieza robusta de trabajos remotos.
+
+**Pruebas:** `server/tests/test_async_tap.py` usa un TAP simulado sin tráfico de red. La CI comprueba el contrato de inicio, polling, completado, fallo y cancelación, pero la disponibilidad real de IRSA debe verificarse manualmente.
+
+**Flujo de ramas:** desarrollar la mejora en `feat/irsa-search-progress`, ejecutar CI y revisarla mediante un PR contra `main` antes del merge. El servicio de Railway sigue `main`, no la rama de trabajo.
+
+### Probar el PR #8 sin desplegar a producción
+
+La rama de progreso TAP requiere ejecutar **el backend de la misma rama**. El proxy Vite de esta rama envía `/api` a `http://127.0.0.1:8000` y conserva `/v1` en Railway (cuentas/publicaciones de producción). Esto evita el 404 del endpoint `POST /api/search/jobs` cuando la API pública sigue desplegando `main`.
+
+En PowerShell, desde la raíz del repositorio:
+
+```powershell
+git fetch origin
+git switch feat/irsa-search-progress
+cd server
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+En una **segunda terminal**:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Comprobar que la ruta existe antes de buscar:
+
+```powershell
+(Invoke-RestMethod http://127.0.0.1:8000/openapi.json).paths.PSObject.Properties.Name -contains '/api/search/jobs'
+```
+
+Debe mostrar `True`. En Vite, abrir `http://127.0.0.1:5173/#/explore`. Si el proceso FastAPI no está iniciado, la petición fallará por conexión. Se puede cambiar la dirección de `/api` sin modificar el código mediante `ASTRO_API_TARGET`, y la de `/v1` con `SOCIAL_API_TARGET`. Reiniciar Vite para aplicar variables o cambios en su configuración.
+
+> La búsqueda real utiliza internet desde tu backend local hacia IRSA. No hay garantía de que un trabajo TAP termine rápidamente; el panel ahora muestra el estado remoto sin sujetar una conexión HTTP abierta durante cinco minutos.
+
+
+### Recuperación ante errores de proxy de IRSA (14/11/2026)
+
+La creación del trabajo TAP puede responder `202 Accepted` y las primeras consultas de estado devolver `200`, pero IRSA puede responder ocasionalmente `502 Proxy Error` al recuperar la fase (p. ej. `/TAP/async/{job}`). Esto **no prueba** que el trabajo científico haya fallado.
+
+- El backend reconoce `429`, `500`, `502`, `503`, `504` y errores transitorios de conexión/timeout al consultar la fase o descargar el resultado.
+- Ante esos errores responde **`200 {"phase":"RETRYING", "warning":"...", "retry_after_seconds":N, "attempt":N}`** sin borrar el ticket ni cancelar el trabajo remoto.
+- El frontend respeta el intervalo de reintento y muestra la advertencia en `Estado de la consulta`. El backoff empieza en 3 s, crece hasta 30 s y, si hay más de 8 errores consecutivos, termina en `503` con un mensaje explícito.
+- Un estado `ERROR`/`ABORTED` real, o una respuesta HTTP no reintentable (p. ej. 404 del trabajo remoto), no se transforma en una falsa recuperación.
+- El resultado de la consulta TAP y sus recortes siguen sin persistirse; los trabajos están en memoria local por proceso.
+- Las pruebas unitarias usan `pyvo.dal.DALServiceError(code=502)` y verifican recuperación, límite de errores y fallos no reintentables. **No garantizan la disponibilidad de IRSA**.
+
+
+### IRSA devuelve HTTP 502 al crear el trabajo (TAP /async)
+
+Si `POST /api/search/jobs` responde `503` con `IRSA no está aceptando la creación de trabajos TAP`, la causa original puede ser un `502 Proxy Error` del endpoint remoto `https://irsa.ipac.caltech.edu/TAP/async`. **Este caso es distinto de un fallo de polling de un trabajo ya creado.**
+
+- `Irsa.tap.submit_job(...)` crea un trabajo mediante **POST no idempotente**; un 502 no garantiza que el servidor no lo haya creado. El backend **no hace reintentos automáticos** de esa petición.
+- El servidor registra el traceback y devuelve `503 Service Unavailable` con `Retry-After: 30` y una descripción sin datos privados de IRSA. Los errores no transitorios conservan un 502 explícito.
+- La interfaz ofrece reintento **manual**, con pausa orientativa de 30 segundos para evitar solicitudes rápidas en bucle. El reintento sigue sin garantizar la disponibilidad remota.
+- Si crear el trabajo funciona, pero `remote.run()` falla, el backend intenta eliminar el trabajo que ya conoce; esta limpieza es best-effort.
+- Si el trabajo **ya fue creado**, se conserva el comportamiento de recuperación existente: polling con backoff ante errores temporales. Nunca confundir ambos tipos de error.
+- Los tests simulan fallos de creación 502 y 400 y un fallo de inicio RUN; no envían peticiones reales a IRSA.
+
+Para determinar si la caída está afectando al servicio remoto, consultar su [documentación oficial TAP](https://irsa.ipac.caltech.edu/docs/program_interface/TAP.html) y esperar a que vuelva a responder. No ampliar el timeout de Vite ni sustituir silenciosamente el resultado por datos sintéticos.
+
+
+## Diagnóstico de rendimiento TAP y FITS — misma rama
+
+Una consulta real ahora entrega el campo `timing` en `POST /api/search/jobs` y
+`GET /api/search/jobs/{ticket}`:
+
+- `submit_ms`: tiempo local que tardó el POST de creación del trabajo remoto (no incluye el proceso científico).
+- `run_ms`: duración del POST `PHASE=RUN` hasta obtener respuesta.
+- `phase_events`: cambios de fase **observados** por el sondeo con desplazamiento en milisegundos desde la confirmación de RUN. Se asume `QUEUED` al recibir la confirmación inicial.
+- `phase_observed_ms`: intervalos entre observaciones de fases; **no** representan la hora exacta del cambio en IRSA ni su tiempo de CPU. Sumados dan `remote_observed_ms`. La incertidumbre de transición depende de la frecuencia de sondeo.
+- `phase_http_ms`: tiempo acumulado gastado en solicitudes HTTP de estado, *incluido dentro* de los intervalos de fase. **No sumarlo** a las duraciones de fase.
+- `poll_count`, `poll_errors`: número de consultas de fase al servicio remoto y las que fallaron.
+- `result_fetch_ms` y `result_parse_ms`: tiempo de descarga de tabla y tiempo de normalización/registro de observaciones, respectivamente.
+- `remote_observed_ms` comienza después de confirmar RUN; el total visible en el navegador también incluye las solicitudes frontend y esperas de polling.
+
+Los fotogramas reales en `GET /api/frame/{id}/{index}` incluyen `timing_ms`: `apertura_fits`,
+`lectura_pixeles`, `reproyeccion`, `metadatos`, `png` y `total`. Las lecturas pueden
+ocurrir de manera diferida dentro de Astropy: la división entre apertura y lectura
+es una observación local, no un desglose de procesamiento del servidor IRSA.
+Cuando falle un fotograma, el error público indica la etapa y el tipo de excepción,
+sin incluir URL FITS ni la descripción completa potencialmente sensible.
+
+En **Explorar → Estado de la consulta → Desglose TAP** se ven los tiempos y
+transiciones. **Detalles por época** incluye las etapas FITS por imagen y los fallos;
+al terminar, **Copiar diagnóstico JSON** permite compartir medidas sin imágenes base64,
+identificadores de trabajos, tokens ni URLs de descarga.
+
+El diagnóstico es de observabilidad: **no modifica la consulta ADQL, no acelera
+IRSA y no cambia el comportamiento de las imágenes**. Para pruebas locales, iniciar
+FastAPI y Vite desde la misma rama; las métricas de TAP no aparecen en el modo demo.
+Los tests simulan fases y errores sin enviar trabajos a IRSA.
+
+## Diagnóstico TAP /phase y reintentos FITS (14/11/2026)
+
+**Seguimiento TAP:** GET /api/search/jobs/{ticket} consulta el recurso ligero
+UWS GET {remote-job-url}/phase (texto), usando la sesión HTTP de PyVO cuando
+está disponible. Si el servidor no soporta /phase (303/404/405/406/501
+o una respuesta inesperada), recurre a la propiedad remota job.phase.
+Los errores transitorios 429/500/502/503/504 conservan el backoff del GET,
+sin crear nuevos trabajos remotos.
+
+Al finalizar el catálogo se consulta una vez el documento completo del job UWS
+para extraer startTime y endTime. Las métricas remote_start_time, remote_end_time,
+remote_execution_ms, job_info_status, job_info_ms y phase_method quedan
+disponibles en el campo timing. Si IRSA no envía esas fechas o la lectura falla,
+la búsqueda continúa; las horas no se inventan. Los intervalos QUEUED y
+EXECUTING siguen siendo estimaciones de sondeos, no tiempos precisos de CPU.
+
+**FITS:** los errores incluyen el código HTTP remoto cuando está disponible
+(p. ej. HTTP 404 frente a HTTP 502), nunca la URL de descarga completa.
+Los GET de apertura FITS se reintentan solo ante 429/500/502/503/504 o
+fallos de transporte claramente transitorios, con máximo 3 intentos y pausas
+de 1 y 2 segundos. No reintentar HTTP 400/401/403/404 ni errores WCS/PNG.
+Las imágenes válidas exponen timing_ms.attempts y timing_ms.total_with_retries.
+
+Los tests usan dobles UWS/FITS sin acceso externo, e incluyen fallback,
+tiempos UWS, errores HTTP y reintentos con límites. El flujo ADQL es idéntico.
+
+## Comparador SIA2 vs TAP (diagnóstico experimental)
+
+Tras completar una búsqueda **real** del explorador, el botón
+**Medir SIA2 y comparar** consulta una sola vez el endpoint de diagnóstico
+`GET /api/diagnostics/sia2/{search_id}`. No lanza otro trabajo TAP,
+no sustituye el buscador principal y no descarga archivos FITS.
+
+El backend conserva en RAM el catálogo TAP completo asociado a esa sesión
+(no solo las épocas elegidas) y lo compara con una consulta de metadatos SIA2:
+
+- URL: https://irsa.ipac.caltech.edu/SIA
+- `POS=CIRCLE <ra> <dec> 0.0002777777777777778` (radio de 1 arcsec)
+- Colecciones: `spherex_dr1`, `spherex_dr1_deep`, `spherex_qr3`, `spherex_qr3_deep`
+- `MAXREC=5000`, formato VOTable. El backend detecta `QUERY_STATUS=ERROR`
+  incluso cuando HTTP sea 200, y marca `OVERFLOW` como incompleto.
+- Filtra por el valor exacto `energy_bandpassname=SPHEREx-D<n>` y compara
+  los productos por ruta FITS on-premises (`access_url` vs URI TAP),
+  no por fechas redondeadas.
+- Mide tiempo HTTP, parseo, número de filas, compatibilidad **sintáctica**
+  de URLs de recorte, DR1/QR3, primera/última observación, coincidencias
+  y ejemplos limitados de productos exclusivos de cada método.
+
+Las diferencias de conteo NO indican automáticamente que SIA2 esté mal:
+TAP compara un punto exacto mediante `CONTAINS(POINT, p.poly)`, mientras
+que SIA2 usa una circunferencia de 1 arcsec; SIA2 puede ir ~1 día por detrás
+de TAP durante la ingestión y TAP puede devolver una selección distinta.
+Si SIA2 devuelve `OVERFLOW`, no deben interpretarse sus cifras como totales.
+Una URL de recorte compatible en sintaxis no garantiza que el servidor FITS
+la entregue en ese momento.
+
+El resultado es privado a la sesión temporal en memoria y se almacena
+en caché para evitar repetir solicitudes SIA2 idénticas al reabrir el panel.
+El JSON mostrado al navegador excluye URLs FITS y los identificadores de
+trabajos TAP; las sesiones desaparecen al reiniciar el proceso.
+
+Pruebas: `server/tests/test_sia2_comparison.py` utiliza respuestas VOTable
+simuladas sin consumir IRSA. Un resultado real (latencia/cobertura) solo
+puede verificarse al ejecutar la comparación desde el equipo del usuario.
+
+## Recuperación SIA2 ante ConnectTimeout
+
+El comparador SIA2 realiza GET de metadatos. Como TAP y SIA pueden presentar
+demoras variables de conexión, el comparador usa un tiempo máximo de conexión
+de **12 s** y lectura de **40 s** por intento, con un máximo de **3 GET**
+y esperas de **1 y 3 s** entre fallos transitorios. Un GET de metadatos es
+idempotente: los reintentos no generan trabajos TAP ni descargan FITS.
+
+Solo se reintentan ConnectTimeout, ReadTimeout, ConnectionError y HTTP
+429/500/502/503/504. Un error de certificado (SSLError), HTTP 400/403/404
+o QUERY_STATUS=ERROR dentro del VOTable falla inmediatamente.
+
+En una comparación exitosa se incluyen las métricas `sia2.attempts` y
+`sia2.retry_events` (tipo de fallo y tiempo de cada solicitud). Si los
+tres intentos fallan, el cliente recibe un error explicativo sin direcciones
+de archivos FITS. Una comparación ya exitosa se conserva en caché en la
+sesión del catálogo TAP. Estos cambios **no garantizan** que IRSA esté
+disponible, y no demuestran ventaja de SIA2 hasta obtener resultados reales.
+
+
+## SIA2 como búsqueda principal; TAP como respaldo
+
+En el explorador, el método seleccionado por defecto es **SIA2 (rápido)**.
+La búsqueda de imágenes reales llama primero a `POST /api/search/sia2`:
+- Valida parámetros con el contrato `SearchStart` existente.
+- Ejecuta `query_sia2` (metadatos VOTable) sin crear trabajo TAP.
+- Acepta únicamente `QUERY_STATUS=OK`; un catálogo `OVERFLOW` no se
+  representa como completo.
+- Filtra el detector `SPHEREx-Dn`, construye enlaces de recorte FITS
+  válidos para IRSA y selecciona épocas equiespaciadas con fechas MJD.
+- Crea una sesión temporal `source=sia2` compatible con el mismo endpoint
+  `/api/frame/{search_id}/{index}` para obtener los PNG reales.
+- Devuelve `discovery` con latencia, intentos, filas válidas y estado SIA2.
+
+Si la solicitud SIA2 falla con error de servicio 502/503/504, React activa
+**exactamente un** trabajo TAP asíncrono como respaldo, conserva su
+telemetría y muestra el motivo de la sustitución. Si TAP no acepta ese
+trabajo, la interfaz explica los dos fallos; no repite automáticamente
+el POST TAP, que no es idempotente. Una respuesta SIA2 completa de cero
+épocas es válida: **no crea TAP para forzar resultados**.
+
+Existe además un selector para usar **TAP asíncrono (comparación manual)**
+desde el inicio; el botón «Medir SIA2 y comparar» sigue disponible
+únicamente para sesiones TAP completas. El modo demo no cambia.
+
+La coincidencia de 48 resultados del detector 2 entre SIA2 y TAP para
+WISE 0855 es solo una coincidencia de recuentos, **no prueba identidad
+de archivos**. No se promete cobertura idéntica para otras coordenadas
+ni que un enlace FITS válido sea descargable; IRSA continúa siendo una
+dependencia externa sujeta a retrasos, errores y cadencias de ingestión.
+
+Las sesiones de búsqueda y frames siguen siendo efímeras en RAM, sin
+escrituras en PostgreSQL ni cambios en la lógica de imagen.

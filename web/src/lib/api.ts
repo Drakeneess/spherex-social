@@ -31,15 +31,74 @@ export type Observation = {
 export type ObservationParams = Pick<Observation, 'ra_deg' | 'dec_deg' | 'fov_arcmin'> & { detector: number };
 export type UserStats = { username: string; followers_count: number; following_count: number; is_following: boolean };
 export type Comment = { id: string; post_id: string; username: string; body: string; parent_id: string | null; created_at: string };
+export type Sia2Discovery = {
+  method: 'sia2'; elapsed_ms:number; http_ms:number; parse_ms:number;
+  attempts:number; retry_events:{attempt:number;elapsed_ms:number;failure:string}[];
+  query_status:string; matching_detector_rows:number; valid_cutout_rows:number;
+  usable_epoch_rows:number; radius_arcsec:number;
+};
 export type SkySearch = {
-  search_id: string; source: 'simulated' | 'irsa'; count: number; total_matches: number;
+  search_id: string; source: 'simulated' | 'irsa' | 'sia2'; count: number; total_matches: number;
+  discovery?: Sia2Discovery;
   ra: number; dec: number; detector: number;
   observations: {index: number;date: string;release: string;mjd: number}[];
+};
+export type TapTiming = {
+  submit_ms: number;
+  run_ms: number;
+  remote_observed_ms: number;
+  phase_observed_ms: Record<string, number>;
+  phase_events: {phase:string;at_ms:number}[];
+  poll_count: number;
+  poll_errors: number;
+  phase_http_ms: number;
+  result_fetch_ms: number | null;
+  result_parse_ms: number | null;
+  phase_method?: 'phase_endpoint' | 'full_job_fallback' | 'unknown';
+  remote_start_time?: string | null;
+  remote_end_time?: string | null;
+  remote_execution_ms?: number | null;
+  job_info_ms?: number | null;
+  job_info_status?: string;
+};
+export type FrameTiming = {
+  apertura_fits: number;
+  lectura_pixeles: number;
+  reproyeccion: number;
+  metadatos: number;
+  png: number;
+  total: number;
+  attempts?: number;
+  total_with_retries?: number;
+};
+export type Sia2Comparison = {
+  source: 'sia2_vs_tap';
+  query: {ra:number;dec:number;size_arcmin:number;detector:number};
+  sia2: {
+    elapsed_ms:number;http_ms:number;parse_ms:number;query_status:string;
+    attempts:number;retry_events:{attempt:number;elapsed_ms:number;failure:string}[];
+    complete:boolean;raw_rows:number;matching_detector_rows:number;
+    valid_cutout_rows:number;unique_compatible_images:number;
+    releases:Record<string,number>;
+    date_range:{earliest:string|null;latest:string|null};
+    discarded:Record<string,number>;collections:string[];radius_arcsec:number;
+  };
+  tap: {
+    unique_images:number;selected_epochs:number;releases:Record<string,number>;
+    date_range:{earliest:string|null;latest:string|null};
+  };
+  overlap: {
+    matched:number;tap_only:number;sia2_only:number;selected_tap_matched:number;
+    tap_only_examples:{date:string|null;release:string|null}[];
+    sia2_only_examples:{date:string|null;release:string|null}[];
+  };
+  comparable:boolean;caveats:string[];
 };
 export type SkyFrame = {
   image: string; index: number; date: string; release: string; mode: 'real' | 'simulated';
   wavelength_um: number | null; bandwidth_um: number | null;
   pixel_flags_nonzero_fraction?: number | null;
+  timing_ms?: FrameTiming;
 };
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -132,6 +191,26 @@ export const api = {
     });
     return get<SkySearch>(`/api/search?${query}`,false,signal);
   },
+  searchSia2: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
+    request<SkySearch>('/api/search/sia2', {
+      method: 'POST',
+      body: JSON.stringify({
+        ra:data.ra, dec:data.dec, size_arcmin:data.size,
+        detector:data.detector, max_frames:data.frames,
+      }),
+    },false,signal),
+  startSkyJob: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
+    request<{job_id:string;phase:string;timing:TapTiming}>('/api/search/jobs',{
+      method:'POST',
+      body:JSON.stringify({ra:data.ra,dec:data.dec,size_arcmin:data.size,
+        detector:data.detector,max_frames:data.frames}),
+    },false,signal),
+  pollSkyJob: (id:string,signal?:AbortSignal) =>
+    get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number;timing?:TapTiming}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
+  cancelSkyJob: (id:string) =>
+    request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
+  compareSia2: (searchId:string,signal?:AbortSignal) =>
+    get<Sia2Comparison>(`/api/diagnostics/sia2/${encodeURIComponent(searchId)}`,false,signal),
   frame: (id:string,index:number,signal?:AbortSignal) =>
     get<SkyFrame>(`/api/frame/${encodeURIComponent(id)}/${index}`,false,signal),
 };
