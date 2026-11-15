@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api import router
+from .search import router as search_router
 from .auth import router as auth_router
 from .interactions import router as interactions_router
 from .notifications import router as notifications_router
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, version='0.6.0', lifespan=lifespan)
     app.include_router(router)
+    app.include_router(search_router)
     app.include_router(auth_router)
     app.include_router(posts_router)
     app.include_router(interactions_router)
