@@ -80,6 +80,7 @@ class Session:
     detector: int
     records: list[dict]
     source: str
+    archive_science: bool = False
     created_at: float = field(default_factory=time.monotonic)
     frames: dict[int, dict] = field(default_factory=dict)
     catalog_records: list[dict] | None = None
@@ -386,13 +387,24 @@ def render_real(session: Session, record: dict) -> dict:
                     flags_fraction = float(np.count_nonzero(flags) / flags.size)
             times["metadatos"] = elapsed_ms(checkpoint)
 
+            # Only durable background jobs archive source FITS. The legacy
+            # temporary frame route keeps its cheap 8-bit preview behavior.
             step = "png"
             checkpoint = time.monotonic()
+            science_archive = {}
+            if session.archive_science:
+                raw_fits = io.BytesIO()
+                hdus.writeto(raw_fits, output_verify="silentfix")
+                science_archive = {
+                    "science_fits": raw_fits.getvalue(),
+                    "science_pixels": np.asarray(reproj, dtype=np.float32),
+                }
             image = png_data_url(normalize_preview(reproj))
             times["png"] = elapsed_ms(checkpoint)
             times["total"] = elapsed_ms(started)
             return {
                 "image": image,
+                **science_archive,
                 "wavelength_um": wavelength_um,
                 "bandwidth_um": bandwidth_um,
                 "pixel_flags_nonzero_fraction": flags_fraction,
@@ -925,6 +937,10 @@ def frame(search_id: str, index: int):
             logger.warning("FITS frame error index=%s stage=desconocida type=%s",
                            index, type(exc).__name__)
             raise HTTPException(status_code=502, detail=f"FITS falló: {type(exc).__name__}") from exc
+    # Legacy ephemeral frame API returns JSON, never science bytes or numpy arrays.
+    # Durable jobs archive those through persistent_sky._produce_frame instead.
+    rendered.pop("science_fits", None)
+    rendered.pop("science_pixels", None)
     if "timing_ms" in rendered:
         rendered["timing_ms"] = {
             **rendered["timing_ms"], "attempts": attempts,

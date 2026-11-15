@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch } from '../lib/api';
+import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
+import RevealEditor from '../components/RevealEditor';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
 const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -25,7 +26,7 @@ export default function ExplorerPage({
   observationId?: string;
   initialRa?: number;
   initialDec?: number;
-  onPublish: (region: ObservationParams & {sky_job_id?:string}) => void;
+  onPublish: (region: ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe}) => void;
   onLogin: () => void;
   onProgress: (status: {trace: SearchTrace | null;loading: boolean}) => void;
   onGoHome: () => void;
@@ -56,6 +57,9 @@ export default function ExplorerPage({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [revealRecipe,setRevealRecipe] = useState<RevealRecipe>({...DEFAULT_REVEAL});
+  const [revealEnabled,setRevealEnabled] = useState(true);
+  const [skyState,setSkyState] = useState<PersistentSkyJob|null>(null);
 
   const controller = useRef<AbortController | null>(null);
   const activeJobId = useRef<string | null>(null);
@@ -68,6 +72,12 @@ export default function ExplorerPage({
   const current = frames[position];
   const metadata = result?.observations[position];
   const loadedCount = available.length;
+  const revealable = available.filter(index =>
+    skyState?.frames.some(frame=>frame.index===index&&frame.raw_available));
+  const rawAvailable = revealable.length>0;
+  // Live playback can advance faster than the server render debounce.
+  // Keep the editorial preview on one stable frame while animation runs.
+  const revealPreviewIndex = playing ? (revealable[0] ?? position) : position;
 
   useEffect(() => {
     onProgress({ trace, loading });
@@ -101,6 +111,9 @@ export default function ExplorerPage({
     });
     setResult(null);
     setFrames({});
+    setSkyState(null);
+    setRevealRecipe({...DEFAULT_REVEAL});
+    setRevealEnabled(true);
     setActiveParams(params);
     setMarks([]);
     setCompare(false);
@@ -142,6 +155,7 @@ export default function ExplorerPage({
             if (request.signal.aborted) return;
             networkFailures = 0;
             lastSnapshot = state;
+            setSkyState(state);
             const fromQuery = state.query;
             const completed = terminalStatuses.has(state.status);
             const phase = state.status === 'queued' || state.status === 'catalog'
@@ -391,6 +405,8 @@ export default function ExplorerPage({
       fov_arcmin: activeParams.size,
       detector: activeParams.detector,
       ...(activeParams.demo ? {} : {sky_job_id: activeJobId.current ?? undefined}),
+      ...(!activeParams.demo && rawAvailable && revealEnabled
+          ? {display_recipe:{...revealRecipe}} : {}),
     });
   }
 
@@ -485,6 +501,12 @@ export default function ExplorerPage({
           {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
 
         </section>
+        {result?.source !== 'simulated' && result && <RevealEditor
+          active={active} jobId={activeJobId.current}
+          index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
+          hasRaw={rawAvailable} searching={loading} recipe={revealRecipe}
+          onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
+          enabled={revealEnabled} onEnabled={setRevealEnabled}/>}
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">

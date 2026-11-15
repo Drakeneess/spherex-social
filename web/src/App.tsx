@@ -4,7 +4,7 @@ import AstroGlyph from './components/AstroGlyph';
 import BrandLogo from './components/BrandLogo';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
-import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
+import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats, type RevealRecipe } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import ExplorerPage from './pages/ExplorerPage';
@@ -12,7 +12,7 @@ import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/B
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 
-type PublishRegion = ObservationParams & {sky_job_id?:string};
+type PublishRegion = ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe};
 type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
@@ -108,7 +108,8 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
         setSavedId(observation_id);
       }
       await api.createPost({caption:caption.trim(),visibility,observation_id,
-        sky_job_id:attach && region?.sky_job_id ? region.sky_job_id : null});
+        sky_job_id:attach && region?.sky_job_id ? region.sky_job_id : null,
+        display_recipe:attach&&region?.display_recipe?region.display_recipe:null});
       onDone();
     }catch(e){setError(message(e));}finally{setBusy(false);}
   }
@@ -125,6 +126,11 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
         </select></div>
         {region&&<label className="attach-observation"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/>
           Adjuntar RA {region.ra_deg.toFixed(4)}° · Dec {region.dec_deg.toFixed(4)}° · D{region.detector}</label>}
+        {attach&&region?.display_recipe&&<p className="reveal-publish-confirm">
+          <strong>Revelado listo:</strong> paleta {region.display_recipe.palette},
+          contraste {region.display_recipe.stretch}, formato {region.display_recipe.format}.
+          La publicación conservará la receta visual y los datos FITS permanecerán inalterados.
+        </p>}
         {!region&&<p className="hint">Puedes publicar solo texto. Para adjuntar coordenadas, abre primero el explorador.</p>}
         <p className="hint">Las coordenadas guardadas no constituyen un hallazgo astronómico confirmado.</p>
         <div className="mrow"><button type="button" className="btn" onClick={onClose}>Cancelar</button>

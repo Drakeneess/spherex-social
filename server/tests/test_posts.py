@@ -325,3 +325,71 @@ def test_preparing_blink_respects_active_worker_capacity(env, monkeypatch):
     post_id = publish(client, headers["alpha"], "Con muchos trabajos",
                       observation_id=region_id).json()["id"]
     assert client.post(f"/v1/posts/{post_id}/blink").status_code == 429
+
+
+def test_reveal_recipe_is_validated_persisted_and_visible_in_blink(env):
+    client, engine, author_id, _, headers = env
+    import persistent_sky
+    from unittest.mock import patch
+    with Session(engine) as db:
+        observation = Observation(creator_id=author_id, ra_deg=133.795129,
+                                  dec_deg=-7.245147, fov_arcmin=6, detector=2)
+        task = SkySearchJob(
+            id=uuid4(), ra=133.795129, dec=-7.245147, size_arcmin=6,
+            detector=2, max_frames=2, demo=False, source="sia2", status="complete",
+            result_data={"count": 2, "observations": []},
+            frame_states=[{"index": 0, "status": "ready",
+                           "metadata": {"raw_available": True}},
+                          {"index": 1, "status": "ready",
+                           "metadata": {"raw_available": True}}],
+        )
+        old = SkySearchJob(
+            id=uuid4(), ra=133.795129, dec=-7.245147, size_arcmin=6,
+            detector=2, max_frames=2, demo=False, source="sia2", status="complete",
+            result_data={"count": 2, "observations": []},
+            frame_states=[{"index": 0, "status": "ready"}],
+        )
+        db.add_all([observation, task, old])
+        db.commit()
+        db.refresh(observation)
+        db.refresh(task)
+        db.refresh(old)
+        observation_id, task_id, old_id = str(observation.id), str(task.id), str(old.id)
+
+    recipe = {"version": 1, "palette": "violet", "stretch": "log",
+              "black": 1.5, "white": 99, "gamma": 1.3,
+              "highlight": "#fF0088", "shadow": "#110022",
+              "format": "portrait", "sampling": "smooth"}
+    created = publish(client, headers["alpha"], "Revelado",
+                      observation_id=observation_id, sky_job_id=task_id,
+                      display_recipe=recipe)
+    assert created.status_code == 201, created.text
+    posted = created.json()
+    assert posted["display_recipe"]["palette"] == "violet"
+    assert posted["display_recipe"]["highlight"] == "#ff0088"
+    post_id = posted["id"]
+    assert client.get(f"/v1/posts/{post_id}").json()["display_recipe"] == posted["display_recipe"]
+    assert client.get("/v1/feed").json()[0]["display_recipe"] == posted["display_recipe"]
+    with patch.object(persistent_sky, "_schedule") as schedule:
+        result = client.post(f"/v1/posts/{post_id}/blink")
+    assert result.status_code == 200
+    assert result.json()["display_recipe"] == posted["display_recipe"]
+    schedule.assert_not_called()
+
+    bad = [
+        {**recipe, "palette": "made-up"},
+        {**recipe, "gamma": 10},
+        {**recipe, "highlight": "<script>"},
+        {**recipe, "unknown": 3},
+    ]
+    for candidate in bad:
+        assert publish(client, headers["alpha"], "Bad", observation_id=observation_id,
+                       sky_job_id=task_id, display_recipe=candidate).status_code == 422
+    assert publish(client, headers["alpha"], "No raw",
+                   observation_id=observation_id, sky_job_id=old_id,
+                   display_recipe=recipe).status_code == 422
+    assert publish(client, headers["alpha"], "Only text",
+                   display_recipe=recipe).status_code == 422
+    assert client.patch(f"/v1/posts/{post_id}",headers=headers["alpha"],
+                        json={"display_recipe": None}).status_code == 200
+    assert client.get(f"/v1/posts/{post_id}").json()["display_recipe"] is None

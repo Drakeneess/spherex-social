@@ -24,7 +24,8 @@ from sqlalchemy.exc import IntegrityError
 
 from social_api.db import get_session_factory
 from social_api.models import SkySearchJob
-from sky_storage import get_preview, put_preview
+from sky_storage import get_preview, put_preview, put_science, get_science_pixels
+from sky_reveal import RevealRecipe, reveal_png
 
 router = APIRouter(prefix="/api/sky/jobs", tags=["persistent sky exploration"])
 logger = logging.getLogger("astrogram.sky.persistent")
@@ -77,6 +78,7 @@ def _snapshot(row: SkySearchJob) -> dict:
         "discovery": row.discovery_data,
         "frames": [
             {"index": item["index"], "status": item["status"],
+             "raw_available": bool((item.get("metadata") or {}).get("raw_available")),
              **({"error": "Imagen no disponible"} if item["status"] == "failed" else {})}
             for item in frames
         ],
@@ -163,6 +165,35 @@ def get_job_frame(job_id: uuid.UUID, index: int):
         logger.warning("Could not read stored sky frame: %s", type(exc).__name__, exc_info=True)
         raise HTTPException(status_code=503, detail="La imagen no está disponible temporalmente") from exc
     return JSONResponse({**meta, "image": image}, headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/{job_id}/frames/{index}/reveal")
+def reveal_job_frame(job_id: uuid.UUID, index: int, recipe: RevealRecipe):
+    """Preview a nondestructive display recipe against original saved pixels.
+
+    This route uses the same unguessable job capability as the frame PNG API.
+    It never returns FITS/float arrays, S3 keys, or credentials.
+    """
+    snapshot = _row(job_id)
+    if index < 0 or index >= len(snapshot["frames"]) or snapshot["frames"][index]["status"] != "ready":
+        raise HTTPException(status_code=404, detail="La época todavía no está disponible")
+    with _factory()() as db:
+        row = db.get(SkySearchJob, job_id)
+        item = next((entry for entry in row.frame_states or []
+                     if entry["index"] == index), None)
+        if row.demo or not item or not (item.get("metadata") or {}).get("raw_available"):
+            raise HTTPException(status_code=409,
+                                detail="Esta época no tiene datos científicos editables. Inicia una nueva búsqueda real.")
+    try:
+        pixels = get_science_pixels(job_id, index)
+        image = reveal_png(pixels, recipe)
+    except Exception as exc:
+        logger.warning("Reveal frame unavailable: %s", type(exc).__name__, exc_info=True)
+        raise HTTPException(status_code=503,
+                            detail="No se pudo recuperar el revelado") from exc
+    return JSONResponse({"image": image, "recipe": recipe.model_dump(mode="json"),
+                         "derived": True, "source": "SPHEREx FITS reproyectado"},
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.delete("/{job_id}", status_code=204)
@@ -281,7 +312,7 @@ def _produce_frame(job_id: uuid.UUID, row: SkySearchJob, records: list[dict], in
     else:
         session = PreviewSession(
             row.ra, row.dec, row.size_arcmin,
-            row.detector, records, "sia2",
+            row.detector, records, "sia2", archive_science=True,
         )
         for attempt in range(1, MAX_FITS_ATTEMPTS + 1):
             try:
@@ -292,9 +323,23 @@ def _produce_frame(job_id: uuid.UUID, row: SkySearchJob, records: list[dict], in
                     raise
                 time.sleep(FITS_RETRY_DELAYS[attempt - 1])
     image = rendered.pop("image")
+    raw_fits = rendered.pop("science_fits", None)
+    raw_pixels = rendered.pop("science_pixels", None)
+    raw_available = False
+    if raw_fits is not None and raw_pixels is not None:
+        # Store the scientific source before declaring the frame complete.
+        # This is an immutable job/index namespace, never a user's filename.
+        try:
+            put_science(job_id, index, raw_fits, raw_pixels)
+        except ValueError:
+            # A source exceeding the bounded science archive must not make
+            # the ordinary astronomical PNG disappear.
+            logger.warning("FITS source could not be archived: unsupported size or format")
+        else:
+            raw_available = True
     put_preview(job_id, index, image)
     return {
-        **rendered, "index": index,
+        **rendered, "raw_available": raw_available, "index": index,
         "date": records[index]["date"],
         "release": records[index]["release"],
     }
