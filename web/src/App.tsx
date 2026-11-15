@@ -29,7 +29,7 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'|'search'; q?:string; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; constellation?:string; prefill?:boolean};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'|'search'; q?:string; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; searchBack?:string; constellation?:string; prefill?:boolean};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
@@ -54,7 +54,8 @@ function parseRoute():Route {
     constellation:params.get('constellation')||undefined,
     prefill:params.get('prefill')==='1'};
   if(parts[0]==='u'&&parts[1])return {page:'profile',username:parts[1]};
-  if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1'};
+  if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1',
+      searchBack:params.get('from')==='search'?(params.get('q')||''):undefined};
   if(parts[0]==='settings'||parts[0]==='game'||parts[0]==='saved'||parts[0]==='activity')return {page:parts[0]};
   return {page:'home'};
 }
@@ -708,7 +709,8 @@ export default function App(){
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'&&user?<NotificationsPage onCountChanged={setUnreadCount}/>:
        route.page==='post'&&route.postId?<PostDetailPage postId={route.postId}
-         showComments={Boolean(route.comments)} currentUsername={user?.username}
+         showComments={Boolean(route.comments)} searchBack={route.searchBack}
+         currentUsername={user?.username}
          onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>:
        <FeedPage key={`${feedVersion}-${route.tag??''}`} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
           onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden}
