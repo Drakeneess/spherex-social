@@ -180,7 +180,7 @@ export default function PostBlinkPreview({
       </div>
     </div>
     {canBlink && <div className="post-blink-epoch-indicators" aria-hidden="true">
-      {available.map((frame, index) => <span
+      {available.map(frame => <span
         key={frame.index} className={shown.index === frame.index ? 'active' : ''}/>)}
     </div>}
     {!visible && isLoading && <span className="sr-only">Vista pendiente de cargar cuando esté visible</span>}
