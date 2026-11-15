@@ -688,23 +688,45 @@ puede consultar su fecha completa, sin alterar el control anterior de
 
 Desde la sorpresa se puede:
 
-- Para **Tauro**: abrir la carta J2000 interactiva existente, escoger entre
-  Aldebarán, Elnath, Pléyades (M45), M1 u otra región y, solamente al
-  pulsar «Buscar aquí con SPHEREx», iniciar una búsqueda del archivo.
-- Para los otros **11 signos**: preparar en el explorador las coordenadas
-  J2000 de una estrella representativa (p. ej., Pólux para Géminis).
-  La búsqueda real **no comienza automáticamente**; debe confirmarse con
-  Buscar. Todavía no se simulan cartas completas de esas constelaciones.
+- Para **cada uno de los 12 signos**: abrir su carta J2000 interactiva
+  completa con un conjunto curado de estrellas brillantes de la constelación.
+  Seleccionar una estrella desde la lista o elegir una región libre con el
+  puntero. La carta de Tauro conserva M1 y M45.
+- **Solo** al pulsar «Buscar con SPHEREx» se consulta el archivo. Abrir la
+  sorpresa y navegar por una carta no generan trabajos en el servidor. Las
+  coordenadas de los objetos no son imágenes científicas ni delimitaciones
+  oficiales de la UAI. Piscis cruza RA 0h y tiene proyección continua.
 
-La fecha de cumpleaños se convierte a un signo según **intervalos
-convencionales del zodiaco tropical**; la relación con la constelación
-astronómica es un recurso cultural del easter egg, **no** una efeméride
-calculada del Sol en el momento del nacimiento, ni una afirmación
-astrológica o sobre límites oficiales de la UAI. En fechas cercanas al
-cambio de signo, el cálculo por fecha sola es aproximado.
+La tarjeta mantiene su magia: solo el símbolo, el nombre, una frase
+propia del signo y la acción de explorar. No presenta advertencias, coordenadas
+ni mensajes técnicos o de privacidad. Los datos siguen privados y la
+explicación astronómica se conserva en esta documentación y en la carta del
+explorador. El signo corresponde a **intervalos convencionales del zodiaco
+tropical**; no indica la posición calculada del Sol en el nacimiento ni usa
+fronteras oficiales de la UAI.
 
 Fuentes:
 - [Fechas tradicionales de los 12 signos](https://zodiaccalendar.com/research/zodiac-reference-tables.html)
 - [SIMBAD/CDS: coordenadas de estrellas](https://simbad.cds.unistra.fr/simbad/)
 - [UAI: definición de constelaciones](https://www.iau.org/IAU/Astronomy-FAQs/Constellations.aspx)
 - [M1: posición del catálogo NASA/Hubble](https://science.nasa.gov/asset/hubble/scale-and-compass-for-crab-nebula/)
+
+### Catálogo J2000 del atlas zodiacal
+
+Las cartas emplean estrellas reales, posiciones transcritas de los
+listados por constelación de estrellas principales (RA/Dec en horas/grados),
+con referencias independientes para Tauro M1/M45. Las conexiones son
+ilustraciones del asterismo, no los límites oficiales de la UAI:
+
+- [Aquarius](https://en.wikipedia.org/wiki/List_of_stars_in_Aquarius)
+- [Pisces](https://en.wikipedia.org/wiki/List_of_stars_in_Pisces)
+- [Aries](https://en.wikipedia.org/wiki/List_of_stars_in_Aries)
+- [Taurus](https://en.wikipedia.org/wiki/List_of_stars_in_Taurus)
+- [Gemini](https://en.wikipedia.org/wiki/List_of_stars_in_Gemini)
+- [Cancer](https://en.wikipedia.org/wiki/List_of_stars_in_Cancer)
+- [Leo](https://en.wikipedia.org/wiki/List_of_stars_in_Leo)
+- [Virgo](https://en.wikipedia.org/wiki/List_of_stars_in_Virgo)
+- [Libra](https://en.wikipedia.org/wiki/List_of_stars_in_Libra)
+- [Scorpius](https://en.wikipedia.org/wiki/List_of_stars_in_Scorpius)
+- [Sagittarius](https://en.wikipedia.org/wiki/List_of_stars_in_Sagittarius)
+- [Capricornus](https://en.wikipedia.org/wiki/List_of_stars_in_Capricornus)

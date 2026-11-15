@@ -52,12 +52,8 @@ test('private surprise routes never contain birthdays or start real IRSA jobs',(
     const route=birthdaySkyRoute(sign);
     assert.equal(route.startsWith('explore?'),true);
     assert.doesNotMatch(route,/\d{4}-\d{2}-\d{2}/);
-    if(sign.id==='taurus'){
-      assert.equal(route,'explore?constellation=taurus');
-    }else{
-      assert.match(route,/&prefill=1$/);
-      assert.ok(route.includes('ra=')&&route.includes('dec='));
-    }
+    assert.equal(route,`explore?constellation=${sign.id}`);
+    assert.doesNotMatch(route,/ra=|dec=|birth_date|prefill/);
   }
 });
 test('the reveal is owner-only and appears only after the DOB is saved',()=>{
@@ -66,12 +62,13 @@ test('the reveal is owner-only and appears only after the DOB is saved',()=>{
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
   assert.match(component,/user\.birth_date&&birthDate===user\.birth_date/);
   assert.match(component,/BirthdaySkyReveal birthDate=\{user\.birth_date\}/);
-  assert.match(reveal,/Este detalle solo aparece en tus ajustes/);
-  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id==='taurus'/);
+  assert.match(reveal,/Explorar mi constelación/);
+  assert.doesNotMatch(reveal,/birthday-sky-disclaimer|birthday-sky-private|RA \\{/);
+  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id===route\.constellation/);
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
-  const marker=explorer.indexOf('if(prefillOnly){');
+  const marker=explorer.indexOf('if(!atlas){');
   assert.ok(marker>0);
-  const end=explorer.indexOf('return;',marker);
+  const end=explorer.indexOf('},[active,atlas]);',marker);
   assert.ok(end>marker);
   assert.doesNotMatch(explorer.slice(marker,end),/\bload\s*\(/);
 });

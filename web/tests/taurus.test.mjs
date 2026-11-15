@@ -80,9 +80,9 @@ test('click-to-coordinate is invertible across the sky chart',()=>{
 });
 test('opening Tauro does not trigger an expensive job automatically',()=>{
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
-  const start=explorer.indexOf("if(constellation!=='taurus'){");
+  const start=explorer.indexOf("if(!atlas){");
   assert.ok(start>=0);
-  const end=explorer.indexOf("},[active,constellation]);",start);
+  const end=explorer.indexOf("},[active,atlas]);",start);
   assert.ok(end>start);
   const effect=explorer.slice(start,end);
   assert.doesNotMatch(effect,/\bload\s*\(/);
