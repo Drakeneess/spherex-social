@@ -53,7 +53,7 @@ export default function CandidateFinder({
         <span>{epochsAvailable} épocas FITS editables</span>
         <small>mínimo 3</small>
       </div>
-      <button className="btn sky-candidate-action" type="button" onClick={()=>void analyze()}
+      <button className="btn sky-candidate-action" data-sound="search" type="button" onClick={()=>void analyze()}
         disabled={!canAnalyze||loading}>
         {loading?<LoaderCircle size={17} className="spin"/>:<ScanSearch size={17}/>}
         {loading?'Analizando las épocas…':result?'Volver a analizar':'Buscar candidatos'}
