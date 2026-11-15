@@ -597,7 +597,13 @@ export default function ExplorerPage({
             selectedId={selectedCandidate?.id??null}
             onSelect={candidate=>{
               setSelectedCandidate(candidate);setPlaying(false);
-              if(candidate?.detections.length)setPosition(candidate.detections[0].index);
+              if(candidate?.detections.length){
+                setPosition(candidate.detections[0].index);
+                document.querySelector('[data-tour="explore-canvas"]')?.scrollIntoView({
+                  behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+                  block:'center',
+                });
+              }
             }}/>}
         {result?.source !== 'simulated' && result && <RevealEditor
           active={active} jobId={activeJobId.current}
