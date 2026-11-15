@@ -353,3 +353,72 @@ def test_real_railway_app_exposes_profile_media_paths():
     assert 'delete' in paths['/v1/users/me/media/{kind}']
     assert '/v1/users/{username}/media/{kind}' in paths
     assert 'get' in paths['/v1/users/{username}/media/{kind}']
+
+
+def test_profile_colors_birth_date_are_persisted_with_private_year(client):
+    register(client)
+    token=login(client).json()['access_token']
+    headers={'Authorization':f'Bearer {token}'}
+    original=client.get('/v1/users/skywatcher').json()
+    assert original['avatar_color_start'] is None
+    assert original['birthday_public'] is None
+    assert 'birth_date' not in original and 'show_birthday' not in original
+
+    body={
+      'avatar_color_start':'#Aa33FF','avatar_color_end':'#114477',
+      'cover_color_start':'#102030','cover_color_end':'#EE5533',
+      'birth_date':'2003-05-21',
+    }
+    response=client.patch('/v1/users/me',headers=headers,json=body)
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['avatar_color_start']=='#aa33ff'
+    assert data['cover_color_end']=='#ee5533'
+    assert data['birth_date']=='2003-05-21'
+    assert data['show_birthday'] is False
+    public=client.get('/v1/users/skywatcher').json()
+    assert public['avatar_color_start']=='#aa33ff'
+    assert public['cover_color_end']=='#ee5533'
+    assert public['birthday_public'] is None
+    assert 'birth_date' not in public
+    assert 'show_birthday' not in public
+    assert '2003' not in str(public)
+    assert client.get('/v1/users/me',headers=headers).json()['birth_date']=='2003-05-21'
+
+    visible=client.patch('/v1/users/me',headers=headers,json={'show_birthday':True})
+    assert visible.status_code==200,visible.text
+    assert visible.json()['show_birthday'] is True
+    public=client.get('/v1/users/skywatcher').json()
+    assert public['birthday_public']=='05-21'
+    assert '2003' not in str(public)
+
+    hidden=client.patch('/v1/users/me',headers=headers,json={'show_birthday':False})
+    assert hidden.status_code==200
+    assert client.get('/v1/users/skywatcher').json()['birthday_public'] is None
+
+    cleared=client.patch('/v1/users/me',headers=headers,json={'birth_date':None})
+    assert cleared.status_code==200,cleared.text
+    assert cleared.json()['birth_date'] is None
+    assert cleared.json()['show_birthday'] is False
+
+
+def test_profile_color_and_birthday_validation(client):
+    register(client)
+    token=login(client).json()['access_token']
+    headers={'Authorization':f'Bearer {token}'}
+    for bad in ('red','hsl(20 60% 50%)','#333','#ff5588aa','#GG233F','blue;url(x)'):
+        result=client.patch('/v1/users/me',headers=headers,json={'avatar_color_start':bad})
+        assert result.status_code==422,(bad,result.text)
+    for bad_date in ('2200-01-01','1899-12-31','2025-02-29','garbage'):
+        result=client.patch('/v1/users/me',headers=headers,json={'birth_date':bad_date})
+        assert result.status_code==422,(bad_date,result.text)
+    assert client.patch('/v1/users/me',headers=headers,
+                        json={'show_birthday':True}).status_code==422
+    assert client.patch('/v1/users/me',headers=headers,
+                        json={'show_birthday':None}).status_code==422
+    assert client.patch('/v1/users/me',headers=headers,
+                        json={'birth_date':'2004-02-29','show_birthday':True}).status_code==200
+    assert client.get('/v1/users/skywatcher').json()['birthday_public']=='02-29'
+    assert client.patch('/v1/users/me',headers=headers,
+                        json={'birth_date':None,'show_birthday':False}).status_code==200
+    assert client.get('/v1/users/skywatcher').json()['birthday_public'] is None
