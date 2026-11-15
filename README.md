@@ -672,32 +672,39 @@ una notificación de comentario se abre la conversación de la publicación;
 seguir a alguien abre su perfil. **No** hay Web Push, SMS, correo electrónico,
 solicitudes de amistad ni notificaciones simuladas en esta fase.
 
-## Búsqueda por nombre y atlas de Tauro
+## Sorpresa de cumpleaños: una constelación para ti
 
-El campo de búsqueda global reconoce **Tauro**, **Taurus** y la abreviatura
-**Tau**, además de estrellas y objetos seleccionados como Aldebarán, Elnath,
-las Pléyades (M45) y la Nebulosa del Cangrejo (M1). El explorador también
-incluye un buscador por nombre junto al formulario RA/Dec.
+AstroGram conserva el **explorador científico público normal**, sin un
+buscador visible de constelaciones ni referencias zodiacales en la navegación.
 
-La ruta `#/explore?constellation=taurus` abre la **carta estelar de Tauro**
-sin crear un trabajo de catálogo. `&target=m1` selecciona M1, también sin
-enviar solicitudes al archivo. Se puede seleccionar una estrella de la lista
-o pulsar en la carta para preparar coordenadas. **Solo** pulsar
-«Buscar aquí con SPHEREx» inicia el mismo trabajo persistente que el
-explorador ya utiliza; conserva detector, tamaño de campo (1–12 minutos
-de arco), épocas y métodos de revelado. No se envía una búsqueda de toda
-la constelación de una vez.
+Cuando un usuario **guarda su fecha de nacimiento** en Ajustes → Editar
+perfil, aparece una pequeña carta privada de descubrimiento con su signo
+zodiacal **tradicional tropical** (12 signos) y una estrella de referencia
+situada en la constelación del mismo nombre. Si aún no guardó la fecha,
+esa carta no existe. El año de nacimiento nunca se incorpora a rutas,
+imágenes, notificaciones ni perfiles públicos. Solo el titular autenticado
+puede consultar su fecha completa, sin alterar el control anterior de
+`show_birthday` (publicación voluntaria de día y mes).
 
-Los puntos de estrellas provienen de posiciones de época J2000 de un
-catálogo Hipparcos/HYG publicado, y M1 utiliza la posición de NASA:
-- [Constelaciones oficiales UAI: Tauro/Taurus (Tau)](https://www.iau.org/IAU/Astronomy-FAQs/Constellations.aspx)
-- [Lista de estrellas de Tauro y sus posiciones](https://en.wikipedia.org/wiki/List_of_stars_in_Taurus)
-- [M1: coordenadas NASA/Hubble](https://science.nasa.gov/asset/hubble/scale-and-compass-for-crab-nebula/)
+Desde la sorpresa se puede:
 
-La carta muestra una **rejilla RA/Dec**, con norte arriba y ascensión recta
-creciente hacia la izquierda (este). Las líneas que unen estrellas son
-**orientativas, no los límites oficiales de la UAI**; no hay inventario
-completo de estrellas y la carta no se presenta como una imagen SPHEREx.
-La cobertura real en IRSA depende de las observaciones disponibles. En
-esta fase el atlas por nombre admite **solo Tauro y objetos seleccionados**;
-la estructura permite añadir otras constelaciones más adelante.
+- Para **Tauro**: abrir la carta J2000 interactiva existente, escoger entre
+  Aldebarán, Elnath, Pléyades (M45), M1 u otra región y, solamente al
+  pulsar «Buscar aquí con SPHEREx», iniciar una búsqueda del archivo.
+- Para los otros **11 signos**: preparar en el explorador las coordenadas
+  J2000 de una estrella representativa (p. ej., Pólux para Géminis).
+  La búsqueda real **no comienza automáticamente**; debe confirmarse con
+  Buscar. Todavía no se simulan cartas completas de esas constelaciones.
+
+La fecha de cumpleaños se convierte a un signo según **intervalos
+convencionales del zodiaco tropical**; la relación con la constelación
+astronómica es un recurso cultural del easter egg, **no** una efeméride
+calculada del Sol en el momento del nacimiento, ni una afirmación
+astrológica o sobre límites oficiales de la UAI. En fechas cercanas al
+cambio de signo, el cálculo por fecha sola es aproximado.
+
+Fuentes:
+- [Fechas tradicionales de los 12 signos](https://zodiaccalendar.com/research/zodiac-reference-tables.html)
+- [SIMBAD/CDS: coordenadas de estrellas](https://simbad.cds.unistra.fr/simbad/)
+- [UAI: definición de constelaciones](https://www.iau.org/IAU/Astronomy-FAQs/Constellations.aspx)
+- [M1: posición del catálogo NASA/Hubble](https://science.nasa.gov/asset/hubble/scale-and-compass-for-crab-nebula/)
