@@ -1,0 +1,425 @@
+/*
+ * AstroGram responsive layer (loaded after astrogram.css).
+ *
+ * Scope: every live view — auth, feed, profile, settings, saved, search,
+ * notifications, explorer, game, atlas, overlays and editing workspaces.
+ * Preserve desktop layouts; avoid hiding content to mask horizontal overflow.
+ */
+
+html,body,#root,.astrogram-shell{min-inline-size:0}
+.astrogram-shell img,.astrogram-shell video{max-inline-size:100%}
+.astrogram-shell main,.astrogram-shell aside,
+.astrogram-shell .card,.astrogram-shell .post-card,
+.astrogram-shell .post-head,.astrogram-shell .post-head .who,
+.astrogram-shell .profile-summary{min-inline-size:0}
+.astrogram-shell :is(.card-h,.profile-summary,.notification-copy,.global-results-page) {
+  overflow-wrap:anywhere;
+}
+.astrogram-shell .navbar .navbar-search-trigger{display:none}
+.gbox>svg{display:block;inline-size:100%;block-size:100%;touch-action:manipulation}
+.gbox[data-tour],.gpair>div{min-inline-size:0}
+
+/* Desktop at browser zoom and tablets: the grid tracks must be allowed to shrink. */
+@media(max-width:1100px){
+  .astrogram-shell .global-results-page{max-inline-size:100%}
+  .astrogram-shell .profile-layout .profile-observation-heading{min-width:0}
+  .astrogram-shell .xgrid>*{min-width:0}
+  .reveal-studio-dialog{max-inline-size:100%}
+  .reveal-studio-visual,.reveal-studio-settings{min-inline-size:0}
+}
+@media(max-width:900px){
+  .astrogram-shell>.wrap,
+  .astrogram-shell>.wrap.feed-layout,
+  .astrogram-shell>.epoch-persistent-page .epoch-explorer{
+    inline-size:100%;max-inline-size:760px;
+    margin-inline:auto;
+  }
+  .astrogram-shell .feed-layout>.side{position:static}
+  .astrogram-shell .epoch-grid,
+  .astrogram-shell .xgrid{grid-template-columns:minmax(0,1fr)}
+  .astrogram-shell .epoch-side{min-inline-size:0}
+  .astrogram-shell .epoch-viewer{min-inline-size:0}
+}
+@media(max-width:820px){
+  /* Sky atlas: show the chart at a readable width above its target list. */
+  .taurus-atlas-body{grid-template-columns:minmax(0,1fr)}
+  .taurus-atlas-map{padding:14px}
+  .taurus-atlas-detail{border-left:0;border-top:1px solid var(--line)}
+  .taurus-target-list{padding:14px}
+  .taurus-target-options{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .taurus-selected{margin:6px 14px 14px}
+  .taurus-atlas-header{padding:16px}
+  .taurus-atlas-header h2{overflow-wrap:anywhere}
+  .taurus-atlas-footer{padding:10px 14px}
+  /* Main scroll region remains usable inside the FITS reveal dialog. */
+  .reveal-studio-workspace{min-height:0}
+  .reveal-studio-visual,.reveal-studio-settings{min-width:0}
+}
+
+/* Primary mobile navigation: one stable header and one thumb-reachable dock.
+ * Removing backdrop-filter on the mobile header prevents fixed descendants
+ * from being positioned relative to the header instead of the viewport. */
+@media(max-width:680px){
+  /* Smooth keyboard focus on iOS without page-scale jumps or fixed skies. */
+  body{background-attachment:scroll}
+  .auth{min-height:100dvh;grid-template-columns:minmax(0,1fr)}
+  .authbox{width:min(420px,calc(100% - 28px));padding-block:clamp(20px,5dvh,46px)}
+  .authbox .field input,
+  .compose-main>textarea,.compose-optional input,.compose-tag-form input,
+  .profile-editor-fields .field input,.profile-editor-fields .field textarea,
+  .epoch-search-form .field input,.epoch-search-form .field select,
+  .comments .comment-form input,
+  .astrogram-shell .navbar .global-search .global-search-input-shell input{
+    font-size:16px;
+  }
+  .astrogram-shell .navbar{
+    display:grid;grid-template-columns:minmax(0,1fr) 44px;
+    grid-template-rows:auto;align-items:center;
+    min-height:60px;padding:8px 12px;gap:10px;
+    background:rgba(7,10,20,.98);
+    -webkit-backdrop-filter:none;backdrop-filter:none;
+  }
+  .astrogram-shell .navbar .logo{
+    grid-column:1;grid-row:1;min-width:0;max-width:100%;
+    font-size:1.12rem;
+  }
+  .astrogram-shell .navbar .logo>span:last-child{
+    display:inline!important;overflow:hidden;text-overflow:ellipsis;
+  }
+  .astrogram-shell .navbar .navbar-search-trigger{
+    display:grid;place-items:center;
+    grid-column:2;grid-row:1;
+    min-width:44px;min-height:44px;border-radius:12px;
+    color:#bbdaff;background:#1c2946;
+    border:1px solid #42587e;
+  }
+  .astrogram-shell .navbar .navbar-search-trigger:hover,
+  .astrogram-shell .navbar .navbar-search-trigger[aria-expanded="true"]{
+    color:#fff;background:#2c4670;border-color:#85b8f3;
+  }
+  .astrogram-shell .navbar .nav{
+    position:fixed;inset:auto 0 0;z-index:80;
+    grid-column:auto;grid-row:auto;
+    display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-evenly;
+    width:100%;max-width:none;min-width:0;
+    min-height:62px;gap:2px;
+    padding:6px max(7px,env(safe-area-inset-right))
+      calc(6px + env(safe-area-inset-bottom))
+      max(7px,env(safe-area-inset-left));
+    border-top:1px solid #324665;
+    background:rgba(11,18,35,.98);
+    box-shadow:0 -8px 26px #030814a8;
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+    overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;
+  }
+  .astrogram-shell .navbar .nav::-webkit-scrollbar{display:none}
+  .astrogram-shell .navbar .nav button{
+    flex:1 1 0;min-width:0;min-height:46px;
+    padding:7px 2px;font-size:.78rem;border-radius:11px;
+  }
+  .astrogram-shell .navbar .nav button .t{display:none}
+  .astrogram-shell .navbar .nav button.newpost{
+    flex:1 1 0;min-width:0;min-height:44px;
+    padding:8px 3px;margin-left:0;border-radius:12px;
+  }
+  .astrogram-shell .navbar .nav button.nav-search-mobile{display:none}
+  .astrogram-shell .navbar .nav .avatar{max-width:26px}
+  .astrogram-shell .navbar .nav .notifications-nav-badge{
+    top:-2px;right:0;
+  }
+  /* Search opens below the top header, not underneath the bottom dock. */
+  .astrogram-shell .navbar .global-search.mobile-open{
+    display:block;position:absolute;top:calc(100% + 5px);
+    left:8px;right:8px;width:auto;max-width:none;
+    margin:0;padding:7px;z-index:85;
+    background:#131d33;border:1px solid #48618a;
+    border-radius:13px;
+  }
+  .astrogram-shell .navbar .global-search-menu{
+    max-width:calc(100vw - 16px);
+    width:calc(100% + 12px);
+    max-height:min(60dvh,520px);
+  }
+  .astrogram-shell>.wrap,
+  .astrogram-shell>.wrap.feed-layout,
+  .astrogram-shell>.global-results-page,
+  .astrogram-shell>.epoch-persistent-page .epoch-explorer{
+    padding-bottom:calc(99px + env(safe-area-inset-bottom));
+  }
+  .astrogram-shell .app-footer{
+    padding-bottom:calc(86px + env(safe-area-inset-bottom));
+  }
+  .sky-background-dock{
+    right:10px;bottom:calc(75px + env(safe-area-inset-bottom));
+    width:calc(100vw - 20px);
+    max-height:min(56dvh,400px);overflow-y:auto;
+  }
+  .toast,.ag-onboard-toast{
+    bottom:calc(82px + env(safe-area-inset-bottom));
+    max-width:calc(100vw - 20px);
+    border-radius:14px;
+  }
+  .ag-tour__tip{
+    max-width:calc(100vw - 20px);
+    max-height:calc(100dvh - 36px);
+    overflow-y:auto;
+  }
+  /* Compact controls that otherwise wrap unpredictably. */
+  .profile-layout .profile-buttons,
+  .notifications-actions,.onboarding-settings .mrow,
+  .settings-page .row{flex-wrap:wrap}
+  .profile-theme-presets{flex-wrap:wrap}
+  .profile-theme-picker-row label{min-width:0}
+  .settings-page .row>b{overflow-wrap:anywhere;min-width:0}
+  .notifications-heading{align-items:flex-start;flex-wrap:wrap}
+  .notifications-actions{min-width:0;max-width:100%}
+  .notifications-actions button{min-height:40px}
+  .notification-item{min-width:0}
+  .global-results-heading>div{min-width:0}
+  .global-results-heading h1{overflow-wrap:anywhere}
+  /* All free-standing dialogs fit the visual viewport, including landscape. */
+  .modal{padding:7px}
+  .modal .mbox{max-height:calc(100dvh - 14px)}
+  .compose-overlay{padding:6px}
+  .compose-dialog{
+    width:100%;max-height:calc(100dvh - 12px);
+    border-radius:15px;
+  }
+  .compose-header{min-height:64px;padding:12px 14px;gap:10px}
+  .compose-main{min-height:0;padding:13px 14px}
+  .compose-footer{gap:9px;padding:10px 14px}
+  .compose-form{min-height:0}
+  .compose-main>textarea{font-size:1rem}
+  .compose-visibility{min-width:0}
+  .compose-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .compose-tools button{min-width:0;justify-content:center;min-height:40px}
+  .compose-tools button small{white-space:normal}
+  .compose-tag-form input{min-width:0}
+  .post-media-lightbox{padding:5px}
+  .post-media-lightbox-dialog{
+    width:100%;height:calc(100dvh - 10px);
+    max-height:calc(100dvh - 10px);border-radius:12px;
+  }
+  .post-media-lightbox-image{flex:1 1 auto;min-height:0}
+  .post-media-lightbox-image img{max-width:100%;max-height:100%;object-fit:contain}
+  .post-media-lightbox-header,
+  .post-media-lightbox-bottom{flex-shrink:0;padding:11px 12px}
+  .profile-post-modal{padding:5px}
+  .profile-post-dialog{
+    width:100%;max-height:calc(100dvh - 10px);
+    border-radius:13px;
+  }
+  .reveal-studio-overlay{padding:5px}
+  .reveal-studio-dialog{
+    width:100%;height:calc(100dvh - 10px);
+    max-height:calc(100dvh - 10px);border-radius:12px;
+  }
+  .reveal-studio-workspace{overflow-y:auto;overscroll-behavior:contain}
+  .reveal-visual-toolbar{padding:12px;gap:8px}
+  .reveal-visual-mat{padding:9px 12px}
+  .reveal-studio-footer{padding:10px 12px}
+  .reveal-settings-section{padding:13px 12px}
+  .reveal-visual-disclaimer{padding:0 12px 13px}
+}
+@media(max-width:520px){
+  .astrogram-shell>.wrap,
+  .astrogram-shell>.wrap.feed-layout,
+  .astrogram-shell>.epoch-persistent-page .epoch-explorer{
+    padding-left:9px;padding-right:9px;
+  }
+  .astrogram-shell .feed-layout>.feed,
+  .astrogram-shell .feed-layout>.side{min-width:0;gap:13px}
+  .astrogram-shell .feed-layout .card{border-radius:14px}
+  .post-card .post-head .who{min-width:0;flex:1}
+  .post-card .post-head .who small{
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .post-card .post-head .time{flex:0 0 auto;font-size:.68rem}
+  .post-actions{justify-content:space-between;gap:3px;padding:7px 7px 1px}
+  .post-actions button{min-width:0;padding:8px 4px;min-height:44px;gap:4px}
+  .post-actions>button:nth-child(3)>span:first-of-type{display:none}
+  .post-actions button svg{flex:none}
+  .post-body,.comments .comment{overflow-wrap:anywhere}
+  .comment-form{display:flex;flex-wrap:wrap}
+  .comment-form input{flex:1 1 170px;min-width:0;min-height:42px}
+  .comment-form .btn{flex:0 0 auto;min-height:42px}
+  /* Profiles, followers and profile editor. */
+  .profile-cover-banner,.profile-editor-cover{height:142px}
+  .profile-hero-content{display:block;padding:0 14px 15px}
+  .profile-hero-content .profile-avatar{
+    display:inline-block;margin-top:-34px;
+  }
+  .profile-hero-content .profile-summary{padding-top:8px;min-width:0}
+  .profile-summary h1{overflow-wrap:anywhere}
+  .profile-summary .stats{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px 8px;margin-top:15px;
+  }
+  .profile-summary .stats span{min-width:0;overflow-wrap:anywhere}
+  .profile-summary .profile-buttons{gap:8px}
+  .profile-summary .profile-buttons .btn{min-height:40px}
+  .profile-posts{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;padding:7px;
+  }
+  .profile-editor-avatar-row{align-items:flex-start;gap:12px}
+  .profile-editor-avatar-info{min-width:0;padding-top:7px}
+  .profile-editor-avatar-info p{overflow-wrap:anywhere}
+  .profile-editor-avatar-buttons{gap:8px}
+  .profile-editor-media-hint{padding-inline:13px}
+  .profile-editor-intro,.profile-editor-fields{padding-inline:13px}
+  .profile-editor-cover .profile-cover-tools{
+    right:7px;bottom:7px;gap:5px;max-width:calc(100% - 14px);
+  }
+  .profile-cover-tools button{padding:8px;font-size:.72rem}
+  .profile-theme-presets{flex-wrap:wrap}
+  .profile-theme-picker-row label{flex-basis:100%}
+  .settings-page .sec .row{align-items:flex-start;flex-wrap:wrap;gap:4px}
+  .settings-page .sec .row>b{max-width:100%;overflow-wrap:anywhere}
+  /* Search, notifications and saved items. */
+  .global-results-page{
+    padding-top:16px;padding-inline:10px;
+    padding-bottom:calc(100px + env(safe-area-inset-bottom));
+  }
+  .global-results-heading{gap:10px}
+  .global-results-heading h1{font-size:1.24rem}
+  .global-results-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+  .global-results-posts{grid-column:auto;grid-row:auto}
+  .global-results-person,.global-results-tag,
+  .global-results-post{min-width:0}
+  .global-results-post-top{flex-wrap:wrap}
+  .global-search-menu{overscroll-behavior:contain}
+  .notifications-page{padding-top:14px}
+  .notifications-heading h1{font-size:1.32rem}
+  .notifications-actions{justify-content:flex-start;gap:7px}
+  .notifications-panel-head{gap:8px;flex-wrap:wrap}
+  .notifications-panel-head button{min-height:36px}
+  .notification-item{gap:10px;padding:12px 10px}
+  .notification-avatar>.avatar{width:40px!important;height:40px!important}
+  .notification-copy p{font-size:.82rem}
+  .notification-copy blockquote{overflow-wrap:anywhere}
+  /* Explorer, game and sky chart. */
+  .epoch-viewer .card-h{flex-wrap:wrap;gap:7px}
+  .epoch-viewer .card-h .chip{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  .epoch-search-form .two{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .epoch-search-form .field{min-width:0}
+  .epoch-search-form .field select,.epoch-search-form .field input{min-width:0}
+  .epoch-playback{gap:7px;padding:11px;flex-wrap:wrap}
+  .epoch-playback input[type=range]{
+    flex:1 1 110px;min-width:85px;
+  }
+  .epoch-playback .btn{min-height:40px}
+  .epoch-playback select{min-height:40px}
+  .epoch-player-foot{gap:5px}
+  .epoch-player-foot>span{overflow-wrap:anywhere}
+  .epoch-science-note{overflow-wrap:anywhere}
+  .gpair{grid-template-columns:minmax(0,1fr);gap:11px;padding:10px}
+  .gbox{width:100%;min-width:0}
+  .gbar{padding:11px;gap:5px}
+  .xctrl{gap:8px}
+  .gpair+.gres{padding-inline:12px}
+  .taurus-target-options{grid-template-columns:minmax(0,1fr)}
+  .taurus-chart-svg{width:100%;height:auto}
+  .taurus-atlas-header{align-items:flex-start;gap:9px}
+  .taurus-map-caption{overflow-wrap:anywhere}
+  .taurus-selected{margin-inline:10px;padding:12px}
+  /* Reveal controls and lightboxes: avoid clipped headers. */
+  .reveal-studio-header{gap:7px;padding:9px 12px}
+  .reveal-studio-heading{min-width:0;gap:8px}
+  .reveal-studio-heading>div{min-width:0}
+  .reveal-studio-heading h2{font-size:.88rem}
+  .reveal-studio-heading p{display:none}
+  .reveal-studio-symbol{width:33px;height:33px}
+  .reveal-studio-header-actions{gap:6px}
+  .reveal-studio-epoch-picker select{min-width:64px}
+  .reveal-visual-meta{padding-inline:12px;gap:6px}
+  .reveal-visual-toolbar{align-items:stretch}
+  .reveal-visual-toolbar>div{min-width:0}
+  .reveal-palette-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .reveal-palette-option{min-width:0}
+  .reveal-palette-name strong{font-size:.7rem}
+  .reveal-sampling-options button{min-width:0}
+  .reveal-studio-footer{min-height:60px;gap:9px}
+  .reveal-studio-footer label{min-width:0;flex:1}
+  .reveal-studio-footer .btn{flex:none;min-width:88px}
+  .post-media-lightbox-header{flex-wrap:wrap}
+}
+@media(max-width:390px){
+  .astrogram-shell .navbar{padding-inline:9px}
+  .astrogram-shell .navbar .logo{font-size:1rem}
+  .astrogram-shell .navbar .nav{gap:0;padding-inline:4px}
+  .astrogram-shell .navbar .nav button{padding:7px 1px}
+  .global-search-menu-caption small{display:none}
+  .compose-visibility{max-width:100%}
+  .compose-audience{flex-wrap:wrap}
+  .compose-photos{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .compose-tools{grid-template-columns:minmax(0,1fr)}
+  .compose-tag-form{gap:5px}
+  .compose-tag-form button{padding-inline:8px}
+  .reveal-studio-header{flex-wrap:wrap}
+  .reveal-studio-header-actions{margin-left:auto}
+  .reveal-format-options{gap:5px}
+  .reveal-format-options strong{font-size:.62rem}
+  .reveal-palette-option{padding:7px;gap:6px}
+  .reveal-palette-swatch{width:23px;height:23px}
+  .reveal-palette-name small{font-size:.6rem}
+  .taurus-atlas-header h2{font-size:1.22rem}
+  .profile-summary .profile-buttons .btn{flex:1 1 100%}
+}
+@media(max-height:500px) and (max-width:900px){
+  .modal .mbox,.compose-dialog,.profile-post-dialog,
+  .reveal-studio-dialog,.post-media-lightbox-dialog{
+    max-height:calc(100dvh - 8px);
+  }
+  .compose-header{min-height:52px;padding-block:8px}
+  .compose-footer{padding-block:8px}
+  .reveal-studio-header{min-height:50px;padding-block:7px}
+  .reveal-studio-footer{min-height:50px;padding-block:7px}
+  .taurus-atlas-map{padding:9px}
+}
+@media(max-height:460px) and (max-width:680px){
+  .astrogram-shell .navbar{min-height:49px;padding-block:4px}
+  .astrogram-shell .navbar .nav{min-height:51px;padding-block:3px}
+  .sky-background-dock{bottom:calc(62px + env(safe-area-inset-bottom))}
+}
+@media(prefers-reduced-motion:reduce){
+  .astrogram-shell .navbar .nav,
+  .reveal-studio-dialog,.compose-dialog{scroll-behavior:auto}
+}
+
+
+/* The interactive SVG must remain legible at 320–620px: horizontal pan beats
+ * shrinking 900 SVG units into unreadable five-pixel star labels. */
+.taurus-map-swipe-hint{display:none}
+@media(max-width:620px){
+  .taurus-atlas-map{
+    overflow-x:auto;overscroll-behavior-x:contain;
+    touch-action:pan-x pan-y;
+    scrollbar-width:thin;scrollbar-color:#516c9a transparent;
+  }
+  .taurus-atlas-map:focus-visible{
+    outline:2px solid #90c3ff;outline-offset:-2px;
+  }
+  .taurus-chart-svg{
+    display:block;width:max(100%,540px);max-width:none;height:auto;
+  }
+  .taurus-map-swipe-hint{
+    display:block;color:#a6bee2;font-size:.72rem;
+    line-height:1.4;padding:0 2px 9px;
+  }
+}
+
+
+/* Saved and single-post pages share the feed's post interactions; keep their
+ * navigation, saved images and message fields inside narrow columns. */
+@media(max-width:680px){
+  .saved-page h1{flex-wrap:wrap;overflow-wrap:anywhere}
+  .saved-page .post-card{min-width:0;max-width:100%}
+  .notification-post-page{min-width:0}
+  .notification-post-heading{
+    flex-wrap:wrap;align-items:flex-start;gap:9px;
+  }
+  .notification-post-heading h1{overflow-wrap:anywhere}
+  .post-repost-label{overflow-wrap:anywhere}
+  .post-tag-list{flex-wrap:wrap;max-width:100%}
+}
