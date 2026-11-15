@@ -64,7 +64,7 @@ def test_archive_survives_double_502_without_more_fits_downloads(harness, monkey
     assert state["discovery"]["method"]=="archive"
     assert state["discovery"]["fallback_from"]=="sia2+tap"
     assert state["source"]=="sia2"
-    assert "archive_date" in state["discovery"]
+    assert "archive_date" not in state["discovery"]  # Do not disclose past search activity
     assert "502" not in str(state["discovery"])  # only archival provenance, no remote error
     assert original["job_id"] not in str(state)
     assert "_archive_source_job" not in str(state)
