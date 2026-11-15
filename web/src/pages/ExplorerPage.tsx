@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Database, LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, ApiError, hasToken, type ObservationParams, type Sia2Comparison, type SkyFrame, type SkySearch } from '../lib/api';
+import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
+import { api, ApiError, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
@@ -17,13 +17,16 @@ type Params = {
 };
 
 export default function ExplorerPage({
-  observationId, initialRa, initialDec, onPublish, onLogin,
+  observationId, initialRa, initialDec, onPublish, onLogin, onProgress, onGoHome, active,
 }: {
   observationId?: string;
   initialRa?: number;
   initialDec?: number;
   onPublish: (region: ObservationParams) => void;
   onLogin: () => void;
+  onProgress: (status: {trace: SearchTrace | null;loading: boolean}) => void;
+  onGoHome: () => void;
+  active: boolean;
 }) {
   const [ra, setRa] = useState('133.795129');
   const [dec, setDec] = useState('-7.245147');
@@ -31,7 +34,8 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
-  const [catalogMethod, setCatalogMethod] = useState<'sia2' | 'tap'>('sia2');
+  // The explorer uses the fast discovery method by default; TAP remains a backend fallback.
+  const catalogMethod: 'sia2' | 'tap' = 'sia2';
 
   const [result, setResult] = useState<SkySearch | null>(null);
   const [frames, setFrames] = useState<Record<number, SkyFrame>>({});
@@ -43,9 +47,6 @@ export default function ExplorerPage({
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<SearchTrace | null>(null);
-  const [siaComparison, setSiaComparison] = useState<Sia2Comparison | null>(null);
-  const [siaCompareBusy, setSiaCompareBusy] = useState(false);
-  const [siaCompareError, setSiaCompareError] = useState('');
   const [retryUntil, setRetryUntil] = useState(0);
   const retryUntilRef = useRef(0);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -61,7 +62,6 @@ export default function ExplorerPage({
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const controller = useRef<AbortController | null>(null);
-  const siaController = useRef<AbortController | null>(null);
   const remoteJob = useRef<string | null>(null);
   const available = useMemo(
     () => Object.keys(frames).map(Number).sort((a, b) => a - b),
@@ -71,18 +71,23 @@ export default function ExplorerPage({
   const metadata = result?.observations[position];
   const loadedCount = available.length;
 
+  useEffect(() => {
+    onProgress({ trace, loading });
+  }, [trace, loading, onProgress]);
+
   // Cycle only through frames that are actually available, never empty indices.
   useEffect(() => {
-    if (!playing || available.length < 2) return;
+    if (!active || !playing || available.length < 2) return;
     const interval = window.setInterval(() => setPosition(previous => {
       return available.find(index => index > previous) ?? available[0];
     }), 1000 / fps);
     return () => window.clearInterval(interval);
-  }, [playing, fps, available]);
+  }, [active, playing, fps, available]);
 
+  // This component remains mounted during in-app navigation.
+  // Abort only when the whole application is actually unmounted.
   useEffect(() => () => {
     controller.current?.abort();
-    siaController.current?.abort();
     if (remoteJob.current) void api.cancelSkyJob(remoteJob.current).catch(() => {});
   }, []);
 
@@ -93,11 +98,6 @@ export default function ExplorerPage({
       return;
     }
     controller.current?.abort();
-    siaController.current?.abort();
-    siaController.current = null;
-    setSiaComparison(null);
-    setSiaCompareBusy(false);
-    setSiaCompareError('');
     if (remoteJob.current) {
       void api.cancelSkyJob(remoteJob.current).catch(() => {});
       remoteJob.current = null;
@@ -153,7 +153,7 @@ export default function ExplorerPage({
             fallbackFailure = frameErrorMessage(cause);
             updateTrace(old => ({
               ...old, source: 'irsa', remotePhase: undefined,
-              catalogWarning: `SIA2 no disponible (${fallbackFailure}). Consultando TAP como respaldo.`,
+              catalogWarning: 'La primera búsqueda no respondió. Estamos buscando por otra vía.',
             }));
           }
         }
@@ -290,7 +290,7 @@ export default function ExplorerPage({
         finishedAt: Date.now(),
       }));
       if (successes === 0) {
-        setError('No se pudo cargar ninguna imagen. Abre el detalle por época para ver los errores de cada solicitud.');
+        setError('No pudimos preparar las imágenes de esta región. Puedes intentar otra búsqueda.');
       } else {
         if (failures.length) {
           setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Puedes consultar las disponibles.`);
@@ -312,12 +312,12 @@ export default function ExplorerPage({
           setRetryUntil(deadline);
           setNowTick(Date.now());
         }
-        const fullDetail = fallbackFailure
-          ? `SIA2 falló: ${fallbackFailure}. TAP tampoco pudo completar la búsqueda: ${detail}`
-          : detail;
-        setError(fullDetail);
+        const friendly = 'No conseguimos recuperar las observaciones ahora. Puedes volver a intentarlo.';
+        // Detailed errors remain available in developer instrumentation, not the public UI.
+        console.warn('[AstroGram] Catalog search failed', { fallback: fallbackFailure, detail });
+        setError(friendly);
         updateTrace(previous => ({
-          ...previous, phase: 'failed', catalogError: fullDetail, finishedAt: Date.now(),
+          ...previous, phase: 'failed', catalogError: friendly, finishedAt: Date.now(),
         }));
       }
     } finally {
@@ -359,7 +359,7 @@ export default function ExplorerPage({
     }).catch(cause => {
       if (active) setError(cause instanceof Error ? cause.message : 'Observación no encontrada');
     });
-    return () => { active = false; controller.current?.abort(); };
+    return () => { active = false; };
   }, [observationId, load]);
 
   useEffect(() => {
@@ -369,7 +369,7 @@ export default function ExplorerPage({
     setDec(String(initialDec));
     void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2,
       frames: 12, demo: false, catalogMethod: 'sia2' });
-    return () => controller.current?.abort();
+
   }, [observationId, initialRa, initialDec, load]);
 
   // Advance to the first loaded image even when a later epoch arrives first.
@@ -398,29 +398,6 @@ export default function ExplorerPage({
     }
     return params;
   }
-  async function compareWithSia2() {
-    if (!result || result.source !== 'irsa' || loading || siaCompareBusy) return;
-    const request = new AbortController();
-    siaController.current?.abort();
-    siaController.current = request;
-    setSiaCompareBusy(true);
-    setSiaCompareError('');
-    setSiaComparison(null);
-    try {
-      const comparison = await api.compareSia2(result.search_id, request.signal);
-      if (!request.signal.aborted) setSiaComparison(comparison);
-    } catch (cause) {
-      if (!request.signal.aborted) {
-        setSiaCompareError(cause instanceof Error ? cause.message : 'No se pudo consultar SIA2');
-      }
-    } finally {
-      if (siaController.current === request) {
-        siaController.current = null;
-        setSiaCompareBusy(false);
-      }
-    }
-  }
-
   function retrySearch() {
     const params = readParams();
     if (params) void load(params);
@@ -491,40 +468,7 @@ export default function ExplorerPage({
   const badge = result
     ? `RA ${formatRa(result.ra)} · Dec ${formatDec(result.dec)}`
     : '–';
-  const technical = result ? {
-    source: result.source,
-    query: activeParams,
-    count: result.count,
-    total_matches: result.total_matches,
-    observations: result.observations,
-    current_frame: current && {
-      index: current.index,
-      date: current.date,
-      release: current.release,
-      mode: current.mode,
-      wavelength_um: current.wavelength_um,
-      bandwidth_um: current.bandwidth_um,
-      pixel_flags_nonzero_fraction: current.pixel_flags_nonzero_fraction ?? null,
-    },
-    loaded_epochs: available,
-    marks_local_only: marks,
-    sia2_diagnostic: siaComparison,
-    client_progress: trace && {
-      phase: trace.phase,
-      remote_phase: trace.remotePhase,
-      remote_warning: trace.remoteWarning,
-      retry_after_seconds: trace.retryAfterSeconds,
-      tap_timing: trace.tapTiming,
-      sia2_timing: trace.sia2Timing,
-      catalog_warning: trace.catalogWarning,
-      catalog_ms: trace.catalogMs,
-      count: trace.count,
-      frames: trace.frames,
-      elapsed_ms: (trace.finishedAt ?? Date.now()) - trace.startedAt,
-    },
-  } : null;
-
-  return <main className="wrap single epoch-explorer">
+  return <main className="wrap single epoch-explorer" aria-hidden={!active ? true : undefined}>
     <div className="xgrid epoch-grid">
       <section className="card epoch-viewer">
         <div className="card-h"><span>🔭 Explorador de épocas</span><span className="chip">{badge}</span></div>
@@ -569,7 +513,7 @@ export default function ExplorerPage({
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick">
               {presets.map(preset => <button key={preset.name} type="button"
-                disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
+                disabled={loading}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
             </div>
             <div className="two">
@@ -594,25 +538,13 @@ export default function ExplorerPage({
                 <input id="epoch-count" type="number" step={1} min={2} max={16}
                   required value={epochs} onChange={event => setEpochs(event.target.value)}/></div>
               <label className="epoch-demo"><input type="checkbox" checked={demo}
-                onChange={event => setDemo(event.target.checked)}/> Modo demo API</label>
+                onChange={event => setDemo(event.target.checked)}/> Vista de demostración</label>
             </div>
-            <div className="field">
-              <label htmlFor="epoch-method">Catálogo astronómico</label>
-              <select id="epoch-method" value={catalogMethod} disabled={loading || demo}
-                onChange={event => setCatalogMethod(event.target.value as 'sia2' | 'tap')}>
-                <option value="sia2">SIA2 (rápido · predeterminado)</option>
-                <option value="tap">TAP asíncrono (comparación manual)</option>
-              </select>
-              {!demo && <small>SIA2 intenta primero la búsqueda directa; si el servicio falla,
-                TAP funciona como respaldo. TAP manual permite comparar ambos catálogos.</small>}
-            </div>
-            <button className="btn p full"
-              disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
+            <button className="btn p full" disabled={loading}
               type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
               {loading ? 'Procesando búsqueda…'
-                : retrySeconds > 0 && !demo && catalogMethod === 'tap'
-                  ? `Reintentar TAP en ${retrySeconds} s` : 'Buscar'}
+                : 'Buscar'}
             </button>
           </form>
           <div className="epoch-secondary-actions">
@@ -622,68 +554,14 @@ export default function ExplorerPage({
             </button>
           </div>
           {savedId && <div className="epoch-saved">Región guardada: <code>{savedId}</code></div>}
-          <details className="epoch-tech">
-            <summary><Database size={13}/> Datos técnicos (respuesta de la API)</summary>
-            <pre>{technical ? JSON.stringify(technical, null, 2) : '–'}</pre>
-          </details>
+
         </section>
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
-          onRetry={retrySearch} retrySeconds={retrySeconds}/>
-        {result?.source === 'irsa' && !loading && <section className="sia-compare-card"
-          aria-label="Comparación SIA2 y TAP">
-          <strong>Comparar SIA2 vs. TAP</strong>
-          <p className="sia-compare-note">
-            Consulta SIA2 con las mismas coordenadas y detector, usando el catálogo TAP
-            ya recuperado. No crea otro trabajo TAP ni descarga imágenes FITS.
-          </p>
-          <button type="button" className="btn sm" disabled={siaCompareBusy}
-            onClick={() => void compareWithSia2()}>
-            {siaCompareBusy ? <><LoaderCircle size={13} className="spin"/> Consultando SIA2…</>
-              : 'Medir SIA2 y comparar'}
-          </button>
-          {siaCompareError && <p className="sia-compare-error" role="alert">{siaCompareError}</p>}
-          {siaComparison && <div className="sia-compare-result">
-            <dl className="sia-compare-metrics">
-              <dt>Consulta SIA2</dt><dd>{(siaComparison.sia2.elapsed_ms / 1000).toFixed(2)} s</dd>
-              <dt>Intentos HTTP SIA2</dt><dd>{siaComparison.sia2.attempts}</dd>
-              {siaComparison.sia2.retry_events.length > 0 && <>
-                <dt>Errores temporales recuperados</dt>
-                <dd>{siaComparison.sia2.retry_events.map(
-                  item => `#${item.attempt}: ${item.failure}`
-                ).join(' · ')}</dd>
-              </>}
-              <dt>Estado del resultado</dt><dd>{siaComparison.sia2.query_status}
-                {siaComparison.comparable ? '' : ' · incompleto'}</dd>
-              <dt>Productos únicos TAP</dt><dd>{siaComparison.tap.unique_images}</dd>
-              <dt>Productos únicos SIA2 (detector {siaComparison.query.detector})</dt>
-              <dd>{siaComparison.sia2.unique_compatible_images}</dd>
-              <dt>Productos coincidentes</dt><dd>{siaComparison.overlap.matched}</dd>
-              <dt>Solo TAP / solo SIA2</dt>
-              <dd>{siaComparison.overlap.tap_only} / {siaComparison.overlap.sia2_only}</dd>
-              <dt>Épocas seleccionadas en ambos</dt>
-              <dd>{siaComparison.overlap.selected_tap_matched}/{siaComparison.tap.selected_epochs}</dd>
-              <dt>Primera observación TAP</dt><dd>{siaComparison.tap.date_range.earliest ?? '—'}</dd>
-              <dt>Última observación TAP</dt><dd>{siaComparison.tap.date_range.latest ?? '—'}</dd>
-              <dt>Primera observación SIA2</dt><dd>{siaComparison.sia2.date_range.earliest ?? '—'}</dd>
-              <dt>Última observación SIA2</dt><dd>{siaComparison.sia2.date_range.latest ?? '—'}</dd>
-            </dl>
-            {siaComparison.overlap.tap_only_examples.length > 0 &&
-              <p className="sia-compare-note">Ejemplos presentes solo en TAP: {
-                siaComparison.overlap.tap_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
-              }</p>}
-            {siaComparison.overlap.sia2_only_examples.length > 0 &&
-              <p className="sia-compare-note">Ejemplos presentes solo en SIA2: {
-                siaComparison.overlap.sia2_only_examples.map(item => item.date ?? 'Fecha ausente').join(' · ')
-              }</p>}
-            <details className="sia-compare-caveats">
-              <summary>Interpretación y limitaciones</summary>
-              {siaComparison.caveats.map((note, i) => <p key={i}>{note}</p>)}
-            </details>
-          </div>}
-        </section>}
+          onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">
-          Las búsquedas reales consultan NASA/IPAC IRSA. Elegir un detector no equivale a seleccionar una banda monocromática.
-          Las marcas y los fotogramas no se guardan en PostgreSQL.
+          Imágenes reales de NASA/IPAC IRSA, presentadas como vista preliminar.
+          Cada detector abarca distintas longitudes de onda, y las imágenes pueden tener diferencias de calidad.
+          Las marcas son personales y no se guardan automáticamente.
         </div>
         {result && <button type="button" className="epoch-compare btn sm"
           disabled={!frames[position - 1]} aria-pressed={compare} onClick={() => setCompare(value => !value)}>

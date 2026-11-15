@@ -5,6 +5,7 @@ import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import ExplorerPage from './pages/ExplorerPage';
+import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 
@@ -268,6 +269,9 @@ export default function App(){
   const [publishRegion,setPublishRegion]=useState<ObservationParams|null>(null);
   const [search,setSearch]=useState('');
   const [toast,setToast]=useState('');
+  const [backgroundStatus,setBackgroundStatus]=useState<ExplorerBackgroundStatus | null>(null);
+  const [dockDismissed,setDockDismissed]=useState(false);
+  useEffect(()=>{setDockDismissed(false)},[backgroundStatus?.trace?.startedAt]);
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
   // Previous route state must never leave the auth page panned horizontally.
   useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
@@ -287,8 +291,12 @@ export default function App(){
     else navigateProfile(term.replace(/^@/,''));setSearch('');
   }
   if(checking)return <div className="boot-screen"><span className="orb"/> Conectando con AstroGram…</div>;
-  if(!user && !['explore','game'].includes(route.page))return <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>;
+  const authOnly = !user && !['explore','game'].includes(route.page);
+  const explorerVisible = route.page === 'explore';
   return <div className="astrogram-shell">
+    {authOnly
+      ? <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>
+      : <>
     <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><span className="orb"/><span>AstroGram</span></button>
       <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
         placeholder="Usuario o coordenadas (RA, Dec)…"/></form>
@@ -312,17 +320,31 @@ export default function App(){
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
       </nav>
     </header>
-    {route.page==='explore'?<ExplorerPage key={route.observationId??`${route.ra??''}:${route.dec??''}`}
-      observationId={route.observationId} initialRa={route.ra} initialDec={route.dec} onPublish={field=>openPublish(field)} onLogin={loginRequired}/>:
-     route.page==='game'?<GamePage onExplore={()=>go('explore')}/>:
-     route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
-       onExplore={openObservation} onLogin={loginRequired}/>:
-     route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
-     route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired}/>:
-     route.page==='activity'?<ActivityPage/>:
-     <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>}
-    {toast&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
-    {publish&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
-    <footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>
+      </>}
+    <div className="epoch-persistent-page" style={{display:explorerVisible?'block':'none'}}>
+      <ExplorerPage
+        observationId={explorerVisible?route.observationId:undefined}
+        initialRa={explorerVisible?route.ra:undefined}
+        initialDec={explorerVisible?route.dec:undefined}
+        active={explorerVisible}
+        onProgress={setBackgroundStatus}
+        onGoHome={()=>go('home')}
+        onPublish={field=>openPublish(field)}
+        onLogin={loginRequired}/>
+    </div>
+    {!authOnly && !explorerVisible &&
+      (route.page==='game'?<GamePage onExplore={()=>go('explore')}/>:
+       route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
+         onExplore={openObservation} onLogin={loginRequired}/>:
+       route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
+       route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired}/>:
+       route.page==='activity'?<ActivityPage/>:
+       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>)}
+    {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
+    {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
+    {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}
+    {!explorerVisible && !dockDismissed && backgroundStatus?.trace &&
+      <BackgroundSkyDock status={backgroundStatus} onOpen={()=>go('explore')}
+        onDismiss={()=>setDockDismissed(true)}/>}
   </div>;
 }
