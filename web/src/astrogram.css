@@ -1371,7 +1371,7 @@ body {
    The source SVG embeds its original PNG artwork and is shared across views. */
 .brand-mark {
   position:relative;display:inline-flex;align-items:center;justify-content:center;
-  flex:none;overflow:hidden;isolation:isolate;
+  flex:none;overflow:hidden;
   border-radius:9px;background:transparent;line-height:0;
 }
 .brand-mark img {
