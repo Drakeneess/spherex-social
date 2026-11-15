@@ -8,6 +8,7 @@ type Props = {
   recipe:RevealRecipe;onChange:(recipe:RevealRecipe)=>void;
   enabled:boolean;onEnabled:(value:boolean)=>void;
   originalImage?:string;onOpen?:()=>void;
+  editableIndices:number[];onSelectEpoch:(index:number)=>void;
 };
 
 const palettes: {id:RevealRecipe['palette'];name:string;hint:string}[] = [
@@ -25,6 +26,7 @@ const formats: {id:RevealRecipe['format'];name:string;ratio:string}[] = [
 
 export default function RevealEditor({
   active,jobId,index,rawAvailable,hasRaw,searching,recipe,onChange,enabled,onEnabled,originalImage,onOpen,
+  editableIndices,onSelectEpoch,
 }:Props){
   const [open,setOpen]=useState(false);
   const [showOriginal,setShowOriginal]=useState(false);
@@ -37,6 +39,7 @@ export default function RevealEditor({
   const source=JSON.stringify([jobId,index]);
   const key=JSON.stringify([jobId,index,recipe]);
   const processed=image?.source===source?image.data:'';
+  const editablePosition=editableIndices.indexOf(index);
 
   useEffect(()=>{
     if(!active||!jobId||!rawAvailable){
@@ -104,6 +107,7 @@ export default function RevealEditor({
   },[open]);
 
   useEffect(()=>{if(!active)setOpen(false);},[active]);
+  useEffect(()=>{setShowOriginal(false);},[source]);
   const change=<K extends keyof RevealRecipe,>(field:K,value:RevealRecipe[K])=>{
     onChange({...recipe,[field]:value});
     setShowOriginal(false);
@@ -160,7 +164,15 @@ export default function RevealEditor({
               </div>
             </div>
             <div className="reveal-studio-header-actions">
-              <span className="reveal-studio-epoch">Época {index+1}</span>
+              <label className="reveal-studio-epoch-picker">
+                <span>Época</span>
+                <select aria-label="Época a revelar" value={index}
+                  onChange={event=>onSelectEpoch(Number(event.target.value))}>
+                  {editableIndices.map(availableIndex=><option key={availableIndex} value={availableIndex}>
+                    {availableIndex+1}{editableIndices.length>1?' · '+(editablePosition+1)+' de '+editableIndices.length:''}
+                  </option>)}
+                </select>
+              </label>
               <button type="button" className="reveal-studio-close"
                 aria-label="Cerrar estudio de revelado" onClick={()=>setOpen(false)}>
                 <X size={21}/>
