@@ -90,8 +90,28 @@ def upgrade():
 
       ELSIF TG_TABLE_NAME = 'users' THEN
         IF TG_OP = 'UPDATE' THEN
+          -- Private edits (including a hidden birth date) never signal public
+          -- profile changes; only the account owner needs a refresh.
           PERFORM pg_notify('astrogram_events', json_build_object(
-            'kind','profile','username',NEW.username)::text);
+            'kind','profile','scope','user',
+            'user_id',NEW.id::text,'username',NEW.username)::text);
+          IF ROW(OLD.username, OLD.display_name, OLD.bio, OLD.website,
+                 OLD.avatar_version, OLD.cover_version,
+                 OLD.avatar_color_start, OLD.avatar_color_end,
+                 OLD.cover_color_start, OLD.cover_color_end,
+                 OLD.show_birthday,
+                 CASE WHEN OLD.show_birthday THEN OLD.birth_date ELSE NULL END)
+             IS DISTINCT FROM
+             ROW(NEW.username, NEW.display_name, NEW.bio, NEW.website,
+                 NEW.avatar_version, NEW.cover_version,
+                 NEW.avatar_color_start, NEW.avatar_color_end,
+                 NEW.cover_color_start, NEW.cover_color_end,
+                 NEW.show_birthday,
+                 CASE WHEN NEW.show_birthday THEN NEW.birth_date ELSE NULL END)
+          THEN
+            PERFORM pg_notify('astrogram_events', json_build_object(
+              'kind','profile','username',NEW.username)::text);
+          END IF;
         END IF;
 
       ELSIF TG_TABLE_NAME = 'sky_search_jobs' THEN
