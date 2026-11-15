@@ -165,6 +165,10 @@ export default function EpochCanvas({
         hasSearch ? 'Esta imagen no está disponible. Puedes elegir otra época.' :
         <>Elige coordenadas y pulsa <strong>Buscar</strong></>}
     </div>}
-    {ready && <div className="epoch-mark-guide">Haz clic para marcar un objeto · marcas locales</div>}
+    {ready && <div className="epoch-mark-guide">{marks.length===0
+      ? 'Marca un objeto y vuelve a marcarlo en otra época'
+      : marks.length===1
+        ? '1 época marcada · cambia de época para trazar'
+        : `${marks.length} épocas marcadas · trayectoria local`}</div>}
   </div>;
 }

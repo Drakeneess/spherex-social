@@ -375,6 +375,12 @@ export default function App(){
   const [publishRegion,setPublishRegion]=useState<PublishRegion|null>(null);
   const [search,setSearch]=useState('');
   const [toast,setToast]=useState('');
+  // Ephemeral notifications must never require a click to disappear.
+  useEffect(()=>{
+    if(!toast)return;
+    const timeout=window.setTimeout(()=>setToast(''),3200);
+    return()=>window.clearTimeout(timeout);
+  },[toast]);
   const [backgroundStatus,setBackgroundStatus]=useState<ExplorerBackgroundStatus | null>(null);
   const [dockDismissed,setDockDismissed]=useState(false);
   const [missions,setMissions]=useState<TaskProgress>({});
@@ -511,7 +517,7 @@ export default function App(){
   function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
-  function logout(){api.logout();setTour(null);setUser(null);setPublish(false);go('home');}
+  function logout(){api.logout();setToast('');setTour(null);setUser(null);setPublish(false);go('home');}
   function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
     const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);

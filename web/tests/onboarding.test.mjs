@@ -70,3 +70,10 @@ test('mock-derived guides only describe features that currently exist',()=>{
   assert.match(publishingSteps(true)[1].description,/marcas aún no se adjuntan/);
   assert.ok(nudgeStep('like').target.includes('like-button'));
 });
+test('mark onboarding describes multi-epoch manual tracing, not automated object detection',()=>{
+  const mission=TASKS.find(item=>item.key==='mark');
+  assert.equal(mission?.title,'Traza una trayectoria entre épocas');
+  assert.match(explorerSteps[1].description,/dos épocas distintas/);
+  assert.match(explorerSteps[1].description,/no detecta ni confirma/);
+  assert.match(nudgeStep('mark').description,/Cambia de época/);
+});

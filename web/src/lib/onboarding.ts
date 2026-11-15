@@ -1,7 +1,7 @@
 /** Per-account UI-only onboarding (no fabricated social activity or server flags). */
 export const TASKS = [
   {key:'explore',title:'Explora el cielo',icon:'telescope',route:'explore'},
-  {key:'mark',title:'Marca un objeto en movimiento',icon:'pin',route:'explore'},
+  {key:'mark',title:'Traza una trayectoria entre épocas',icon:'pin',route:'explore'},
   {key:'game',title:'Juega el reto diario',icon:'target',route:'game'},
   {key:'like',title:'Envía tu primer «Me encoheta»',icon:'ship',route:'home'},
   {key:'bio',title:'Completa tu bio',icon:'pen',route:'settings'},
@@ -78,7 +78,7 @@ export const explorerSteps:TourStep[]=[
   {title:'Empieza con un objeto conocido',target:'[data-tour="explore-presets"]',icon:'telescope',
     description:'Prueba uno de estos objetos o escribe tus propias coordenadas. La búsqueda real se realiza con datos de IRSA.'},
   {title:'Marca una posición',target:'[data-tour="explore-canvas"]',icon:'pin',
-    description:'Cuando termine de cargar una época, toca el cielo para marcar una posición. Las marcas son personales y todavía no se adjuntan a las publicaciones.'},
+    description:'Marca la posición del mismo objeto en al menos dos épocas distintas. AstroGram unirá las posiciones con una línea punteada, pero no detecta ni confirma movimiento automáticamente.'},
   {title:'Revela y publica',target:'[data-tour="explore-publish"]',icon:'spark',
     description:'Si el FITS está archivado, puedes cambiar colores y formato antes de publicar. Comparte la región y la receta de visualización.'},
 ];
@@ -100,7 +100,7 @@ export function nudgeStep(key:NudgeKey):TourStep {
   if(key==='like')return {title:'¡Tu primer «Me encoheta»!',target:'[data-tour="like-button"]:focus',icon:'ship',
     description:'El cohete muestra que te gustó una publicación. Puedes retirarlo pulsando de nuevo.'};
   if(key==='mark')return {title:'¡Primera marca!',target:'[data-tour="explore-canvas"]',icon:'pin',
-    description:'Marca una posición en otra época para dibujar su trayectoria. Esto no confirma movimiento astronómico.'};
+    description:'Primera posición guardada. Cambia de época y marca el mismo objeto otra vez para trazar su trayectoria visual; esto no confirma movimiento astronómico.'};
   return {title:'Detecta la diferencia',target:'[data-tour="game-after"]',icon:'target',
     description:'Compara «Antes» y «Después». Tu misión se ha registrado tras realizar el primer intento.'};
 }
