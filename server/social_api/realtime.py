@@ -11,6 +11,7 @@ import json
 import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Annotated
+from uuid import UUID
 
 import psycopg
 from fastapi import APIRouter, Depends, Request
@@ -59,9 +60,15 @@ class EventHub:
 hub = EventHub()
 
 
-def visible_event(payload: dict, user_id: str | None) -> dict | None:
+def visible_event(payload: dict, user_id: str | None,
+                  job_id: str | None = None) -> dict | None:
     """Never return the routing user ID (nor anyone else's private events)."""
     if payload.get("kind") not in ALLOWED_KINDS:
+        return None
+    # Job UUIDs never escape to unrelated public subscribers.
+    if payload.get("kind") == "sky_job" and (
+        not job_id or payload.get("job_id") != job_id
+    ):
         return None
     if payload.get("scope") == "user":
         if not user_id or payload.get("user_id") != user_id:
@@ -120,6 +127,7 @@ async def stream_events(
     request: Request,
     viewer: Annotated[User | None, Depends(optional_user)],
     db: Annotated[Session, Depends(get_db)],
+    job_id: UUID | None = None,
 ):
     user_id = str(viewer.id) if viewer is not None else None
     # Streaming requests can live for hours. Release the authentication DB
@@ -137,7 +145,7 @@ async def stream_events(
                 except asyncio.TimeoutError:
                     yield ": heartbeat\n\n"
                     continue
-                outgoing = visible_event(payload, user_id)
+                outgoing = visible_event(payload, user_id, str(job_id) if job_id else None)
                 if outgoing:
                     yield "event: change\ndata: " + json.dumps(outgoing, separators=(",", ":")) + "\n\n"
         finally:
