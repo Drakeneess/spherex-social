@@ -45,15 +45,12 @@ test('playback is limited to user interactions and respects mute, volume, tab vi
   assert.match(sounds,/return \(\) => \{/);
 });
 
-test('settings panel exposes persistent mute, volume and five sound demos',()=>{
+test('settings panel keeps mute and volume but no longer renders sound demo controls',()=>{
   assert.match(app,/<SoundSettingsPanel\/>/);
   assert.match(settings,/checked=\{settings\.enabled\}/);
   assert.match(settings,/type="range" min=\{0\} max=\{100\} step=\{5\}/);
-  assert.match(settings,/onClick=\{\(\)=>playSound\(item\.name\)\}/);
+  assert.doesNotMatch(settings,/sound-previews|sound-preview-caption|sound-settings-note|const previews/);
   assert.match(settings,/data-sound="none"/);
-  for(const label of ['Pulsación','Me encoheta','Guardar','Publicar','Marcar estrella']){
-    assert.ok(settings.includes(label),label);
-  }
 });
 
 test('social feedback follows confirmed async results, never just optimistic clicks',()=>{
