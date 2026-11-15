@@ -25,6 +25,10 @@ COLLECTIONS = (
 RADIUS_ARCSEC = 1.0
 SIA_MAXREC = 5000
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+SIA_CONNECT_TIMEOUT_SECONDS = 12
+SIA_READ_TIMEOUT_SECONDS = 40
+SIA_RETRY_DELAYS = (1.0, 3.0)
+SIA_TRANSIENT_HTTP = frozenset((429, 500, 502, 503, 504))
 
 
 class Sia2ComparisonError(Exception):
@@ -108,11 +112,55 @@ def query_sia2(ra: float, dec: float, size_arcmin: float, detector: int) -> dict
         *[("COLLECTION", name) for name in COLLECTIONS],
     ]
     t0 = time.monotonic()
-    response = requests.get(SIA_URL, params=params, timeout=(5, 30),
-                            allow_redirects=False)
-    http_ms = _elapsed_ms(t0)
-    if response.status_code != 200:
-        raise Sia2ComparisonError(f"SIA2 devolvió HTTP {response.status_code}")
+    attempt_details: list[dict] = []
+    response = None
+    http_ms = 0
+    # This is a read-only GET. Retry only transient transport failures and
+    # temporary upstream statuses, never a QUERY_STATUS=ERROR VOTable.
+    for attempt in range(1, len(SIA_RETRY_DELAYS) + 2):
+        requested_at = time.monotonic()
+        try:
+            response = requests.get(
+                SIA_URL, params=params,
+                timeout=(SIA_CONNECT_TIMEOUT_SECONDS, SIA_READ_TIMEOUT_SECONDS),
+                allow_redirects=False,
+            )
+        except requests.exceptions.SSLError as exc:
+            raise Sia2ComparisonError("SIA2 no pudo validar la conexión TLS (SSLError)") from exc
+        except (requests.exceptions.ConnectTimeout,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.ConnectionError) as exc:
+            elapsed = _elapsed_ms(requested_at)
+            http_ms += elapsed
+            attempt_details.append({
+                "attempt": attempt, "elapsed_ms": elapsed,
+                "failure": type(exc).__name__,
+            })
+            if attempt > len(SIA_RETRY_DELAYS):
+                raise Sia2ComparisonError(
+                    f"IRSA SIA2 no respondió tras {attempt} intentos "
+                    f"({type(exc).__name__}, {_elapsed_ms(t0) / 1000:.1f} s)"
+                ) from exc
+            time.sleep(SIA_RETRY_DELAYS[attempt - 1])
+            continue
+
+        elapsed = _elapsed_ms(requested_at)
+        http_ms += elapsed
+        if response.status_code == 200:
+            break
+        if response.status_code not in SIA_TRANSIENT_HTTP:
+            raise Sia2ComparisonError(f"SIA2 devolvió HTTP {response.status_code}")
+        attempt_details.append({
+            "attempt": attempt, "elapsed_ms": elapsed,
+            "failure": f"HTTP {response.status_code}",
+        })
+        if attempt > len(SIA_RETRY_DELAYS):
+            raise Sia2ComparisonError(
+                f"IRSA SIA2 devolvió HTTP {response.status_code} tras {attempt} intentos"
+            )
+        time.sleep(SIA_RETRY_DELAYS[attempt - 1])
+    if response is None:
+        raise Sia2ComparisonError("SIA2 no devolvió ninguna respuesta")
     raw = response.content
     if len(raw) > MAX_RESPONSE_BYTES:
         raise Sia2ComparisonError("La respuesta SIA2 supera el límite de diagnóstico")
@@ -168,6 +216,8 @@ def query_sia2(ra: float, dec: float, size_arcmin: float, detector: int) -> dict
         "elapsed_ms": _elapsed_ms(t0),
         "http_ms": http_ms,
         "parse_ms": parse_ms,
+        "attempts": len(attempt_details) + 1,
+        "retry_events": attempt_details,
         "query_status": query_status,
         "complete": query_status == "OK",
         "raw_rows": len(table),
@@ -215,6 +265,7 @@ def compare_with_tap(sia: dict, tap_records: list[dict],
         "sia2": {
             "elapsed_ms": sia["elapsed_ms"],
             "http_ms": sia["http_ms"], "parse_ms": sia["parse_ms"],
+            "attempts": sia["attempts"], "retry_events": sia["retry_events"],
             "query_status": sia["query_status"],
             "complete": sia["complete"],
             "raw_rows": sia["raw_rows"],

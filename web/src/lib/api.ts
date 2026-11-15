@@ -69,6 +69,7 @@ export type Sia2Comparison = {
   query: {ra:number;dec:number;size_arcmin:number;detector:number};
   sia2: {
     elapsed_ms:number;http_ms:number;parse_ms:number;query_status:string;
+    attempts:number;retry_events:{attempt:number;elapsed_ms:number;failure:string}[];
     complete:boolean;raw_rows:number;matching_detector_rows:number;
     valid_cutout_rows:number;unique_compatible_images:number;
     releases:Record<string,number>;

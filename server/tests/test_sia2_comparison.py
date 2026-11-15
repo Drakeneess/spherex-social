@@ -90,7 +90,7 @@ def test_sia2_query_filters_detector_validates_links_and_deduplicates(benchmark)
     url, kwargs = captured[0]
     assert url == "https://irsa.ipac.caltech.edu/SIA"
     assert kwargs["allow_redirects"] is False
-    assert kwargs["timeout"] == (5, 30)
+    assert kwargs["timeout"] == (12, 40)
     pairs = kwargs["params"]
     assert ("MAXREC", "5000") in pairs
     assert sum(k == "COLLECTION" for k, _ in pairs) == 4
@@ -182,3 +182,70 @@ def test_sia2_endpoint_rejects_demo_and_missing_ticket():
     demo = explorer.register_session(explorer.Session(10, 11, 6, 2, [], "simulated"))
     assert client.get(f"/api/diagnostics/sia2/{demo}").status_code == 422
     assert client.get("/api/diagnostics/sia2/not-a-ticket").status_code == 404
+
+
+def test_sia2_connect_timeout_recovers_on_second_get(monkeypatch):
+    from requests.exceptions import ConnectTimeout
+
+    seen = []
+    delays = []
+    monkeypatch.setattr(sia.time, "sleep", lambda n: delays.append(n))
+    data = votable([(fits_url("dr1", 2, 1), "SPHEREx-D2", 60801)])
+    def flaky(_url, **kwargs):
+        seen.append(kwargs)
+        if len(seen) == 1:
+            raise ConnectTimeout("first TCP/TLS connection timed out")
+        return Response(data)
+    monkeypatch.setattr(sia.requests, "get", flaky)
+
+    result = sia.query_sia2(133.795129, -7.245147, 6, 2)
+    assert result["attempts"] == 2
+    assert result["retry_events"][0]["failure"] == "ConnectTimeout"
+    assert result["http_ms"] >= 0
+    assert result["elapsed_ms"] >= result["http_ms"]
+    assert delays == [1.0]
+    assert len(seen) == 2
+    assert all(x["timeout"] == (12, 40) for x in seen)
+
+
+def test_sia2_http_503_recovers_and_records_retry(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sia.time, "sleep", lambda _n: None)
+    def temporarily_unavailable(_url, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return Response(b"", status=503)
+        return Response(votable([(fits_url("dr1", 2, 1), "SPHEREx-D2", 60801)]))
+    monkeypatch.setattr(sia.requests, "get", temporarily_unavailable)
+
+    result = sia.query_sia2(10, 11, 6, 2)
+    assert result["attempts"] == 2
+    assert result["retry_events"][0]["failure"] == "HTTP 503"
+    assert len(calls) == 2
+
+
+def test_sia2_persistent_connect_timeout_fails_after_three_attempts(monkeypatch):
+    from requests.exceptions import ConnectTimeout
+    calls = []
+    delays = []
+    monkeypatch.setattr(sia.time, "sleep", lambda n: delays.append(n))
+    def never_connect(_url, **kwargs):
+        calls.append(1)
+        raise ConnectTimeout("connection timed out")
+    monkeypatch.setattr(sia.requests, "get", never_connect)
+    with pytest.raises(sia.Sia2ComparisonError, match="ConnectTimeout.*3 intentos|3 intentos.*ConnectTimeout"):
+        sia.query_sia2(10, 11, 6, 2)
+    assert len(calls) == 3
+    assert delays == [1.0, 3.0]
+
+
+def test_sia2_nontransient_http_400_is_not_retried(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sia.time, "sleep", lambda _n: pytest.fail("unexpected retry"))
+    def bad_request(*_args, **_kwargs):
+        calls.append(1)
+        return Response(b"", status=400)
+    monkeypatch.setattr(sia.requests, "get", bad_request)
+    with pytest.raises(sia.Sia2ComparisonError, match="HTTP 400"):
+        sia.query_sia2(10, 11, 6, 2)
+    assert len(calls) == 1

@@ -374,3 +374,22 @@ trabajos TAP; las sesiones desaparecen al reiniciar el proceso.
 Pruebas: `server/tests/test_sia2_comparison.py` utiliza respuestas VOTable
 simuladas sin consumir IRSA. Un resultado real (latencia/cobertura) solo
 puede verificarse al ejecutar la comparación desde el equipo del usuario.
+
+## Recuperación SIA2 ante ConnectTimeout
+
+El comparador SIA2 realiza GET de metadatos. Como TAP y SIA pueden presentar
+demoras variables de conexión, el comparador usa un tiempo máximo de conexión
+de **12 s** y lectura de **40 s** por intento, con un máximo de **3 GET**
+y esperas de **1 y 3 s** entre fallos transitorios. Un GET de metadatos es
+idempotente: los reintentos no generan trabajos TAP ni descargan FITS.
+
+Solo se reintentan ConnectTimeout, ReadTimeout, ConnectionError y HTTP
+429/500/502/503/504. Un error de certificado (SSLError), HTTP 400/403/404
+o QUERY_STATUS=ERROR dentro del VOTable falla inmediatamente.
+
+En una comparación exitosa se incluyen las métricas `sia2.attempts` y
+`sia2.retry_events` (tipo de fallo y tiempo de cada solicitud). Si los
+tres intentos fallan, el cliente recibe un error explicativo sin direcciones
+de archivos FITS. Una comparación ya exitosa se conserva en caché en la
+sesión del catálogo TAP. Estos cambios **no garantizan** que IRSA esté
+disponible, y no demuestran ventaja de SIA2 hasta obtener resultados reales.

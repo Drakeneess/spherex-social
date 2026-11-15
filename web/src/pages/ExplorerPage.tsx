@@ -599,6 +599,13 @@ export default function ExplorerPage({
           {siaComparison && <div className="sia-compare-result">
             <dl className="sia-compare-metrics">
               <dt>Consulta SIA2</dt><dd>{(siaComparison.sia2.elapsed_ms / 1000).toFixed(2)} s</dd>
+              <dt>Intentos HTTP SIA2</dt><dd>{siaComparison.sia2.attempts}</dd>
+              {siaComparison.sia2.retry_events.length > 0 && <>
+                <dt>Errores temporales recuperados</dt>
+                <dd>{siaComparison.sia2.retry_events.map(
+                  item => `#${item.attempt}: ${item.failure}`
+                ).join(' · ')}</dd>
+              </>}
               <dt>Estado del resultado</dt><dd>{siaComparison.sia2.query_status}
                 {siaComparison.comparable ? '' : ' · incompleto'}</dd>
               <dt>Productos únicos TAP</dt><dd>{siaComparison.tap.unique_images}</dd>
