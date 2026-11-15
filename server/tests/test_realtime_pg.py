@@ -61,3 +61,15 @@ def test_postgres_events_only_after_commit_and_recipient_scoped():
                    and x.get("scope") == "user"
                    and x.get("user_id") == str(alice_id)
                    and "caption" not in x and "email" not in x for x in events)
+
+        # Hidden birth dates must not create a public-profile signal.
+        with writer.transaction():
+            writer.execute(
+                "UPDATE users SET birth_date=DATE '2003-05-21' WHERE id=%s",
+                (alice_id,),
+            )
+        changes = [json.loads(item.payload) for item in listener.notifies(timeout=0.3)]
+        assert any(x.get("kind") == "profile" and x.get("scope") == "user"
+                   and x.get("user_id") == str(alice_id) for x in changes)
+        assert not any(x.get("kind") == "profile" and x.get("scope") != "user"
+                       for x in changes)
