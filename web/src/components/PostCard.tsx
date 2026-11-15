@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, Link2, MessageCircle, Orbit, Repeat2, Rocket, Telescope } from 'lucide-react';
+import { Bookmark, Heart, Link2, MessageCircle, Orbit, Repeat2, Telescope } from 'lucide-react';
+import AstroGlyph from './AstroGlyph';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
@@ -123,22 +124,22 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
           <span>Publicación de texto · sin imágenes astronómicas adjuntas</span>
         </div>}
     <div className="post-actions">
-      <button title="Me gusta" aria-label="Me gusta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
-        <Rocket size={20} fill={liked?'currentColor':'none'}/> <span>{post.likes_count}</span></button>
-      <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={19}/> <span>{post.comments_count}</span></button>
+      <button title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
+        <AstroGlyph name={liked?'ship-on':'ship'} size={24}/> <span>{post.likes_count}</span></button>
+      <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={24}/> <span>{post.comments_count}</span></button>
       <button title={currentUsername===post.username?'Ya está en tu perfil':post.reposted_by_me?'Retirar de mi perfil':'Compartir en mi perfil'}
         aria-pressed={post.reposted_by_me} className={post.reposted_by_me?'on':''}
         disabled={busy || currentUsername===post.username} onClick={()=>void share()}>
-        <Repeat2 size={19}/> <span>{post.reposted_by_me?'Compartido':'Compartir'}</span> <span>{post.reposts_count}</span></button>
+        <AstroGlyph name="galaxy" size={24}/> <span>{post.reposted_by_me?'Compartido':'Compartir'}</span> <span>{post.reposts_count}</span></button>
       <button title="Copiar enlace" aria-label="Copiar enlace" disabled={busy} onClick={()=>void copyLink()}>
-        <Link2 size={18}/></button>
+        <Link2 size={21}/></button>
       <button title={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'} aria-label={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'}
         aria-pressed={post.bookmarked_by_me} style={{marginLeft:'auto'}}
         className={post.bookmarked_by_me?'on':''} disabled={busy}
-        onClick={()=>void handleBookmark()}><Bookmark size={20} fill={post.bookmarked_by_me?'currentColor':'none'}/></button>
+        onClick={()=>void handleBookmark()}><Bookmark size={24} fill={post.bookmarked_by_me?'currentColor':'none'}/></button>
     </div>
-    <div className="post-body"><b>@{post.username}</b> {post.caption}</div>
-    {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}>🔭 Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
+    <div className="post-body"><b>{post.username}</b> {post.caption}</div>
+    {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}><AstroGlyph name="telescope" size={17}/> Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
     {error && <div className="inline-message" role="alert">{error}</div>}
     {notice && <div className="inline-message success" role="status">{notice}</div>}
     {commentsOpen && <div className="comments">

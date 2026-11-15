@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bell, Bookmark, Flame, LogOut, Settings, Sparkles, Users, Star } from 'lucide-react';
+import { Bell, Bookmark, LogOut, Settings, Users } from 'lucide-react';
+import AstroGlyph from './components/AstroGlyph';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
+import PostBlinkPreview from './components/PostBlinkPreview';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import GamePage from './pages/GamePage';
@@ -110,7 +112,7 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
   }
   return <div className="modal" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
     <div className="mbox" role="dialog" aria-modal="true" aria-labelledby="publish-title">
-      <h2 id="publish-title">✦ Publicar en AstroGram</h2>
+      <h2 id="publish-title"><AstroGlyph name="spark" size={19}/> Publicar en AstroGram</h2>
       {error&&<p className="form-error" role="alert">{error}</p>}
       <form onSubmit={e=>void submit(e)}>
         <div className="field"><label htmlFor="caption">¿Qué observaste?</label>
@@ -130,14 +132,15 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
   </div>;
 }
 
-function FeedPage({user,onProfile,onExplore,onLogin}:{
-  user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;
+function FeedPage({user,onProfile,onExplore,onLogin,onPublish}:{
+  user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void;
 }){
   const [posts,setPosts]=useState<Post[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
   const [offset,setOffset]=useState(0);
   const [more,setMore]=useState(true);
+  const [guideVisible,setGuideVisible]=useState(true);
   const streak=getGameStreak();
   async function fetchFeed(reset=false){
     setLoading(true);setError('');
@@ -159,18 +162,31 @@ function FeedPage({user,onProfile,onExplore,onLogin}:{
       {!loading&&posts.length>0&&<button type="button" className="refresh-feed" onClick={()=>void fetchFeed(true)}>Actualizar feed</button>}
     </main>
     <aside className="side" aria-label="Explorar y perfil">
+      {guideVisible && <section className="card first-steps">
+        <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Primeros pasos</span>
+          <span className="chip">Guía</span></div>
+        <div className="first-steps-links">
+          <button type="button" onClick={()=>go('explore')}><AstroGlyph name="telescope" size={17}/> Explora el cielo</button>
+          <button type="button" onClick={()=>go('explore')}><AstroGlyph name="pin" size={17}/> Marca un objeto en movimiento</button>
+          <button type="button" onClick={()=>go('game')}><AstroGlyph name="target" size={17}/> Juega el reto diario</button>
+          <button type="button" onClick={()=>go('home')}><AstroGlyph name="ship" size={17}/> Envía tu primer «Me encoheta»</button>
+          <button type="button" onClick={()=>go('settings')}><AstroGlyph name="pen" size={17}/> Completa tu bio</button>
+          <button type="button" onClick={onPublish}><AstroGlyph name="spark" size={17}/> Publica tu primer hallazgo</button>
+        </div>
+        <button type="button" className="first-steps-hide" onClick={()=>setGuideVisible(false)}>Ocultar</button>
+      </section>}
       <button type="button" className="card streak" onClick={()=>go('game')}>
-        <div className="streak-counter"><Flame size={31} className={streak.count>0?'streak-active':''}/>
+        <div className="streak-counter"><AstroGlyph name="flame" size={29} className={streak.count>0?'streak-active':'streak-inactive'}/>
           <span className="n">{streak.count}</span></div>
         <div className="streak-text"><b>Racha del juego</b>
           <small>{streak.playedToday?'Ya jugaste hoy. ¡Vuelve mañana!':'Hoy te espera un reto nuevo'}</small></div>
       </button>
       <section className="card">
-        <div className="card-h"><span>🔭 Explora el cielo</span><span className="chip">SPHEREx</span></div>
+        <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Explora el cielo</span><span className="chip">SPHEREx</span></div>
         <ul className="trend">
           {quick.map(item=><li key={item.name}>
             <button type="button" className="trend-link" onClick={()=>go(`explore?ra=${item.ra}&dec=${item.dec}`)}>
-              <Star size={20} aria-hidden="true" fill="currentColor" />
+              <AstroGlyph name="spark" size={17}/>
               <span><b>{item.name}</b><small>RA {formatRa(item.ra)} · Dec {formatDec(item.dec)}</small></span>
             </button>
           </li>)}
@@ -189,9 +205,19 @@ function FeedPage({user,onProfile,onExplore,onLogin}:{
 function ProfilePage({username,current,onExplore,onLogin}:{username:string;current:Profile|null;onExplore:(id:string)=>void;onLogin:()=>void}){
   const [person,setPerson]=useState<Profile|null>(null),[stats,setStats]=useState<UserStats|null>(null);
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [selectedId,setSelectedId]=useState<string|null>(null);
   const mine=current?.username===username;
+  const selectedPost=posts.find(post=>post.id===selectedId);
   useEffect(()=>{
-    let active=true;setPerson(null);setError('');
+    if(!selectedId)return;
+    const oldOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')setSelectedId(null);};
+    document.addEventListener('keydown',escape);
+    return ()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',escape);};
+  },[selectedId]);
+  useEffect(()=>{
+    let active=true;setPerson(null);setError('');setSelectedId(null);
     Promise.all([api.user(username),api.stats(username),api.userPosts(username)]).then(([p,s,items])=>{
       if(active){setPerson(p);setStats(s);setPosts(items);}
     }).catch(e=>{if(active)setError(message(e))});
@@ -212,18 +238,47 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
   return <main className="wrap single profile-layout">
     {error&&<div className="form-error" role="alert">{error}</div>}
     {!person?<div className="card empty">Cargando perfil…</div>:<>
-      <div className="card phead"><Avatar name={person.username} size={84}/><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
-        {person.bio&&<p>{person.bio}</p>}
+      <div className="card phead"><div className="profile-avatar"><Avatar name={person.username} size={84}/></div><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
+        <p className={person.bio?'':'profile-bio-placeholder'}>{person.bio||(mine?'Añade una bio para contarle al universo quién eres.':'Sin bio todavía.')}</p>
         <div className="stats"><span><b>{posts.length}</b> publicaciones y compartidos</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
-          <span><b>{stats?.following_count??0}</b> siguiendo</span></div>
+          <span><b>{stats?.following_count??0}</b> siguiendo</span>
+          <span><b>{new Date(person.created_at).toLocaleDateString('es',{month:'short',year:'numeric'})}</b> se unió</span></div>
         <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div>
-      <h2 className="section-title">Publicaciones y compartidos</h2>
-      <div className="profile-posts">{posts.map(p=><PostCard key={p.id} post={p} onProfile={u=>go(`u/${encodeURIComponent(u)}`)}
-        onExplore={onExplore} onRequireLogin={onLogin} currentUsername={current?.username}
-        onRepostChange={()=>void refreshPosts()}/>)}{posts.length===0&&<div className="card empty">Sin publicaciones visibles.</div>}</div>
+      <div className="profile-observation-heading card-h"><span>Observaciones y compartidos</span><span className="chip">{posts.length}</span></div>
+      <div className="profile-posts">
+        {posts.map(post=><div key={post.id} className="profile-tile" role="button" tabIndex={0}
+          aria-label={`Abrir publicación de ${post.username}: ${post.caption.slice(0,80)}`}
+          onClick={()=>setSelectedId(post.id)}
+          onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedId(post.id);}}}>
+          {post.observation_id
+            ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
+            : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
+                <span>Publicación de texto</span><small>Sin imágenes astronómicas adjuntas</small></div>}
+          <div className="profile-tile-label">
+            {post.reposted_by&&<span className="profile-tile-share">Compartido por @{post.reposted_by}</span>}
+            <strong>@{post.username}</strong>
+            <span>{post.caption}</span>
+          </div>
+        </div>)}
+        {posts.length===0&&<div className="empty">Sin publicaciones visibles.</div>}
+      </div>
     </>}
+    {selectedPost&&<div className="modal profile-post-modal" role="presentation"
+      onMouseDown={event=>{if(event.target===event.currentTarget)setSelectedId(null);}}>
+      <div className="profile-post-dialog" role="dialog" aria-modal="true" aria-label="Publicación completa">
+        <div className="profile-post-dialog-top">
+          <span><AstroGlyph name="galaxy" size={18}/> Publicación de @{selectedPost.username}</span>
+          <button type="button" onClick={()=>setSelectedId(null)} aria-label="Cerrar publicación">✕</button>
+        </div>
+        <PostCard key={selectedPost.id} post={selectedPost}
+          onProfile={name=>{setSelectedId(null);go(`u/${encodeURIComponent(name)}`);}}
+          onExplore={id=>{setSelectedId(null);onExplore(id);}}
+          onRequireLogin={onLogin} currentUsername={current?.username}
+          onRepostChange={()=>void refreshPosts()}/>
+      </div>
+    </div>}
   </main>;
 }
 
@@ -250,7 +305,7 @@ function SettingsPage({user,onUpdate,onLogout}:{user:Profile;onUpdate:(p:Profile
     catch(e){setError(message(e))}finally{setBusy(false)}
   }
   return <main className="wrap narrow settings-page">
-    <div className="card"><div className="card-h"><span><Settings size={17}/> Configuración</span></div>
+    <div className="card"><div className="card-h"><span><AstroGlyph name="gear" size={17}/> Ajustes</span><span className="chip">@{user.username}</span></div>
       <form className="sec" onSubmit={e=>void update(e)}>
         <h3>Editar perfil</h3><p>Actualiza tu nombre visible y biografía.</p>
         <div className="field"><label htmlFor="editName">Nombre para mostrar</label><input id="editName" minLength={1} maxLength={80} value={name} onChange={e=>setName(e.target.value)} required/></div>
@@ -312,23 +367,23 @@ export default function App(){
       : <>
     <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><span className="orb"/><span>AstroGram</span></button>
       <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
-        placeholder="Usuario o coordenadas (RA, Dec)…"/></form>
+        placeholder="Buscar astroamigos"/></form>
       <nav className="nav" aria-label="Navegación principal">
         <button className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
-          <span className="nav-emoji" aria-hidden="true">🏠</span><span className="t">Inicio</span></button>
+          <AstroGlyph name="home" size={19}/><span className="t">Inicio</span></button>
         <button className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
-          <span className="nav-emoji" aria-hidden="true">🔭</span><span className="t">Explorar</span></button>
+          <AstroGlyph name="telescope" size={19}/><span className="t">Explorar</span></button>
         <button className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
-          <span className="nav-target"><Star size={18}/></span><span className="t">Juego</span></button>
+          <AstroGlyph name="target" size={19}/><span className="t">Juego</span></button>
         {user&&<>
           <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Solicitudes (pendiente de backend)">
-            <span className="nav-emoji" aria-hidden="true">🔔</span><span className="t">Solicitudes</span></button>
+            <AstroGlyph name="bell" size={19}/><span className="t">Solicitudes</span></button>
           <button className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
             <Avatar name={user.username} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
-            <span className="nav-emoji" aria-hidden="true">⚙️</span><span className="t">Ajustes</span></button>
+            <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
           <button className="btn p sm newpost" onClick={()=>openPublish()}>
-            <Sparkles size={15}/><span className="t">Publicar</span></button>
+            <AstroGlyph name="spark" size={15}/><span className="t">Publicar</span></button>
         </>}
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
       </nav>
@@ -352,7 +407,7 @@ export default function App(){
        route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'?<ActivityPage/>:
-       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>)}
+       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired} onPublish={()=>openPublish()}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
     {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}

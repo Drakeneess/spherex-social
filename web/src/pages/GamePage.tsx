@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Flag, Lightbulb, Target, Trophy } from 'lucide-react';
+import { Flag, Lightbulb, Trophy } from 'lucide-react';
+import AstroGlyph from '../components/AstroGlyph';
 import { recordGameCompleted } from '../lib/gameStreak';
 
 const names=['WISE 0855','Estrella de Barnard','Luhman 16','Cometa en tránsito','Candidato móvil'];
@@ -37,8 +38,8 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
     setDone(true);setFeedback(correct?`¡Encontraste el objeto! +${points} puntos.`:'Esta vez no lo encontraste.');
   }
   return <main className="wrap narrow"><div className="card">
-    <div className="card-h"><span><Target size={17}/> Encuentra la diferencia</span><span className="chip">SIMULACIÓN EDUCATIVA</span></div>
-    {round<0?<div className="gend"><Target size={56}/><h2>Reto de hoy: 5 cielos</h2>
+    <div className="card-h"><span><AstroGlyph name="target" size={17}/> Encuentra la diferencia</span><span className="chip">SIMULACIÓN EDUCATIVA</span></div>
+    {round<0?<div className="gend"><AstroGlyph name="target" size={56}/><h2>Reto de hoy: 5 cielos</h2>
       <p>Compara dos campos estelares sintéticos y señala el objeto que cambió de posición.</p>
       <p className="hint">Este juego es una demostración: no usa imágenes SPHEREx ni valida descubrimientos.</p>
       <button className="btn p" onClick={next}>Empezar</button></div>:
