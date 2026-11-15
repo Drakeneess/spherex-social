@@ -135,13 +135,13 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
       <Search size={17} aria-hidden="true"/>
       <input ref={input} data-tour="global-search" type="search"
         autoComplete="off" maxLength={80}
-        aria-label="Buscar usuarios, publicaciones, hashtags o coordenadas"
+        aria-label="Buscar astroamigos, publicaciones, hashtags o coordenadas"
         aria-expanded={expanded} aria-controls={expanded?listId:undefined}
         aria-activedescendant={activeIndex>=0&&expanded ? listId+'-'+activeIndex:undefined}
         value={value} onChange={event=>setValue(event.target.value)}
         onKeyDown={keyDown}
         onFocus={()=>setFocused(true)}
-        placeholder="Buscar personas, publicaciones, #temas…"/>
+        placeholder="Buscar astroamigos, publicaciones, #temas…"/>
       {term&&<button type="button" className="global-search-clear" title="Borrar búsqueda"
         aria-label="Borrar búsqueda" onClick={()=>{setValue('');input.current?.focus();}}>
         <X size={16}/>
