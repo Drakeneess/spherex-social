@@ -382,7 +382,7 @@ export const api = {
       }),
     },false,signal),
   getSkyCandidates: (jobId:string,signal?:AbortSignal) =>
-    get<SkyCandidateSearch>(/`api/sky/jobs/${encodeURIComponent(jobId)}/candidates`,false,signal),
+    get<SkyCandidateSearch>(`/api/sky/jobs/${encodeURIComponent(jobId)}/candidates`,false,signal),
   getPersistentSkyJob: (jobId:string,signal?:AbortSignal) =>
     get<PersistentSkyJob>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,false,signal),
   getPersistentSkyFrame: (jobId:string,index:number,signal?:AbortSignal) =>
