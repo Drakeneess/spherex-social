@@ -1,15 +1,13 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Feature-branch development: run the new asynchronous IRSA API locally.
-// Social endpoints remain on Railway, preserving existing accounts and posts.
-// Override either target via ASTRO_API_TARGET / SOCIAL_API_TARGET if needed.
-// These are Vite development-proxy settings, not browser-exposed variables.
+// Development is isolated from production by default. Both API namespaces
+// target the local FastAPI process. Explicit overrides support split services.
+// These proxy targets are Vite server settings, never browser secrets.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const astroApi = env.ASTRO_API_TARGET || 'http://127.0.0.1:8000';
-  const socialApi = env.SOCIAL_API_TARGET ||
-    'https://api-production-a831f79f.up.railway.app';
+  const socialApi = env.SOCIAL_API_TARGET || 'http://127.0.0.1:8000';
 
   return {
     plugins: [react()],
