@@ -30,10 +30,15 @@ export default function TaurusChart({
     const y=(event.clientY-rect.top-(rect.height-TAURUS_CHART.height*ratio)/2)/ratio;
     if(x<TAURUS_CHART.left||x>TAURUS_CHART.right||
        y<TAURUS_CHART.top||y>TAURUS_CHART.bottom)return;
-    const nearest=TAURUS_TARGETS.find(point=>{
-      const p=points.get(point.id);
-      return p&&Math.hypot(p.x-x,p.y-y)<12;
-    });
+    // Alcyone and the Pleiades centre nearly overlap: use the closest
+    // plotted coordinate instead of whichever happens to occur first.
+    const nearest=TAURUS_TARGETS
+      .map(target=>{
+        const p=points.get(target.id)!;
+        return {target,distance:Math.hypot(p.x-x,p.y-y)};
+      })
+      .filter(item=>item.distance<12)
+      .sort((a,b)=>a.distance-b.distance)[0]?.target;
     if(nearest){
       onSelect({ra:nearest.ra,dec:nearest.dec},nearest.name);
     }else{
