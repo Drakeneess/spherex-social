@@ -7,6 +7,7 @@ const sounds = read('../src/lib/sounds.ts');
 const main = read('../src/main.tsx');
 const app = read('../src/App.tsx');
 const settings = read('../src/components/SoundSettingsPanel.tsx');
+const quick = read('../src/components/SoundQuickToggle.tsx');
 const posts = read('../src/components/PostCard.tsx');
 const explorer = read('../src/pages/ExplorerPage.tsx');
 const game = read('../src/pages/GamePage.tsx');
@@ -75,4 +76,15 @@ test('science and educational gameplay use contextual, non-automatic sounds',()=
   assert.match(game,/playSound\(correct\?'game-win':'game-miss'\)/);
   assert.match(game,/playSound\('success'\)/);
   assert.doesNotMatch(explorer,/useEffect\([^)]*playSound/s);
+});
+
+
+test('guests and signed-in users can mute immediately without visiting settings',()=>{
+  assert.match(app,/import SoundQuickToggle from '\.\/components\/SoundQuickToggle'/);
+  assert.match(app,/<SoundQuickToggle className="auth-sound-toggle"\/>/);
+  assert.match(app,/<SoundQuickToggle\/>/);
+  assert.match(quick,/data-sound="none"/);
+  assert.match(quick,/aria-label=\{label\}/);
+  assert.match(quick,/updateSoundSettings\(\{enabled:!audible/);
+  assert.match(quick,/if\(next\.enabled\)playSound\('toggle'\)/);
 });
