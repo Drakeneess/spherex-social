@@ -10,6 +10,7 @@ export default function SearchResultsPage({query,onNavigate}:Props){
   const [results,setResults]=useState<GlobalSearchResults|null>(null);
   const [busy,setBusy]=useState(false);
   const [moreBusy,setMoreBusy]=useState(false);
+  const [retry,setRetry]=useState(0);
   const [error,setError]=useState('');
   const request=useRef<AbortController|null>(null);
   const currentQuery=useRef(query);
@@ -23,8 +24,8 @@ export default function SearchResultsPage({query,onNavigate}:Props){
       .then(data=>{if(!controller.signal.aborted)setResults(data);})
       .catch(err=>{if(!controller.signal.aborted)setError(err instanceof Error?err.message:'No se pudo buscar');})
       .finally(()=>{if(!controller.signal.aborted)setBusy(false);});
-    return()=>{controller.abort();if(request.current===controller)request.current=null;};
-  },[query]);
+    return()=>{controller.abort();request.current?.abort();request.current=null;};
+  },[query,retry]);
 
   async function loadMore(){
     if(!results||moreBusy||busy)return;
@@ -68,7 +69,7 @@ export default function SearchResultsPage({query,onNavigate}:Props){
       <LoaderCircle size={22} className="spin"/> Buscando coincidencias…
     </div>}
     {error&&<div className="card global-results-state" role="alert">
-      {error} <button type="button" className="btn sm" onClick={()=>onNavigate('search?q='+encodeURIComponent(query))}>
+      {error} <button type="button" className="btn sm" onClick={()=>setRetry(i=>i+1)}>
         Reintentar
       </button>
     </div>}
