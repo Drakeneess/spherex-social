@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { CalendarDays, Camera, Check, ExternalLink, ImagePlus, Link2,
   Palette, Save, Trash2, UploadCloud } from 'lucide-react';
 import { api, type Profile } from '../lib/api';
+import { playSound } from '../lib/sounds';
 import { Avatar, updateAvatarCache } from './PostCard';
 import BirthdaySkyReveal from './BirthdaySkyReveal';
 import { signalTask } from '../lib/onboarding';
