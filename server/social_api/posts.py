@@ -297,8 +297,8 @@ def create_post(
 def read_post_media(
     post_id: UUID, media_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    size: Literal['full','thumbnail'] = Query('full'),
     viewer: Annotated[User | None, Depends(optional_user)],
+    size: Literal['full','thumbnail'] = Query('full'),
 ):
     """A post's visibility governs its photos, even with the media UUID known."""
     post = db.get(Post, post_id)
