@@ -75,6 +75,18 @@ export type Observation = {
   viewer_path: string;
 };
 export type ObservationParams = Pick<Observation, 'ra_deg' | 'dec_deg' | 'fov_arcmin'> & { detector: number };
+export type GlobalSearchUser = {
+  username:string;display_name:string;bio:string|null;avatar_version:string|null;
+  avatar_color_start:string|null;avatar_color_end:string|null;
+};
+export type GlobalSearchPost = {
+  id:string;username:string;caption:string;created_at:string;observation_id:string|null;
+};
+export type GlobalSearchTag = {tag:string;posts_count:number};
+export type GlobalSearchResults = {
+  query:string;users:GlobalSearchUser[];posts:GlobalSearchPost[];
+  hashtags:GlobalSearchTag[];more_users:boolean;more_posts:boolean;more_hashtags:boolean;
+};
 export type UserStats = { username: string; followers_count: number; following_count: number; is_following: boolean };
 export type Comment = { id: string; post_id: string; username: string; body: string; parent_id: string | null; created_at: string };
 export type AstroNotification = {
@@ -304,6 +316,10 @@ export const api = {
     write<Profile>('POST',`/v1/users/me/media/${kind}`,{data_url}),
   deleteProfileMedia: (kind:'avatar'|'cover') =>
     write<Profile>('DELETE',`/v1/users/me/media/${kind}`),
+  search: (query:string,limit=5,offset=0,signal?:AbortSignal) =>
+    get<GlobalSearchResults>(
+      `/v1/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`,
+      false,signal),
   user: (username: string) => get<Profile>(`/v1/users/${encodeURIComponent(username)}`),
   stats: (username: string) => get<UserStats>(`/v1/users/${encodeURIComponent(username)}/stats`, hasToken()),
   follow: (username: string) => write<void>('POST',`/v1/users/${encodeURIComponent(username)}/follow`),

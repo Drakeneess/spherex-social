@@ -3,8 +3,8 @@ import { ArrowLeft, MessageCircle } from 'lucide-react';
 import { api, hasToken, type Post } from '../lib/api';
 import PostCard from './PostCard';
 
-export default function PostDetailPage({postId,showComments,currentUsername,onProfile,onExplore,onLogin}:{
-  postId:string;showComments:boolean;currentUsername?:string;
+export default function PostDetailPage({postId,showComments,searchBack,currentUsername,onProfile,onExplore,onLogin}:{
+  postId:string;showComments:boolean;searchBack?:string;currentUsername?:string;
   onProfile:(username:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;
 }){
   const [post,setPost]=useState<Post|null>(null);
@@ -21,8 +21,9 @@ export default function PostDetailPage({postId,showComments,currentUsername,onPr
   },[postId]);
   return <main className="wrap narrow notification-post-page">
     <div className="notification-post-heading">
-      <button className="btn sm" type="button" onClick={()=>{window.location.hash='#/activity';}}>
-        <ArrowLeft size={17}/> Notificaciones
+      <button className="btn sm" type="button" onClick={()=>{window.location.hash=searchBack!==undefined
+        ? '#/search?q='+encodeURIComponent(searchBack) : '#/activity';}}>
+        <ArrowLeft size={17}/> {searchBack!==undefined?'Resultados':'Notificaciones'}
       </button>
       <h1>{showComments?<><MessageCircle size={21}/> Conversación</>:'Publicación'}</h1>
     </div>

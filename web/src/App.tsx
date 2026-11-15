@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bookmark, Check, LogOut, Settings, Users, X } from 'lucide-react';
+import { Bookmark, Check, LogOut, Search, Settings, Users, X } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
 import PublishModal, {type PublishRegion} from './components/PublishModal';
 import BrandLogo from './components/BrandLogo';
@@ -15,6 +15,8 @@ import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
 import NotificationsPage from './components/NotificationsPage';
 import PostDetailPage from './components/PostDetailPage';
+import GlobalSearch from './components/GlobalSearch';
+import SearchResultsPage from './components/SearchResultsPage';
 import { DEFAULT_COVER, safeHexColor, themeGradient } from './lib/profileTheme';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
@@ -27,29 +29,33 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; constellation?:string; prefill?:boolean};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'|'search'; q?:string; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; searchBack?:string; constellation?:string; prefill?:boolean};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
   {name:'Luhman 16',ra:162.299,dec:-53.318,desc:'Sistema de enanas marrones'},
 ];
 function parseRoute():Route {
-  const h=decodeURIComponent(window.location.hash.replace(/^#\/?/,''));
+  const h=window.location.hash.replace(/^#\/?/,'');
   if(!h) {
     const id=new URLSearchParams(window.location.search).get('observation_id');
     return id ? {page:'explore',observationId:id} : {page:'home'};
   }
-  const [path,query] = h.split('?');
-  const parts=path.split('/');
+  const mark=h.indexOf('?');
+  const path=mark===-1?h:h.slice(0,mark);
+  const query=mark===-1?'':h.slice(mark+1);
+  const parts=path.split('/').map(part=>{try{return decodeURIComponent(part);}catch{return part;}});
   const params=new URLSearchParams(query||'');
   if(parts[0]==='home')return {page:'home',tag:params.get('tag')||undefined};
+  if(parts[0]==='search')return {page:'search',q:params.get('q')||''};
   if(parts[0]==='explore')return {page:'explore',observationId:params.get('observation_id')||undefined,
     ra:params.has('ra')?Number(params.get('ra')):undefined,
     dec:params.has('dec')?Number(params.get('dec')):undefined,
     constellation:params.get('constellation')||undefined,
     prefill:params.get('prefill')==='1'};
   if(parts[0]==='u'&&parts[1])return {page:'profile',username:parts[1]};
-  if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1'};
+  if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1',
+      searchBack:params.get('from')==='search'?(params.get('q')||''):undefined};
   if(parts[0]==='settings'||parts[0]==='game'||parts[0]==='saved'||parts[0]==='activity')return {page:parts[0]};
   return {page:'home'};
 }
@@ -425,7 +431,7 @@ export default function App(){
   const [publish,setPublish]=useState(false);
   const [feedVersion,setFeedVersion]=useState(0);
   const [publishRegion,setPublishRegion]=useState<PublishRegion|null>(null);
-  const [search,setSearch]=useState('');
+  const [mobileSearchOpen,setMobileSearchOpen]=useState(false);
   const [toast,setToast]=useState('');
   // Ephemeral notifications must never require a click to disappear.
   useEffect(()=>{
@@ -636,12 +642,6 @@ export default function App(){
     catch{setToast('No se pudo cerrar sesión en el servidor. Revisa la conexión.');return;}
     setToast('');setTour(null);setUser(null);setPublish(false);go('home');
   }
-  function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
-    const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
-    if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
-    else navigateProfile(term.replace(/^@/,''));
-    setSearch('');
-  }
   if(checking)return <div className="boot-screen"><BrandLogo size={44}/> Conectando con AstroGram…</div>;
   const authOnly = !user && !['explore','game'].includes(route.page);
   const explorerVisible = route.page === 'explore';
@@ -650,11 +650,16 @@ export default function App(){
       ? <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>
       : <>
     <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><BrandLogo size={36}/><span>AstroGram</span></button>
-      <form className="search" onSubmit={doSearch}><input data-tour="global-search"
-        aria-label="Buscar usuarios o coordenadas"
-        value={search} onChange={e=>setSearch(e.target.value)}
-        placeholder="Buscar astroamigos"/></form>
+      <GlobalSearch currentQuery={route.page==='search'?route.q:undefined}
+        mobileOpen={mobileSearchOpen} onMobileOpenChange={setMobileSearchOpen}
+        onNavigate={go}/>
       <nav className="nav" aria-label="Navegación principal">
+        <button className="nav-search-mobile" type="button" data-global-search-toggle
+          aria-label={mobileSearchOpen?'Cerrar búsqueda':'Abrir búsqueda'}
+          aria-expanded={mobileSearchOpen} title="Buscar"
+          onClick={()=>setMobileSearchOpen(v=>!v)}>
+          <Search size={19}/>
+        </button>
         <button data-tour="nav-home" className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
           <AstroGlyph name="home" size={19}/><span className="t">Inicio</span></button>
         <button data-tour="nav-explore" className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
@@ -700,10 +705,12 @@ export default function App(){
          onExplore={openObservation} onLogin={loginRequired}/>:
        route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}
           onReplayTour={replayTour} onShowGuide={showGuide}/>:
+       route.page==='search'?<SearchResultsPage query={route.q||''} onNavigate={go}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'&&user?<NotificationsPage onCountChanged={setUnreadCount}/>:
        route.page==='post'&&route.postId?<PostDetailPage postId={route.postId}
-         showComments={Boolean(route.comments)} currentUsername={user?.username}
+         showComments={Boolean(route.comments)} searchBack={route.searchBack}
+         currentUsername={user?.username}
          onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>:
        <FeedPage key={`${feedVersion}-${route.tag??''}`} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
           onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden}
