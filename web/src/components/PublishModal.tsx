@@ -4,6 +4,7 @@ import { Check, ExternalLink, Globe2, ImagePlus, Link2, LockKeyhole,
 import { api, type ObservationParams, type Post, type RevealRecipe } from '../lib/api';
 import { extractPostHashtags, validHashtag } from '../lib/postComposer';
 import { signalTask } from '../lib/onboarding';
+import { playSound } from '../lib/sounds';
 import AstroGlyph from './AstroGlyph';
 
 export type PublishRegion = ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe};
@@ -120,7 +121,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
   }
   async function submit(event:FormEvent){
     event.preventDefault();
-    if(!hasContent){setError('Añade texto, imágenes, un enlace o una observación.');return;}
+    if(!hasContent){setError('Añade texto, imágenes, un enlace o una observación.');playSound('error');return;}
     if(processing)return;
     setBusy(true);setError('');
     try{
@@ -142,7 +143,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
       });
       signalTask('post');
       onDone();
-    }catch(e){setError(e instanceof Error?e.message:'No se pudo publicar');}
+    }catch(e){playSound('error');setError(e instanceof Error?e.message:'No se pudo publicar');}
     finally{setBusy(false);}
   }
 
@@ -249,8 +250,8 @@ export default function PublishModal({region,onClose,onDone}:Props){
             visibility==='unlisted'?'Solo será accesible mediante enlace.':
             'Se compartirá con la comunidad de AstroGram.'}</small>
           <div>
-            <button type="button" className="btn compose-cancel" onClick={onClose} disabled={busy||processing}>Cancelar</button>
-            <button type="submit" data-tour="publish-submit" className="btn p compose-submit"
+            <button type="button" data-sound="close" className="btn compose-cancel" onClick={onClose} disabled={busy||processing}>Cancelar</button>
+            <button type="submit" data-tour="publish-submit" data-sound="none" className="btn p compose-submit"
               disabled={busy||processing||!hasContent}>
               <Send size={17}/>{busy?'Publicando…':processing?'Preparando imágenes…':'Publicar'}
             </button>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { CalendarDays, Camera, Check, ExternalLink, ImagePlus, Link2,
   Palette, Save, Trash2, UploadCloud } from 'lucide-react';
 import { api, type Profile } from '../lib/api';
+import { playSound } from '../lib/sounds';
 import { Avatar, updateAvatarCache } from './PostCard';
 import BirthdaySkyReveal from './BirthdaySkyReveal';
 import { signalTask } from '../lib/onboarding';
@@ -87,6 +88,7 @@ export default function ProfileEditor({user,onUpdate}:{
       const updated=await api.uploadProfileMedia(kind,url);
       onUpdate(updated);
       if(kind==='avatar')updateAvatarCache(user.username,updated);
+      playSound('success');
       setSuccess(kind==='avatar'?'Foto de perfil actualizada.':'Portada actualizada.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo guardar la imagen.');}
     finally{setPreview(null);setBusy(null);}
@@ -98,6 +100,7 @@ export default function ProfileEditor({user,onUpdate}:{
       const updated=await api.deleteProfileMedia(kind);
       onUpdate(updated);
       if(kind==='avatar')updateAvatarCache(user.username,updated);
+      playSound('unbookmark');
       setSuccess(kind==='avatar'?'Foto de perfil eliminada.':'Portada eliminada.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo eliminar la imagen.');}
     finally{setBusy(null);}
@@ -105,7 +108,7 @@ export default function ProfileEditor({user,onUpdate}:{
   async function save(event:FormEvent<HTMLFormElement>){
     event.preventDefault();if(busy)return;
     setError('');setSuccess('');
-    if(!name.trim()){setError('El nombre visible no puede estar vacío.');return;}
+    if(!name.trim()){playSound('error');setError('El nombre visible no puede estar vacío.');return;}
     setBusy('details');
     try{
       const updated=await api.patchMe({
@@ -122,8 +125,9 @@ export default function ProfileEditor({user,onUpdate}:{
           birthdayDiscovery.current?.scrollIntoView({behavior:'smooth',block:'center'}));
       }
       if(updated.bio?.trim())signalTask('bio');
+      playSound('success');
       setSuccess('Cambios guardados en tu perfil.');
-    }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el perfil.');}
+    }catch(e){playSound('error');setError(e instanceof Error?e.message:'No se pudo actualizar el perfil.');}
     finally{setBusy(null);}
   }
 

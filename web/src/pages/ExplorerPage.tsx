@@ -13,6 +13,7 @@ import RevealEditor from '../components/RevealEditor';
 import CandidateFinder from '../components/CandidateFinder';
 import ZodiacChart from '../components/ZodiacChart';
 import { getZodiacAtlas, type SkyPoint } from '../lib/zodiacAtlas';
+import { playSound } from '../lib/sounds';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
 const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -415,13 +416,13 @@ export default function ExplorerPage({
   }
   function retrySearch() {
     const params = readParams();
-    if (params) void load(params);
+    if (params) {playSound('search');void load(params);}
   }
 
   function runSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = readParams();
-    if (params) void load(params);
+    if (params) {playSound('search');void load(params);}
   }
   function selectZodiacPosition(point:SkyPoint,name:string){
     setRa(String(Number(point.ra.toFixed(6))));
@@ -431,7 +432,7 @@ export default function ExplorerPage({
   function searchSelectedRegion(){
     if(loading)return;
     const params=readParams();
-    if(params)void load(params);
+    if(params){playSound('search');void load(params);}
   }
   function applyPreset(preset: (typeof presets)[number]) {
     setRa(String(preset.ra));
@@ -443,6 +444,7 @@ export default function ExplorerPage({
     if (params.size >= 1 && params.size <= 12 && params.detector >= 1 &&
         params.detector <= 6 && Number.isInteger(params.frames) &&
         params.frames >= 2 && params.frames <= 16) {
+      playSound('search');
       void load(params);
     }
   }
@@ -455,6 +457,7 @@ export default function ExplorerPage({
       {index:position,x,y},
     ].sort((left,right)=>left.index-right.index);
     setMarks(nextMarks);
+    playSound('mark');
     if(nextMarks.length>=2){
       // Two distinct epochs are necessary for the visual trajectory mission.
       signalTask('mark');
@@ -476,8 +479,10 @@ export default function ExplorerPage({
         fov_arcmin: params.size, detector: params.detector,
       });
       setSavedId(saved.id);
+      playSound('bookmark');
       setNotice('Región guardada en tu cuenta. Tus marcas siguen en esta sesión.');
     } catch {
+      playSound('error');
       setError('No pudimos guardar la región. Intenta nuevamente.');
     } finally {
       setSaveBusy(false);
@@ -558,7 +563,7 @@ export default function ExplorerPage({
           className="epoch-search-card">
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick" data-tour="explore-presets">
-              {presets.map(preset => <button key={preset.name} type="button"
+              {presets.map(preset => <button key={preset.name} type="button" data-sound="none"
                 disabled={loading}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
             </div>
@@ -586,7 +591,7 @@ export default function ExplorerPage({
               <label className="epoch-demo"><input type="checkbox" checked={demo}
                 onChange={event => setDemo(event.target.checked)}/> Vista de demostración</label>
             </div>
-            <button className="btn p full" disabled={loading}
+            <button className="btn p full" disabled={loading} data-sound="none"
               type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
               {loading ? 'Procesando búsqueda…'
@@ -595,8 +600,8 @@ export default function ExplorerPage({
           </form>
         </ExplorerFold>
         <div className="epoch-secondary-actions epoch-quick-actions">
-            <button type="button" data-tour="explore-publish" className="btn epoch-publish" onClick={publish}>✦ Publicar este hallazgo</button>
-            <button type="button" className="btn epoch-save" disabled={saveBusy} onClick={() => void saveRegion()}>
+            <button type="button" data-tour="explore-publish" data-sound="open" className="btn epoch-publish" onClick={publish}>✦ Publicar este hallazgo</button>
+            <button type="button" data-sound="none" className="btn epoch-save" disabled={saveBusy} onClick={() => void saveRegion()}>
               <Save size={14}/> {saveBusy ? 'Guardando…' : 'Guardar región'}
             </button>
           </div>
@@ -634,7 +639,7 @@ export default function ExplorerPage({
           originalImage={frames[revealPreviewIndex]?.image}
           onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
           enabled={revealEnabled} onEnabled={setRevealEnabled}
-          onOpen={()=>setPlaying(false)}
+          onOpen={()=>{setPlaying(false);playSound('open')}}
           editableIndices={revealable} onSelectEpoch={index=>{setPlaying(false);setPosition(index)}}/>
         </ExplorerFold>}
         {trace && <ExplorerFold

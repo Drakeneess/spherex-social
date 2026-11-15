@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ArrowRight, Hash, LoaderCircle, Search, Telescope, X } from 'lucide-react';
 import { api, type GlobalSearchResults } from '../lib/api';
+import { playSound } from '../lib/sounds';
 import { Avatar } from './PostCard';
 
 type Props = {
@@ -103,6 +104,7 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
   },[result,coords]);
 
   function navigate(path:string){
+    playSound('search');
     onNavigate(path);setValue('');setFocused(false);setActiveIndex(-1);
     onMobileOpenChange(false);
     input.current?.blur();
@@ -154,7 +156,7 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
         <span>{coords?'Coordenadas del cielo':'Resultados rápidos'}</span>
         <small>Enter para ver todos</small>
       </div>
-      {suggestions.map((item,index)=><button key={item.key} type="button"
+      {suggestions.map((item,index)=><button key={item.key} type="button" data-sound="none"
         role="option" id={listId+'-'+index} aria-selected={activeIndex===index}
         className={'global-search-suggestion'+(activeIndex===index?' active':'')}
         onMouseEnter={()=>setActiveIndex(index)}
@@ -180,7 +182,7 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
       </p>}
       {!loading&&!failed&&!suggestions.length&&
         <p className="global-search-message">No se encontraron coincidencias.</p>}
-      {valid&&<button type="button" className="global-search-all"
+      {valid&&<button type="button" className="global-search-all" data-sound="none"
         onClick={fullSearch}>Ver todos los resultados de «{term}» <ArrowRight size={15}/></button>}
     </div>}
   </form>;

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink, Sparkles } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
 import { signalTask, signalNudge } from '../lib/onboarding';
+import { playSound } from '../lib/sounds';
 import { subscribeRealtime } from '../lib/realtime';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post, type Profile } from '../lib/api';
@@ -152,9 +153,10 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     if(!hasToken()) {onRequireLogin();return;}
     setBusy(true);setError('');
     try { if(liked) await api.unlike(post.id); else await api.like(post.id);
+      playSound(liked?'unlike':'like');
       if(!liked){signalTask('like');signalNudge('like');}
       setLiked(v=>!v);await reload();}
-    catch(e){setError(e instanceof Error?e.message:'Error de like')} finally{setBusy(false)}
+    catch(e){playSound('error');setError(e instanceof Error?e.message:'Error de like')} finally{setBusy(false)}
   }
   async function handleBookmark() {
     if(!hasToken()){onRequireLogin();return;}
@@ -162,11 +164,12 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     const wasBookmarked = post.bookmarked_by_me;
     try {
       if(wasBookmarked)await api.unbookmark(post.id);else await api.bookmark(post.id);
+      playSound(wasBookmarked?'unbookmark':'bookmark');
       setPost(current=>({...current,bookmarked_by_me:!wasBookmarked}));
       onBookmarkChange?.(post.id,!wasBookmarked);
       setNotice(wasBookmarked?'Eliminado de Guardados.':'Guardado en tu colección.');
     }
-    catch(e){setError(e instanceof Error?e.message:'Error al guardar')}
+    catch(e){playSound('error');setError(e instanceof Error?e.message:'Error al guardar')}
     finally{setBusy(false)}
   }
   async function toggleComments(){
@@ -178,8 +181,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     if(!hasToken()){onRequireLogin();return;}
     if(!draft.trim())return;
     setBusy(true);setError('');
-    try {await api.createComment(post.id,draft.trim());setDraft('');setComments(await api.comments(post.id));await reload();}
-    catch(e){setError(e instanceof Error?e.message:'Error al comentar')} finally{setBusy(false)}
+    try {await api.createComment(post.id,draft.trim());playSound('comment');setDraft('');setComments(await api.comments(post.id));await reload();}
+    catch(e){playSound('error');setError(e instanceof Error?e.message:'Error al comentar')} finally{setBusy(false)}
   }
   async function share(){
     if(!hasToken()){onRequireLogin();return;}
@@ -188,11 +191,12 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     const wasReposted = post.reposted_by_me;
     try {
       if(wasReposted)await api.unrepost(post.id);else await api.repost(post.id);
+      playSound(wasReposted?'unrepost':'repost');
       setPost(current=>({...current,reposted_by_me:!wasReposted,
         reposts_count:Math.max(0,current.reposts_count+(wasReposted?-1:1))}));
       setNotice(wasReposted?'Se retiró de tu perfil.':'Compartido en tu perfil.');
       onRepostChange?.();
-    } catch(e) {setError(e instanceof Error?e.message:'No se pudo compartir');}
+    } catch(e) {playSound('error');setError(e instanceof Error?e.message:'No se pudo compartir');}
     finally {setBusy(false);}
   }
   async function copyLink(){
@@ -200,8 +204,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       ? `${window.location.origin}/?observation_id=${encodeURIComponent(post.observation_id)}`
       : `${window.location.origin}/#/u/${encodeURIComponent(post.username)}`;
     setError('');setNotice('');
-    try{await navigator.clipboard.writeText(url);setNotice('Enlace copiado.');}
-    catch{setError('No se pudo copiar el enlace.');}
+    try{await navigator.clipboard.writeText(url);playSound('success');setNotice('Enlace copiado.');}
+    catch{playSound('error');setError('No se pudo copiar el enlace.');}
   }
   return <article className="card post-card">
     {post.recommended_reason&&<div className="post-recommendation-reason">
@@ -227,18 +231,18 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
           <Telescope size={30} aria-hidden="true"/><strong>Abriendo observación…</strong>
         </div>)}
     <div className="post-actions">
-      <button data-tour="like-button" title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
+      <button data-tour="like-button" data-sound="none" title="Me encoheta" aria-label="Me encoheta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <AstroGlyph name={liked?'ship-on':'ship'} size={24}/> <span>{post.likes_count}</span></button>
-      <button title="Comentarios" onClick={()=>void toggleComments()}><MessageCircle size={24}/> <span>{post.comments_count}</span></button>
+      <button title="Comentarios" data-sound="toggle" onClick={()=>void toggleComments()}><MessageCircle size={24}/> <span>{post.comments_count}</span></button>
       <button title={currentUsername===post.username?'Ya está en tu perfil':post.reposted_by_me?'Retirar de mi perfil':'Compartir en mi perfil'}
-        aria-pressed={post.reposted_by_me} className={post.reposted_by_me?'on':''}
+        aria-pressed={post.reposted_by_me} data-sound="none" className={post.reposted_by_me?'on':''}
         disabled={busy || currentUsername===post.username} onClick={()=>void share()}>
         <AstroGlyph name="galaxy" size={24}/> <span>{post.reposted_by_me?'Compartido':'Compartir'}</span> <span>{post.reposts_count}</span></button>
-      <button title="Copiar enlace" aria-label="Copiar enlace" disabled={busy} onClick={()=>void copyLink()}>
+      <button title="Copiar enlace" data-sound="none" aria-label="Copiar enlace" disabled={busy} onClick={()=>void copyLink()}>
         <Link2 size={21}/></button>
       <button title={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'} aria-label={post.bookmarked_by_me?'Quitar de Guardados':'Guardar'}
         aria-pressed={post.bookmarked_by_me} style={{marginLeft:'auto'}}
-        className={post.bookmarked_by_me?'on':''} disabled={busy}
+        className={post.bookmarked_by_me?'on':''} data-sound="none" disabled={busy}
         onClick={()=>void handleBookmark()}><Bookmark size={24} fill={post.bookmarked_by_me?'currentColor':'none'}/></button>
     </div>
     {post.caption&&<div className="post-body"><b>{post.username}</b> {post.caption}</div>}
@@ -261,7 +265,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       {comments.length===0?<p className="muted">Sin comentarios todavía.</p>:comments.map(c=><div key={c.id} className="comment"><b>@{c.username}</b> {c.body}</div>)}
       <form className="comment-form" onSubmit={event=>void addComment(event)}>
         <input value={draft} maxLength={2000} onChange={e=>setDraft(e.target.value)} placeholder="Escribe un comentario..." aria-label="Nuevo comentario"/>
-        <button type="submit" className="btn sm" disabled={busy||!draft.trim()}>Enviar</button>
+        <button type="submit" className="btn sm" data-sound="none" disabled={busy||!draft.trim()}>Enviar</button>
       </form>
     </div>}
   </article>;
