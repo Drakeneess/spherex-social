@@ -428,3 +428,58 @@ dependencia externa sujeta a retrasos, errores y cadencias de ingestión.
 
 Las sesiones de búsqueda y frames siguen siendo efímeras en RAM, sin
 escrituras en PostgreSQL ni cambios en la lógica de imagen.
+
+
+## Búsquedas astronómicas persistentes (PostgreSQL + S3)
+
+El explorador ahora usa `/api/sky/jobs` en lugar del catálogo y los
+fotogramas orquestados por el navegador. El servidor procesa el trabajo
+independientemente de la pestaña que lo inició:
+
+- `POST /api/sky/jobs`: crea de forma idempotente una búsqueda con un
+  `job_id` UUIDv4 generado por el navegador. Repetir el POST desde otra
+  pestaña con idénticos parámetros devuelve el mismo trabajo.
+- `GET /api/sky/jobs/{id}`: consulta la fase y el progreso real desde
+  PostgreSQL (sin expiración de una hora).
+- `GET /api/sky/jobs/{id}/frames/{index}`: recupera un PNG privado de
+  almacenamiento S3; los archivos no se almacenan como BYTEA en PostgreSQL.
+- `DELETE /api/sky/jobs/{id}`: cancela explícitamente el trabajo activo;
+  no elimina resultados ya persistidos.
+
+Una cola limitada admite hasta 12 trabajos activos, 2 búsquedas ejecutándose
+en paralelo y hasta 3 fotogramas concurrentes por búsqueda. El despachador
+recupera trabajos interrumpidos después de reiniciar el servidor; un lease
+de base de datos evita que dos procesos reclamen simultáneamente el mismo
+trabajo. Los fotogramas ya terminados no se vuelven a descargar al reanudar.
+
+El navegador guarda solamente UUID y parámetros públicos en `localStorage`.
+Todas las pestañas del mismo origen se sincronizan mediante el evento
+`storage`; cerrar/reabrir la pestaña no aborta el trabajo servidor. El
+resultado no tiene caducidad programada. **Esto no implica que el login
+sea indefinido**: el token JWT de acceso sigue durando 30 minutos, y su
+persistencia/renovación es un asunto de seguridad independiente.
+
+Para producción, aprovisionar un bucket S3 privado y configurar variables
+de Railway por referencia al recurso bucket:
+
+```
+SKY_S3_ENDPOINT
+SKY_S3_BUCKET
+SKY_S3_REGION
+SKY_S3_ACCESS_KEY
+SKY_S3_SECRET_KEY
+SKY_S3_ADDRESSING_STYLE=virtual
+```
+
+En desarrollo, si APP_ENV no es production y faltan esas variables, se usan
+archivos locales bajo `server/.sky-frames/`. La consulta real utiliza SIA2
+idempotente: si falla, marca error recuperable manualmente en vez de crear
+automáticamente un TAP remoto cuyo POST no sea seguro repetir después de una
+caída de proceso. Los endpoints TAP históricos siguen disponibles para otros
+consumidores, pero ya no rigen el flujo persistente.
+
+Los IDs son capacidades difíciles de adivinar. En este prototipo, quien
+posea el enlace/ID puede consultar los datos astronómicos públicos y
+cancelar ese trabajo; no guardar datos privados o secretos de cuenta allí.
+Guardar datos sin vencimiento implica costes crecientes de almacenamiento:
+vigilar el uso de PostgreSQL y S3. No se borran búsquedas automáticamente.

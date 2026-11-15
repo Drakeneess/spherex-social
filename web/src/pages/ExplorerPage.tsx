@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
-import { api, ApiError, hasToken, type ObservationParams, type SkyFrame, type SkySearch } from '../lib/api';
+import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 
+const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
+const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
 const presets = [
   { name: 'WISE 0855', ra: 133.795129, dec: -7.245147 },
   { name: "Barnard's Star", ra: 269.4521, dec: 4.6934 },
@@ -47,22 +49,17 @@ export default function ExplorerPage({
   const [marks, setMarks] = useState<EpochMark[]>([]);
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<SearchTrace | null>(null);
-  const [retryUntil, setRetryUntil] = useState(0);
-  const retryUntilRef = useRef(0);
-  const [nowTick, setNowTick] = useState(Date.now());
-  useEffect(() => {
-    if (retryUntil <= Date.now()) return;
-    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [retryUntil]);
-  const retrySeconds = Math.max(0, Math.ceil((retryUntil - nowTick) / 1000));
+  // Persistent searches have no user-visible expiration countdown.
+  const retrySeconds = 0;
   const [saveBusy, setSaveBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const controller = useRef<AbortController | null>(null);
-  const remoteJob = useRef<string | null>(null);
+  const activeJobId = useRef<string | null>(null);
+  const loadedFrames = useRef<Record<number, SkyFrame>>({});
+  const inFlightFrames = useRef(new Set<number>());
   const available = useMemo(
     () => Object.keys(frames).map(Number).sort((a, b) => a - b),
     [frames],
@@ -84,261 +81,191 @@ export default function ExplorerPage({
     return () => window.clearInterval(interval);
   }, [active, playing, fps, available]);
 
-  // This component remains mounted during in-app navigation.
-  // Abort only when the whole application is actually unmounted.
-  useEffect(() => () => {
-    controller.current?.abort();
-    if (remoteJob.current) void api.cancelSkyJob(remoteJob.current).catch(() => {});
-  }, []);
+  // Disconnecting a browser watcher never cancels the server-side job.
+  useEffect(() => () => { controller.current?.abort(); }, []);
 
-  const load = useCallback(async (params: Params) => {
-    if (!params.demo && params.catalogMethod === 'tap' &&
-        Date.now() < retryUntilRef.current) {
-      setError('TAP continúa en espera de reintento. Puedes buscar con SIA2 mientras tanto.');
-      return;
-    }
+  const watchSearch = useCallback((jobId: string, params: Params) => {
+    if (activeJobId.current === jobId && controller.current &&
+        !controller.current.signal.aborted) return;
     controller.current?.abort();
-    if (remoteJob.current) {
-      void api.cancelSkyJob(remoteJob.current).catch(() => {});
-      remoteJob.current = null;
-    }
     const request = new AbortController();
     controller.current = request;
-    const startedAt = Date.now();
+    activeJobId.current = jobId;
+    loadedFrames.current = {};
+    inFlightFrames.current.clear();
     setLoading(true);
-    retryUntilRef.current = 0;
-    setRetryUntil(0);
     setTrace({
-      phase: 'catalog', startedAt,
-      source: params.demo ? 'simulated' : params.catalogMethod === 'tap' ? 'irsa' : 'sia2', frames: [],
+      phase: 'catalog', startedAt: Date.now(),
+      source: params.demo ? 'simulated' : 'sia2', frames: [],
     });
-    setPlaying(false);
-    setCompare(false);
-    setPosition(0);
     setResult(null);
     setFrames({});
-    setActiveParams(null);
+    setActiveParams(params);
     setMarks([]);
-    setSavedId(null);
-    setNotice('');
+    setCompare(false);
+    setPlaying(false);
+    setPosition(0);
     setError('');
+    setNotice('');
+    setSavedId(null);
+    setDemo(params.demo);
+    setRa(String(params.ra));
+    setDec(String(params.dec));
+    setSize(String(params.size));
+    setDetector(String(params.detector));
+    setEpochs(String(params.frames));
 
-    const frameErrorMessage = (cause: unknown) =>
-      cause instanceof Error ? cause.message.slice(0, 220) : 'Error inesperado';
-
-    // Ignore stale state changes if a newer search replaced this request.
-    const updateTrace = (fn: (old: SearchTrace) => SearchTrace) => {
-      if (request.signal.aborted) return;
-      setTrace(previous =>
-        previous && previous.startedAt === startedAt ? fn(previous) : previous
-      );
+    const hydrateFrame = (index: number) => {
+      if (loadedFrames.current[index] || inFlightFrames.current.has(index)) return Promise.resolve();
+      inFlightFrames.current.add(index);
+      return api.getPersistentSkyFrame(jobId, index, request.signal)
+        .then(frame => {
+          if (request.signal.aborted || activeJobId.current !== jobId) return;
+          loadedFrames.current = { ...loadedFrames.current, [index]: frame };
+          setFrames(previous => ({ ...previous, [index]: frame }));
+        }).catch(() => {
+          // The image remains marked ready on the server. The next poll, or
+          // reopening the search, can safely retry its retrieval.
+        }).finally(() => { inFlightFrames.current.delete(index); });
     };
 
-    let fallbackFailure = '';
-    let tapAttempted = false;
-    try {
-      const catalogStartedAt = Date.now();
-      let search: SkySearch | null = null;
-      if (params.demo) {
-        search = await api.searchSky(params, request.signal);
-      } else {
-        if (params.catalogMethod === 'sia2') {
+    const run = async () => {
+      let networkFailures = 0;
+      let lastSnapshot: PersistentSkyJob | null = null;
+      try {
+        // A stable UUID makes concurrent tab POSTs idempotent.
+        await api.createPersistentSkyJob(jobId, params, request.signal);
+        while (!request.signal.aborted) {
           try {
-            search = await api.searchSia2(params, request.signal);
-          } catch (cause) {
+            const state = await api.getPersistentSkyJob(jobId, request.signal);
             if (request.signal.aborted) return;
-            if (!(cause instanceof ApiError) || ![502, 503, 504].includes(cause.status)) {
-              throw cause;
-            }
-            fallbackFailure = frameErrorMessage(cause);
-            updateTrace(old => ({
-              ...old, source: 'irsa', remotePhase: undefined,
-              catalogWarning: 'La primera búsqueda no respondió. Estamos buscando por otra vía.',
+            networkFailures = 0;
+            lastSnapshot = state;
+            const fromQuery = state.query;
+            const completed = terminalStatuses.has(state.status);
+            const phase = state.status === 'queued' || state.status === 'catalog'
+              ? 'catalog' : state.status as SearchTrace['phase'];
+            const frameTrace = state.frames.map(item => ({
+              index: item.index,
+              status: item.status,
+              ...(item.error ? {error: item.error} : {}),
             }));
-          }
-        }
-        if (search === null) {
-          // Exactly one TAP submission; never retry this non-idempotent POST.
-          tapAttempted = true;
-          const started = await api.startSkyJob(params, request.signal);
-          if (request.signal.aborted) return;
-          remoteJob.current = started.job_id;
-          updateTrace(old => ({
-            ...old, source: 'irsa', remotePhase: started.phase, tapTiming: started.timing,
-          }));
-          while (true) {
-            if (request.signal.aborted) return;
-            const snapshot = await api.pollSkyJob(started.job_id, request.signal);
-            if (request.signal.aborted) return;
-            updateTrace(old => ({
-              ...old,
-              remotePhase: snapshot.phase,
-              remoteWarning: snapshot.warning,
-              retryAfterSeconds: snapshot.retry_after_seconds,
-              tapTiming: snapshot.timing ?? old.tapTiming,
-            }));
-            if (snapshot.phase === 'COMPLETED') {
-              if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
-              search = snapshot.result;
-              remoteJob.current = null;
-              void api.cancelSkyJob(started.job_id).catch(() => {});
-              break;
+            setTrace({
+              phase, source: state.source,
+              startedAt: Date.parse(state.created_at) || Date.now(),
+              ...(completed ? {finishedAt: Date.parse(state.updated_at) || Date.now()} : {}),
+              totalMatches: state.total_matches ?? undefined,
+              count: state.result?.count,
+              catalogMs: state.result ? state.discovery?.elapsed_ms ?? 0 : undefined,
+              frames: frameTrace,
+            });
+            if (state.result) {
+              setResult(state.result);
+              setActiveParams({
+                ra: fromQuery.ra, dec: fromQuery.dec,
+                size: fromQuery.size_arcmin, detector: fromQuery.detector,
+                frames: fromQuery.max_frames, demo: fromQuery.demo,
+                catalogMethod: 'sia2',
+              });
             }
-            if (snapshot.phase === 'ERROR' || snapshot.phase === 'ABORTED') {
-              throw new Error(snapshot.error ?? 'El trabajo TAP terminó sin resultados');
+            const pending = state.frames
+              .filter(item => item.status === 'ready' && !loadedFrames.current[item.index])
+              .map(item => item.index);
+            // The server continues rendering even if this tab is hidden.
+            // Client hydration is bounded independently of its workers.
+            await Promise.allSettled(pending.slice(0, 3).map(hydrateFrame));
+            if (completed) {
+              if (state.status === 'empty') setNotice('No se encontraron observaciones en esta región.');
+              else if (state.status === 'partial') setNotice('Algunas imágenes no pudieron recuperarse.');
+              else if (state.status === 'failed') setError('No pudimos completar esta búsqueda. Inténtalo de nuevo.');
+              const ready = state.frames.filter(item => item.status === 'ready').length;
+              if (ready >= 2 && state.status !== 'cancelled') setPlaying(true);
+              setLoading(false);
+              // Remaining image assets can still hydrate from a completed job.
+              const rest = state.frames
+                .filter(item => item.status === 'ready' && !loadedFrames.current[item.index])
+                .map(item => item.index);
+              await Promise.allSettled(rest.map(hydrateFrame));
+              return;
             }
-            if (Date.now() - catalogStartedAt > 15 * 60_000) {
-              throw new Error('El catálogo continúa procesando tras 15 minutos. Cancela o repite la búsqueda.');
-            }
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>(resolve => {
               const timer = window.setTimeout(() => {
                 request.signal.removeEventListener('abort', onAbort);
                 resolve();
-              }, Math.max(2500, (snapshot.retry_after_seconds ?? 0) * 1000));
+              }, 2200);
               const onAbort = () => {
                 window.clearTimeout(timer);
                 request.signal.removeEventListener('abort', onAbort);
-                reject(new DOMException('Búsqueda cancelada', 'AbortError'));
+                resolve();
               };
-              request.signal.addEventListener('abort', onAbort, { once: true });
+              request.signal.addEventListener('abort', onAbort, {once:true});
               if (request.signal.aborted) onAbort();
             });
-          }
-        }
-      }
-      if (!search) throw new Error('El catálogo no devolvió una respuesta válida');
-      if (request.signal.aborted) return;
-      const catalogMs = Date.now() - catalogStartedAt;
-      setResult(search);
-      setActiveParams(params);
-      updateTrace(previous => ({
-        ...previous,
-        source: search.source,
-        sia2Timing: search.discovery,
-        phase: search.count > 0 ? 'frames' : 'empty',
-        catalogMs,
-        totalMatches: search.total_matches,
-        count: search.count,
-        frames: Array.from({ length: search.count }, (_, index) =>
-          ({ index, status: 'pending' as const })),
-        ...(search.count === 0 ? { finishedAt: Date.now() } : {}),
-      }));
-      if (search.count === 0) {
-        setNotice('No encontramos observaciones para esa región y detector.');
-        return;
-      }
-      let cursor = 0;
-      const failures: number[] = [];
-      let successes = 0;
-
-      // At most three independent /api/frame requests. The backend sends
-      // completed PNGs, not intermediate FITS-processing events.
-      const worker = async () => {
-        while (!request.signal.aborted) {
-          const index = cursor++;
-          if (index >= search.count) return;
-          const frameStartedAt = Date.now();
-          updateTrace(previous => ({
-            ...previous,
-            frames: previous.frames.map(frame =>
-              frame.index === index
-                ? { ...frame, status: 'loading', startedAt: frameStartedAt }
-                : frame
-            ),
-          }));
-          try {
-            const frame = await api.frame(search.search_id, index, request.signal);
-            if (!request.signal.aborted) {
-              setFrames(previous => ({ ...previous, [index]: frame }));
-              successes += 1;
-              updateTrace(previous => ({
-                ...previous,
-                frames: previous.frames.map(entry =>
-                  entry.index === index
-                    ? { ...entry, status: 'ready', durationMs: Date.now() - frameStartedAt, serverTiming: frame.timing_ms }
-                    : entry
-                ),
-              }));
-            }
           } catch (cause) {
-            if (!request.signal.aborted) {
-              failures.push(index);
-              updateTrace(previous => ({
-                ...previous,
-                frames: previous.frames.map(entry =>
-                  entry.index === index
-                    ? {
-                      ...entry, status: 'failed',
-                      durationMs: Date.now() - frameStartedAt,
-                      error: frameErrorMessage(cause),
-                    }
-                    : entry
-                ),
-              }));
-            }
+            if (request.signal.aborted) return;
+            networkFailures++;
+            if (cause instanceof Error) console.warn('[AstroGram] Waiting to reconnect to sky job', cause.name);
+            setNotice('Conexión interrumpida. Tu búsqueda sigue guardada; intentando reconectar.');
+            await new Promise(resolve => window.setTimeout(resolve, Math.min(15000, 2000 * networkFailures)));
           }
         }
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(3, search.count) }, () => worker()),
-      );
-      if (request.signal.aborted) return;
-
-      updateTrace(previous => ({
-        ...previous,
-        phase: successes === 0 ? 'failed' : failures.length ? 'partial' : 'complete',
-        finishedAt: Date.now(),
-      }));
-      if (successes === 0) {
-        setError('No pudimos preparar las imágenes de esta región. Puedes intentar otra búsqueda.');
-      } else {
-        if (failures.length) {
-          setNotice(`${failures.length} de ${search.count} épocas no pudieron cargarse. Puedes consultar las disponibles.`);
+      } catch (cause) {
+        if (request.signal.aborted) return;
+        console.warn('[AstroGram] Could not open sky job', cause);
+        setError('No pudimos abrir tu búsqueda guardada. Inténtalo de nuevo.');
+        setTrace(previous => previous ? {...previous, phase:'failed',finishedAt:Date.now()} : previous);
+        setLoading(false);
+      } finally {
+        // Do not abort the job or erase localStorage when the tab leaves.
+        if (!request.signal.aborted && lastSnapshot && terminalStatuses.has(lastSnapshot.status)) {
+          setLoading(false);
         }
-        if (successes >= 2) setPlaying(true);
       }
-    } catch (cause) {
-      if (remoteJob.current) {
-        void api.cancelSkyJob(remoteJob.current).catch(() => {});
-        remoteJob.current = null;
-      }
-      if (!request.signal.aborted) {
-        const detail = frameErrorMessage(cause);
-        if (tapAttempted && cause instanceof ApiError && cause.status === 503) {
-          // Retry only after a separate user action. POST /TAP/async is not
-          // idempotent and auto-retrying could create orphaned remote jobs.
-          const deadline = Date.now() + 30_000;
-          retryUntilRef.current = deadline;
-          setRetryUntil(deadline);
-          setNowTick(Date.now());
-        }
-        const friendly = 'No conseguimos recuperar las observaciones ahora. Puedes volver a intentarlo.';
-        // Detailed errors remain available in developer instrumentation, not the public UI.
-        console.warn('[AstroGram] Catalog search failed', { fallback: fallbackFailure, detail });
-        setError(friendly);
-        updateTrace(previous => ({
-          ...previous, phase: 'failed', catalogError: friendly, finishedAt: Date.now(),
-        }));
-      }
-    } finally {
-      if (!request.signal.aborted) setLoading(false);
-    }
+    };
+    void run();
   }, []);
 
+  const load = useCallback((params: Params) => {
+    const jobId = crypto.randomUUID();
+    const value = JSON.stringify({jobId, params});
+    // Save *before* the network request. Reopening the tab can safely retry
+    // the idempotent POST even if this tab closes midway through creation.
+    localStorage.setItem(CURRENT_SKY_JOB, value);
+    watchSearch(jobId, params);
+  }, [watchSearch]);
+
   function cancelSearch() {
-    if (!controller.current || controller.current.signal.aborted) return;
-    controller.current.abort();
-    if (remoteJob.current) {
-      void api.cancelSkyJob(remoteJob.current).catch(() => {});
-      remoteJob.current = null;
-    }
-    setLoading(false);
-    setPlaying(false);
-    setTrace(previous => previous && ['catalog', 'frames'].includes(previous.phase)
-      ? { ...previous, phase: 'cancelled', finishedAt: Date.now() }
-      : previous);
-    setNotice('Búsqueda detenida. Las imágenes recibidas siguen disponibles.');
+    const id = activeJobId.current;
+    if (!id) return;
+    void api.cancelPersistentSkyJob(id).catch(() =>
+      setNotice('No pudimos confirmar la cancelación; vuelve a intentarlo.'));
+    // Keep monitoring until the server confirms cancellation, including
+    // across tabs. Aborting a watcher would make the state ambiguous.
   }
+
+  useEffect(() => {
+    const attachFromStorage = () => {
+      try {
+        const raw = localStorage.getItem(CURRENT_SKY_JOB);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as {jobId?:string;params?:Params};
+        if (typeof parsed.jobId !== 'string' ||
+            !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(parsed.jobId) ||
+            !parsed.params) return;
+        if (activeJobId.current !== parsed.jobId) watchSearch(parsed.jobId, parsed.params);
+      } catch {
+        // Older/malformed localStorage entries must not interrupt the app.
+      }
+    };
+    if (!observationId && (initialRa === undefined || initialDec === undefined)) {
+      attachFromStorage();
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CURRENT_SKY_JOB && event.newValue) attachFromStorage();
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [watchSearch, observationId, initialRa, initialDec]);
 
   useEffect(() => {
     if (!observationId) return;
