@@ -577,15 +577,46 @@ multibanda RGB físicamente interpretada requiere agrupar recortes compatibles
 de diferentes longitudes de onda y se reserva para una fase posterior.
 
 
+## Presupuesto de almacenamiento de fotos sociales
+
+Las fotos comunitarias se optimizan **en el servidor** antes de escribir
+objetos en el bucket. Una publicación admite cuatro imágenes y tiene un
+presupuesto estricto de **3 MiB sumando versiones grandes y miniaturas**:
+
+| Variante | Resolución máxima | Peso máximo |
+| --- | --- | --- |
+| Foto para ampliar | 1600 px en el lado mayor | 650 KiB |
+| Miniatura para Inicio y Perfil | 400 px en el lado mayor | 100 KiB |
+| Las dos versiones por fotografía | — | 750 KiB |
+| Cuatro fotografías | — | 3000 KiB (menos de 3 MiB) |
+
+La compresión es WebP adaptativa: conserva la mayor resolución y calidad que
+quepa dentro del presupuesto, con niveles acotados de calidad y escalado.
+Si una imagen (por ejemplo una astrofotografía muy ruidosa) no puede entrar
+en ese límite sin superar el umbral mínimo de calidad, se rechaza con un
+mensaje; no se descartan datos silenciosamente. Los originales subidos no
+se conservan y las etiquetas EXIF/GPS se eliminan.
+
+Las miniaturas se utilizan en Inicio y Perfil; una foto optimizada de mayor
+calidad **solo se descarga al ampliarla**. Los archivos anteriores sin
+miniaturas siguen funcionando: el servidor recupera su WebP original.
+Al borrar una publicación se eliminan sus dos variantes.
+
+**Importante:** el máximo de 3 MiB aplica a fotos sociales **nuevas**,
+no a datos científicos FITS/NPZ ni a las vistas SPHEREx del explorador;
+esos recursos mantienen su propia política de almacenamiento. Los
+archivos ya publicados no se reprocesan automáticamente.
+
 ## Compositor social de astronomía
 
 El botón **Publicar** abre un compositor de varios tipos de contenido:
 
 - Texto opcional (hasta 3.000 caracteres), incluso sin imágenes ni observación.
 - Hasta cuatro fotos JPEG, PNG o WebP (imagen fuente hasta 15 MiB en la UI,
-  16 megapíxeles; se escala a 1.920 px y se comprime antes de enviarse).
+  16 megapíxeles; se escala a 1.600 px y se comprime antes de enviarse).
   El servidor valida el archivo y vuelve a codificarlo como WebP sin EXIF,
-  con un límite de 3 MiB por imagen. No se aceptan archivos ejecutables,
+  con hasta 650 KiB para la imagen grande y 100 KiB para la miniatura.
+  No se aceptan archivos ejecutables,
   SVG ni HTML como imágenes.
 - Un enlace externo HTTP(S), mostrado como recurso externo clicable sin descargar
   ni incrustar contenido de terceros en el backend.
