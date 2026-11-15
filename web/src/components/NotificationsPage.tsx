@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Bell, Check, CheckCheck, Heart, MessageCircle, Repeat2,
   RefreshCw, UserPlus, CornerDownRight } from 'lucide-react';
 import { api, type AstroNotification } from '../lib/api';
+import { subscribeRealtime } from '../lib/realtime';
 import { Avatar } from './PostCard';
 
 const descriptors = {
@@ -47,12 +48,12 @@ export default function NotificationsPage({onCountChanged}:{
   },[onCountChanged]);
   useEffect(()=>{
     void refresh();
-    const timer=window.setInterval(()=>{
-      if(document.visibilityState==='visible')void refresh();
-    },20000);
+    const unsubscribe=subscribeRealtime(change=>{
+      if(change.kind==='notifications'||change.kind==='resync')void refresh();
+    });
     const onFocus=()=>{if(document.visibilityState==='visible')void refresh();};
     window.addEventListener('focus',onFocus);
-    return()=>{window.clearInterval(timer);window.removeEventListener('focus',onFocus);};
+    return()=>{unsubscribe();window.removeEventListener('focus',onFocus);};
   },[refresh]);
 
   async function more(){
