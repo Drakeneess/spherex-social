@@ -224,7 +224,7 @@ export default function ExplorerPage({
         ...(search.count === 0 ? { finishedAt: Date.now() } : {}),
       }));
       if (search.count === 0) {
-        setNotice('El catálogo consultado no devolvió épocas para este campo y detector.');
+        setNotice('No encontramos observaciones para esa región y detector.');
         return;
       }
       let cursor = 0;
@@ -337,7 +337,7 @@ export default function ExplorerPage({
     setTrace(previous => previous && ['catalog', 'frames'].includes(previous.phase)
       ? { ...previous, phase: 'cancelled', finishedAt: Date.now() }
       : previous);
-    setNotice('Solicitud cancelada desde el navegador; las imágenes ya recibidas siguen disponibles.');
+    setNotice('Búsqueda detenida. Las imágenes recibidas siguen disponibles.');
   }
 
   useEffect(() => {
@@ -356,8 +356,8 @@ export default function ExplorerPage({
         detector: saved.detector, frames: 12, demo: false, catalogMethod: 'sia2',
       });
       setSavedId(saved.id);
-    }).catch(cause => {
-      if (active) setError(cause instanceof Error ? cause.message : 'Observación no encontrada');
+    }).catch(() => {
+      if (active) setError('No pudimos abrir esta región guardada. Intenta nuevamente.');
     });
     return () => { active = false; };
   }, [observationId, load]);
@@ -442,9 +442,9 @@ export default function ExplorerPage({
         fov_arcmin: params.size, detector: params.detector,
       });
       setSavedId(saved.id);
-      setNotice('Región guardada en tu cuenta. Las marcas siguen siendo locales a esta sesión.');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo guardar la región');
+      setNotice('Región guardada en tu cuenta. Tus marcas siguen en esta sesión.');
+    } catch {
+      setError('No pudimos guardar la región. Intenta nuevamente.');
     } finally {
       setSaveBusy(false);
     }
@@ -456,7 +456,7 @@ export default function ExplorerPage({
       return;
     }
     if (!hasToken()) { onLogin(); return; }
-    if (marks.length) setNotice('Las marcas no se guardan en PostgreSQL; solo se compartirán las coordenadas de la región.');
+    if (marks.length) setNotice('Compartirás la región, pero no las marcas realizadas sobre cada imagen.');
     onPublish({
       ra_deg: activeParams.ra,
       dec_deg: activeParams.dec,
@@ -498,7 +498,7 @@ export default function ExplorerPage({
         </div>
         <div className="epoch-player-foot">
           <span>{result ? `${loadedCount}/${result.count} épocas cargadas` : 'Sin búsqueda activa'}</span>
-          <span>{result?.source === 'simulated' ? 'Simulación elegida por el usuario' : 'Datos IRSA · vista preliminar'}</span>
+          <span>{result?.source === 'simulated' ? 'Imágenes simuladas · demostración' : 'NASA/IPAC · vista preliminar'}</span>
         </div>
         <div className="epoch-help">Las estrellas se quedan quietas; lo que se mueve es el hallazgo.
           Toca la imagen para <strong>marcar</strong> su posición en cada época.
@@ -553,15 +553,16 @@ export default function ExplorerPage({
               <Save size={14}/> {saveBusy ? 'Guardando…' : 'Guardar región'}
             </button>
           </div>
-          {savedId && <div className="epoch-saved">Región guardada: <code>{savedId}</code></div>}
+          {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
 
         </section>
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">
-          Imágenes reales de NASA/IPAC IRSA, presentadas como vista preliminar.
-          Cada detector abarca distintas longitudes de onda, y las imágenes pueden tener diferencias de calidad.
-          Las marcas son personales y no se guardan automáticamente.
+          {result?.source === 'simulated'
+            ? 'Demostración con imágenes simuladas: no son observaciones de NASA.'
+            : 'Las búsquedas reales consultan observaciones NASA/IPAC IRSA. La vista es preliminar y la calidad puede variar entre imágenes.'}
+          {' '}Las marcas son personales y no se guardan automáticamente.
         </div>
         {result && <button type="button" className="epoch-compare btn sm"
           disabled={!frames[position - 1]} aria-pressed={compare} onClick={() => setCompare(value => !value)}>
