@@ -246,6 +246,21 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     }).catch(e=>{if(active)setError(message(e))});
     return ()=>{active=false};
   },[username,current?.username]);
+  useEffect(()=>{
+    let active=true;
+    const unsubscribe=subscribeRealtime(change=>{
+      if(change.kind==='profile'&&change.username===username){
+        void api.user(username).then(value=>{if(active)setPerson(value);}).catch(()=>{});
+      }
+      if(change.kind==='profile_stats'||change.kind==='resync'){
+        void api.stats(username).then(value=>{if(active)setStats(value);}).catch(()=>{});
+      }
+      if(change.kind==='feed'||change.kind==='profile_posts'||change.kind==='resync'){
+        void api.userPosts(username).then(value=>{if(active)setPosts(value);}).catch(()=>{});
+      }
+    });
+    return()=>{active=false;unsubscribe();};
+  },[username,current?.username]);
   async function refreshPosts(){
     try {setPosts(await api.userPosts(username));}
     catch(e) {setError(message(e));}
@@ -335,6 +350,14 @@ function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   useEffect(()=>{let active=true;api.bookmarks().then(data=>{if(active)setPosts(data)}).catch(e=>{if(active)setError(message(e))})
     .finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
+  useEffect(()=>{
+    let active=true;
+    const unsubscribe=subscribeRealtime(change=>{
+      if(!['bookmarks','feed','resync'].includes(change.kind))return;
+      void api.bookmarks().then(data=>{if(active)setPosts(data);}).catch(()=>{});
+    });
+    return()=>{active=false;unsubscribe();};
+  },[]);
   return <main className="wrap narrow saved-page"><h1><Bookmark size={24}/> Guardados</h1>
     <p className="muted">Solo tú puedes consultar tus publicaciones guardadas.</p>
     {error&&<p className="form-error">{error}</p>}
