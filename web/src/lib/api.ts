@@ -32,11 +32,15 @@ export type PostBlinkInfo = {
   display_recipe: RevealRecipe|null;
   frames: {index:number;status:'pending'|'loading'|'ready'|'failed';date:string|null}[];
 };
+export type PostMedia = {id:string;media_type:'image/webp';position:number};
 export type Post = {
   id: string;
   username: string;
   caption: string;
   display_recipe: RevealRecipe|null;
+  link_url: string|null;
+  hashtags: string[];
+  media: PostMedia[];
   observation_id: string | null;
   visibility: 'public' | 'unlisted' | 'private';
   created_at: string;
@@ -261,12 +265,16 @@ export const api = {
   stats: (username: string) => get<UserStats>(`/v1/users/${encodeURIComponent(username)}/stats`, hasToken()),
   follow: (username: string) => write<void>('POST',`/v1/users/${encodeURIComponent(username)}/follow`),
   unfollow: (username: string) => write<void>('DELETE',`/v1/users/${encodeURIComponent(username)}/follow`),
-  feed: (limit = 20, offset = 0) => get<Post[]>(`/v1/feed?limit=${limit}&offset=${offset}`,hasToken()),
+  feed: (limit = 20, offset = 0, tag?:string) => get<Post[]>(
+    `/v1/feed?limit=${limit}&offset=${offset}${tag?`&tag=${encodeURIComponent(tag)}`:''}`,hasToken()),
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),
   createPost: (data: {
     caption:string;visibility:Post['visibility'];observation_id:string|null;
     sky_job_id?:string|null;display_recipe?:RevealRecipe|null;
+    images?:{data_url:string}[];link_url?:string|null;
   }) => write<Post>('POST','/v1/posts',data),
+  postMediaData: (postId:string,mediaId:string) =>
+    get<{data_url:string}>(`/v1/posts/${encodeURIComponent(postId)}/media/${encodeURIComponent(mediaId)}`,hasToken()),
   preparePostBlink: (postId:string,signal?:AbortSignal) =>
     request<PostBlinkInfo>(`/v1/posts/${encodeURIComponent(postId)}/blink`,
       {method:'POST'},hasToken(),signal),

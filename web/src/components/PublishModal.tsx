@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react';
-import { Camera, Check, ExternalLink, Globe2, ImagePlus, Link2, LockKeyhole,
-  Send, Sparkles, Telescope, Trash2, UploadCloud, X } from 'lucide-react';
+import { Check, ExternalLink, Globe2, ImagePlus, Link2, LockKeyhole,
+  Send, Sparkles, Telescope, UploadCloud, X } from 'lucide-react';
 import { api, type ObservationParams, type Post, type RevealRecipe } from '../lib/api';
 import { extractPostHashtags, validHashtag } from '../lib/postComposer';
 import { signalTask } from '../lib/onboarding';
