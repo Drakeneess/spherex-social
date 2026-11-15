@@ -123,13 +123,16 @@ export type SkyCandidateSearch = {
 export type PersistentSkyJob = {
   job_id: string;
   status: 'queued' | 'catalog' | 'frames' | 'complete' | 'partial' | 'empty' | 'failed' | 'cancelled';
-  source: 'sia2' | 'simulated';
+  source: 'sia2' | 'irsa' | 'simulated';
   created_at: string;
   updated_at: string;
   query: {ra:number;dec:number;size_arcmin:number;detector:number;max_frames:number;demo:boolean};
   total_matches: number|null;
   result: SkySearch|null;
-  discovery: {method:string;elapsed_ms?:number;attempts?:number;query_status?:string}|null;
+  discovery: {
+    method:'sia2'|'tap'|'simulated';elapsed_ms?:number;attempts?:number;
+    query_status?:string;fallback_from?:string;sia2_error?:string;phase?:string;
+  }|null;
   frames: {index:number;status:'pending'|'loading'|'ready'|'failed';raw_available?:boolean;error?:string}[];
   error: string|null;
 };
