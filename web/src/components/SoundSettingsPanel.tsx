@@ -2,16 +2,8 @@ import { useEffect, useState } from 'react';
 import { Music2, Volume2, VolumeX } from 'lucide-react';
 import {
   getSoundSettings, playSound, SOUND_SETTINGS_EVENT,
-  updateSoundSettings, type SoundSettings, type UISound,
+  updateSoundSettings, type SoundSettings,
 } from '../lib/sounds';
-
-const previews: { label:string; name:UISound }[] = [
-  {label:'Pulsación',name:'tap'},
-  {label:'Me encoheta',name:'like'},
-  {label:'Guardar',name:'bookmark'},
-  {label:'Publicar',name:'publish'},
-  {label:'Marcar estrella',name:'mark'},
-];
 
 export default function SoundSettingsPanel(){
   const [settings,setSettings]=useState<SoundSettings>(getSoundSettings);
@@ -60,16 +52,6 @@ export default function SoundSettingsPanel(){
         onPointerUp={()=>playSound('toggle')}
         onKeyUp={()=>playSound('toggle')}
         aria-label="Volumen de los sonidos de interfaz"/>
-      <p className="sound-preview-caption">Prueba los sonidos</p>
-      <div className="sound-previews">
-        {previews.map(item=><button key={item.name}
-          type="button" data-sound="none"
-          disabled={!settings.enabled||settings.volume===0}
-          onClick={()=>playSound(item.name)}>
-          <Music2 size={13} aria-hidden="true"/>{item.label}
-        </button>)}
-      </div>
-      <p className="sound-settings-note">Los sonidos se reproducen solo después de interactuar. Puedes silenciarlos aquí en cualquier momento; tu preferencia se guarda en este dispositivo.</p>
     </div>
   </section>;
 }
