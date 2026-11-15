@@ -477,3 +477,27 @@ def test_notification_visibility_changes_hide_private_replies_and_deleted_posts(
     assert client.delete(f'/v1/posts/{post_id}',headers=headers['alpha']).status_code==204
     assert inbox(client,headers,'alpha')==[]
     assert inbox(client,headers,'beta')==[]
+
+
+def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
+    """CI previously tested social_api.main, while Railway runs uvicorn app:app.
+
+    Verify the *real* deployed ASGI app has the same notification endpoints.
+    This regression test would have caught the 404 Not Found in production.
+    """
+    from app import app as deployed_app
+    from social_api.main import app as standalone_app
+
+    expected = {
+        ('GET', '/v1/users/me/notifications'),
+        ('GET', '/v1/users/me/notifications/count'),
+        ('POST', '/v1/users/me/notifications/read-all'),
+        ('POST', '/v1/users/me/notifications/{notification_id}/read'),
+    }
+    for entrypoint in (deployed_app, standalone_app):
+        routes = {
+            (method, route.path)
+            for route in entrypoint.routes
+            for method in getattr(route, 'methods', ())
+        }
+        assert expected.issubset(routes), f'Missing notification routes: {expected-routes}'
