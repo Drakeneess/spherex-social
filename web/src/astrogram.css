@@ -2830,3 +2830,35 @@ body {
   .global-results-heading>.btn{margin-top:0}
   .global-results-section{padding:10px}
 }
+
+
+/* Explainable recommendation feed: explicit control remains with the reader. */
+.feed-mode-tabs{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;
+  padding:5px;border-radius:14px;border:1px solid #33435f;
+  background:#121c32;min-height:53px;
+}
+.feed-mode-tabs button{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  border-radius:10px;min-width:0;min-height:42px;padding:9px 10px;
+  color:#91a9cc;font-size:.84rem;font-weight:700;
+  transition:background .15s ease,color .15s ease;
+}
+.feed-mode-tabs button:hover{color:#e8f2ff;background:#253454}
+.feed-mode-tabs button.active,
+.feed-mode-tabs button[aria-pressed="true"]{
+  background:#304b73;color:#eef5ff;box-shadow:inset 0 0 0 1px #7399d355;
+}
+.feed-mode-tabs button:focus-visible{outline:2px solid #89bcff;outline-offset:2px}
+.post-recommendation-reason{
+  display:flex;align-items:center;gap:7px;min-width:0;padding:10px 14px 0;
+  color:#8dbbec;font-size:.72rem;line-height:1.35;font-weight:650;
+}
+.post-recommendation-reason svg{flex:none;color:#8cbbff}
+@media(max-width:520px){
+  .feed-mode-tabs{gap:3px;padding:4px;border-radius:12px}
+  .feed-mode-tabs button{font-size:.76rem;min-height:40px;padding:8px 4px}
+}
+@media(prefers-reduced-motion:reduce){
+  .feed-mode-tabs button{transition:none}
+}
