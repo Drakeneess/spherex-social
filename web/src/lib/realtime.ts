@@ -42,7 +42,8 @@ export function subscribeRealtime(handler:(change:RealtimeChange)=>void):()=>voi
   return ()=>window.removeEventListener(REALTIME_EVENT,listener);
 }
 
-export function startRealtime(onChange:(change:RealtimeChange)=>void, authenticated=false):()=>void {
+export function startRealtime(onChange:(change:RealtimeChange)=>void, authenticated=false,
+                              jobId?:string):()=>void {
   let stopped=false;
   let connected=false;
   let active:AbortController|null=null;
@@ -68,7 +69,7 @@ export function startRealtime(onChange:(change:RealtimeChange)=>void, authentica
         // A fresh short-lived JWT also survives reconnects after 30 minutes.
         const token=authenticated ? await realtimeToken() : null;
         if(stopped)return;
-        const response=await fetch(realtimeBase+'/v1/events',{
+        const response=await fetch(realtimeBase+'/v1/events'+(jobId?'?job_id='+encodeURIComponent(jobId):''),{
           method:'GET',credentials:'same-origin',cache:'no-store',
           headers:{'Accept':'text/event-stream',...(token?{'Authorization':'Bearer '+token}:{})},
           signal:active.signal,
