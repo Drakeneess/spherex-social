@@ -17,7 +17,7 @@ import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 import OnboardingTour from './components/OnboardingTour';
 import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
-  nudgeStep, publishingSteps, readFlag, readTasks, saveTasks,
+  nudgeStep, publishingSteps, readFlag, readTasks, saveTasks, signalTask,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
