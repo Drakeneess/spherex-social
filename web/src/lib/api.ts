@@ -151,6 +151,30 @@ const TOKEN_KEY = 'astrogram.access_token';
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 export const hasToken = () => Boolean(sessionStorage.getItem(TOKEN_KEY));
 export const clearToken = () => sessionStorage.removeItem(TOKEN_KEY);
+
+// Short JWTs are an implementation detail. An HttpOnly, server-backed device
+// session survives page reloads and renews them. Never store a refresh secret
+// in JavaScript storage or expose it to the application.
+let refreshInFlight: Promise<string | null> | null = null;
+async function renewAccess(): Promise<string | null> {
+  if(refreshInFlight)return refreshInFlight;
+  refreshInFlight=(async()=>{
+    try{
+      const response=await fetch(`${BASE}/v1/auth/refresh`,{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Accept':'application/json'},
+      });
+      if(!response.ok)return null;
+      const value=await response.json() as {access_token?:string};
+      if(typeof value.access_token!=='string'||!value.access_token)return null;
+      sessionStorage.setItem(TOKEN_KEY,value.access_token);
+      return value.access_token;
+    }catch{return null;}
+  })();
+  try{return await refreshInFlight;}
+  finally{refreshInFlight=null;}
+}
+
 const messages: Record<number, string> = {
   401: 'Sesión vencida o credenciales incorrectas', 403: 'No tienes permiso',
   404: 'No encontrado', 409: 'Ya existe un recurso con esos datos',
@@ -158,33 +182,45 @@ const messages: Record<number, string> = {
 };
 
 async function request<T>(path: string, init: RequestInit = {}, auth = false, signal?: AbortSignal): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set('Accept', 'application/json');
-  if (init.body != null) headers.set('Content-Type', 'application/json');
-  const token = sessionStorage.getItem(TOKEN_KEY);
-  if (auth) {
-    if (!token) throw new ApiError('Debes iniciar sesión para continuar', 401);
-    headers.set('Authorization', `Bearer ${token}`);
+  const baseHeaders = new Headers(init.headers);
+  baseHeaders.set('Accept','application/json');
+  if(init.body!=null)baseHeaders.set('Content-Type','application/json');
+  let token=auth?sessionStorage.getItem(TOKEN_KEY):null;
+  if(auth&&!token){
+    token=await renewAccess();
+    if(!token)throw new ApiError('Debes iniciar sesión para continuar',401);
   }
-  let response: Response;
-  try {
-    response = await fetch(`${BASE}${path}`, { ...init, headers, signal });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new ApiError('No se pudo conectar con la API de AstroGram', 0);
+  const send=async(accessToken:string|null)=>{
+    const headers=new Headers(baseHeaders);
+    if(auth&&accessToken)headers.set('Authorization',`Bearer ${accessToken}`);
+    try{
+      return await fetch(`${BASE}${path}`,{
+        ...init,headers,signal,credentials:'same-origin',
+      });
+    }catch(error){
+      if(signal?.aborted)throw error;
+      throw new ApiError('No se pudo conectar con la API de AstroGram',0);
+    }
+  };
+  let response=await send(token);
+  // A concurrent tab or request may have just renewed its access token.
+  // Try the latest access token, or refresh once, but never replay endlessly.
+  if(auth&&response.status===401){
+    const current=sessionStorage.getItem(TOKEN_KEY);
+    const next=current&&current!==token?current:await renewAccess();
+    if(next)response=await send(next);
+    if(response.status===401||!next)clearToken();
   }
-  if (!response.ok) {
-    let detail = messages[response.status] ?? `Error HTTP ${response.status}`;
-    try {
-      const body: {detail?: string | {msg: string}[]} = await response.json();
-      if (typeof body.detail === 'string') detail = body.detail;
-      else if (Array.isArray(body.detail)) detail = body.detail.map(item => item.msg).join(' · ');
-    } catch { /* preserve the HTTP error */ }
-    if (response.status === 401 && auth) clearToken();
-    throw new ApiError(detail, response.status);
+  if(!response.ok){
+    let detail=messages[response.status]??`Error HTTP ${response.status}`;
+    try{
+      const body:{detail?:string|{msg:string}[]}=await response.json();
+      if(typeof body.detail==='string')detail=body.detail;
+      else if(Array.isArray(body.detail))detail=body.detail.map(x=>x.msg).join(' · ');
+    }catch{/* Preserve the HTTP error. */}
+    throw new ApiError(detail,response.status);
   }
-  // Likes, follows, bookmarks and DELETE routes return HTTP 204, not JSON.
-  if (response.status === 204) return undefined as T;
+  if(response.status===204)return undefined as T;
   return response.json() as Promise<T>;
 }
 const get = <T>(path: string, auth = false, signal?: AbortSignal) =>
@@ -203,7 +239,18 @@ export const api = {
     sessionStorage.setItem(TOKEN_KEY, result.access_token);
     return result;
   },
-  logout: clearToken,
+  // A new browser tab can restore the login using only the HttpOnly cookie.
+  async restoreSession() {
+    return Boolean(sessionStorage.getItem(TOKEN_KEY)||await renewAccess());
+  },
+  async logout() {
+    // Revocation must be acknowledged before pretending logout succeeded.
+    const response=await fetch(`${BASE}/v1/auth/logout`,{
+      method:'POST',credentials:'same-origin',cache:'no-store',
+    });
+    if(!response.ok)throw new ApiError('No se pudo cerrar sesión en el servidor',response.status);
+    clearToken();
+  },
   me: () => get<Profile>('/v1/users/me', true),
   patchMe: (data: {display_name?:string;bio?:string|null}) => write<Profile>('PATCH','/v1/users/me',data),
   user: (username: string) => get<Profile>(`/v1/users/${encodeURIComponent(username)}`),

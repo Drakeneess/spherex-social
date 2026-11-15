@@ -369,7 +369,7 @@ function ActivityPage(){
 export default function App(){
   const [route,setRoute]=useState<Route>(parseRoute);
   const [user,setUser]=useState<Profile|null>(null);
-  const [checking,setChecking]=useState(hasToken());
+  const [checking,setChecking]=useState(true);
   const [publish,setPublish]=useState(false);
   const [feedVersion,setFeedVersion]=useState(0);
   const [publishRegion,setPublishRegion]=useState<PublishRegion|null>(null);
@@ -393,9 +393,15 @@ export default function App(){
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
   // Previous route state must never leave the auth page panned horizontally.
   useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
-  useEffect(()=>{if(!hasToken()){setChecking(false);return;}let active=true;
-    api.me().then(p=>{if(active)setUser(p)}).catch(()=>{if(active){api.logout();setUser(null)}}).finally(()=>{if(active)setChecking(false)});
-    return()=>{active=false};},[]);
+  useEffect(()=>{
+    let active=true;
+    api.restoreSession()
+      .then(restored=>restored?api.me():null)
+      .then(profile=>{if(active)setUser(profile);})
+      .catch(()=>{if(active)setUser(null);})
+      .finally(()=>{if(active)setChecking(false);});
+    return()=>{active=false;};
+  },[]);
   useEffect(()=>{
     if(!user){setMissions({});setGuideHidden(false);setTour(null);return;}
     const id=user.id;
@@ -517,7 +523,11 @@ export default function App(){
   function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
-  function logout(){api.logout();setToast('');setTour(null);setUser(null);setPublish(false);go('home');}
+  async function logout(){
+    try{await api.logout();}
+    catch{setToast('No se pudo cerrar sesión en el servidor. Revisa la conexión.');return;}
+    setToast('');setTour(null);setUser(null);setPublish(false);go('home');
+  }
   function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
     const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
