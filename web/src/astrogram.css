@@ -1455,3 +1455,4 @@ body {
 .post-blink-preview.format-portrait{aspect-ratio:4/5}
 .post-blink-preview.format-wide{aspect-ratio:16/9}
 .profile-tile .post-blink-preview{aspect-ratio:1/1}
+.post-blink-preview.format-portrait,.post-blink-preview.format-wide{min-height:0}

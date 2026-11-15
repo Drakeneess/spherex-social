@@ -312,7 +312,7 @@ def _produce_frame(job_id: uuid.UUID, row: SkySearchJob, records: list[dict], in
     else:
         session = PreviewSession(
             row.ra, row.dec, row.size_arcmin,
-            row.detector, records, "sia2",
+            row.detector, records, "sia2", archive_science=True,
         )
         for attempt in range(1, MAX_FITS_ATTEMPTS + 1):
             try:

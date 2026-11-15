@@ -123,7 +123,7 @@ def test_real_fits_cutout_is_preserved_before_8bit_reveal(monkeypatch, tmp_path)
     record = {"url": str(cutout), "date": "2025-05-15T00:00:00", "release": "DR1"}
     session = explorer.Session(
         ra=133.795129, dec=-7.245147, size_arcmin=6,
-        detector=2, records=[record], source="sia2",
+        detector=2, records=[record], source="sia2", archive_science=True,
     )
     result = explorer.render_real(session, record)
     assert result["mode"] == "real"
