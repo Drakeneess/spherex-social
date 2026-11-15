@@ -9,6 +9,13 @@ export const TASKS = [
 ] as const;
 export type TaskKey = typeof TASKS[number]['key'];
 export type TaskProgress = Partial<Record<TaskKey, true>>;
+export const completedMissionCount=(tasks:TaskProgress)=>
+  TASKS.filter(task=>tasks[task.key]===true).length;
+export const allMissionsCompleted=(tasks:TaskProgress)=>
+  completedMissionCount(tasks)===TASKS.length;
+export const newlyCompletedAllMissions=(before:TaskProgress,after:TaskProgress)=>
+  !allMissionsCompleted(before)&&allMissionsCompleted(after);
+
 export type NudgeKey = 'like'|'mark'|'game';
 export const TASK_EVENT = 'astrogram:onboarding-task';
 export const NUDGE_EVENT = 'astrogram:onboarding-nudge';
