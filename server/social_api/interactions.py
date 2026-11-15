@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .auth import current_user
 from .db import get_db
 from .models import Bookmark, Comment, Follow, Post, PostLike, PostRepost, User
-from .posts import PostOut, bookmarked_ids, counts_by_post, optional_user, reposted_ids, serialize
+from .posts import PostOut, bookmarked_ids, counts_by_post, optional_user, reposted_ids, post_extras, serialize
 
 router = APIRouter(prefix='/v1', tags=['interactions'])
 
@@ -166,9 +166,11 @@ def my_bookmarks(
     ids = [post.id for post, _ in rows]
     viewer_reposts = reposted_ids(db, user, ids)
     viewer_bookmarks = bookmarked_ids(db, user, ids)
+    media,tags=post_extras(db,ids)
     return [
         serialize(post, username, counts, viewer_reposts=viewer_reposts,
-                  viewer_bookmarks=viewer_bookmarks)
+                  viewer_bookmarks=viewer_bookmarks,
+                  media=media.get(post.id),hashtags=tags.get(post.id))
         for post, username in rows
     ]
 
