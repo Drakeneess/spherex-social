@@ -7,6 +7,11 @@ import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
+import TaurusChart from '../components/TaurusChart';
+import {
+  TAURUS_CENTER, TAURUS_TARGETS, findTaurusTarget, resolveSkyName,
+  type SkyPosition,
+} from '../lib/taurus';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
 const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -22,11 +27,14 @@ type Params = {
 };
 
 export default function ExplorerPage({
-  observationId, initialRa, initialDec, onPublish, onLogin, onProgress, onGoHome, active,
+  observationId, initialRa, initialDec, constellation, initialTarget,
+  onPublish, onLogin, onProgress, onGoHome, active,
 }: {
   observationId?: string;
   initialRa?: number;
   initialDec?: number;
+  constellation?: string;
+  initialTarget?: string;
   onPublish: (region: ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe}) => void;
   onLogin: () => void;
   onProgress: (status: {trace: SearchTrace | null;loading: boolean;jobId?:string|null;restored?:boolean}) => void;
@@ -39,6 +47,10 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
+  const [skyName,setSkyName] = useState('');
+  const [nameError,setNameError] = useState('');
+  const [showTaurus,setShowTaurus] = useState(false);
+  const [selectedName,setSelectedName] = useState('Región de Tauro');
   // The explorer uses the fast discovery method by default; TAP remains a backend fallback.
   const catalogMethod: 'sia2' | 'tap' = 'sia2';
 
@@ -290,6 +302,21 @@ export default function ExplorerPage({
   }, [watchSearch, observationId, initialRa, initialDec]);
 
   useEffect(() => {
+    if(!active||constellation!=='taurus')return;
+    setShowTaurus(true);
+    setSkyName('Tauro');
+    setNameError('');
+    const target=initialTarget?findTaurusTarget(initialTarget):undefined;
+    const point:SkyPosition=target??TAURUS_CENTER;
+    setRa(String(point.ra));
+    setDec(String(point.dec));
+    setSelectedName(target?.name??'Centro aproximado de Tauro');
+    setDemo(false);
+    // Opening the atlas only changes form coordinates: the astronomer must
+    // explicitly start a search to avoid unnecessary expensive IRSA jobs.
+  },[active,constellation,initialTarget]);
+
+  useEffect(() => {
     if (!observationId) return;
     let active = true;
     api.observation(observationId).then(saved => {
@@ -356,6 +383,33 @@ export default function ExplorerPage({
     event.preventDefault();
     const params = readParams();
     if (params) void load(params);
+  }
+  function selectTaurusPosition(point:SkyPosition,name:string){
+    setRa(String(Number(point.ra.toFixed(6))));
+    setDec(String(Number(point.dec.toFixed(6))));
+    setSelectedName(name);
+    setNameError('');
+  }
+  function locateByName(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    const match=resolveSkyName(skyName);
+    if(!match){
+      setNameError('Por ahora el atlas por nombre incluye Tauro, sus estrellas y M1/M45.');
+      return;
+    }
+    setShowTaurus(true);
+    setNameError('');
+    setDemo(false);
+    if(match.type==='target'){
+      selectTaurusPosition(match.target,match.target.name);
+    }else{
+      selectTaurusPosition(TAURUS_CENTER,'Centro aproximado de Tauro');
+    }
+  }
+  function searchSelectedRegion(){
+    if(loading)return;
+    const params=readParams();
+    if(params)void load(params);
   }
   function applyPreset(preset: (typeof presets)[number]) {
     setRa(String(preset.ra));
@@ -430,6 +484,10 @@ export default function ExplorerPage({
     ? `RA ${formatRa(result.ra)} · Dec ${formatDec(result.dec)}`
     : '–';
   return <main className="wrap single epoch-explorer" aria-hidden={!active ? true : undefined}>
+    {showTaurus&&<TaurusChart
+      selected={{ra:Number(ra),dec:Number(dec)}} selectedName={selectedName}
+      onSelect={selectTaurusPosition} onSearch={searchSelectedRegion}
+      loading={loading} onClose={()=>setShowTaurus(false)}/>}
     <div className="xgrid epoch-grid">
       <section className="card epoch-viewer">
         <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Explorador de épocas</span><span className="chip">{badge}</span></div>
@@ -473,6 +531,24 @@ export default function ExplorerPage({
       <aside className="epoch-side">
         <section className="card epoch-search-card">
           <div className="card-h"><span>Buscar en el cielo</span></div>
+          <div className="constellation-lookup">
+            <label htmlFor="constellation-name"><Search size={15}/> Buscar constelación u objeto</label>
+            <form className="constellation-lookup-form" onSubmit={locateByName}>
+              <input id="constellation-name" list="taurus-name-suggestions"
+                value={skyName} autoComplete="off"
+                onChange={event=>{setSkyName(event.target.value);setNameError('');}}
+                placeholder="Tauro, Aldebarán, Pléyades…"/>
+              <datalist id="taurus-name-suggestions">
+                <option value="Tauro"/><option value="Taurus"/>
+                {TAURUS_TARGETS.map(target=><option key={target.id} value={target.name}/>)}
+              </datalist>
+              <button type="submit" className="btn sm" aria-label="Localizar en el mapa">
+                <Search size={16}/> Ver mapa
+              </button>
+            </form>
+            {nameError&&<p className="constellation-lookup-error" role="alert">{nameError}</p>}
+            <small>Localiza primero la región; tú decides cuándo buscar imágenes SPHEREx.</small>
+          </div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick" data-tour="explore-presets">
               {presets.map(preset => <button key={preset.name} type="button"
@@ -482,10 +558,10 @@ export default function ExplorerPage({
             <div className="two">
               <div className="field"><label htmlFor="epoch-ra">RA (°, 0–360)</label>
                 <input id="epoch-ra" type="number" step="any" min={0} max={359.999999}
-                  required value={ra} onChange={event => setRa(event.target.value)}/></div>
+                  required value={ra} onChange={event => {setRa(event.target.value);setSelectedName('Región personalizada');}}/></div>
               <div className="field"><label htmlFor="epoch-dec">Dec (°, −90–90)</label>
                 <input id="epoch-dec" type="number" step="any" min={-90} max={90}
-                  required value={dec} onChange={event => setDec(event.target.value)}/></div>
+                  required value={dec} onChange={event => {setDec(event.target.value);setSelectedName('Región personalizada');}}/></div>
             </div>
             <div className="two">
               <div className="field"><label htmlFor="epoch-size">Tamaño (′, 1–12)</label>
