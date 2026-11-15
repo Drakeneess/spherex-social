@@ -672,3 +672,32 @@ una notificación de comentario se abre la conversación de la publicación;
 seguir a alguien abre su perfil. **No** hay Web Push, SMS, correo electrónico,
 solicitudes de amistad ni notificaciones simuladas en esta fase.
 
+## Búsqueda por nombre y atlas de Tauro
+
+El campo de búsqueda global reconoce **Tauro**, **Taurus** y la abreviatura
+**Tau**, además de estrellas y objetos seleccionados como Aldebarán, Elnath,
+las Pléyades (M45) y la Nebulosa del Cangrejo (M1). El explorador también
+incluye un buscador por nombre junto al formulario RA/Dec.
+
+La ruta `#/explore?constellation=taurus` abre la **carta estelar de Tauro**
+sin crear un trabajo de catálogo. `&target=m1` selecciona M1, también sin
+enviar solicitudes al archivo. Se puede seleccionar una estrella de la lista
+o pulsar en la carta para preparar coordenadas. **Solo** pulsar
+«Buscar aquí con SPHEREx» inicia el mismo trabajo persistente que el
+explorador ya utiliza; conserva detector, tamaño de campo (1–12 minutos
+de arco), épocas y métodos de revelado. No se envía una búsqueda de toda
+la constelación de una vez.
+
+Los puntos de estrellas provienen de posiciones de época J2000 de un
+catálogo Hipparcos/HYG publicado, y M1 utiliza la posición de NASA:
+- [Constelaciones oficiales UAI: Tauro/Taurus (Tau)](https://www.iau.org/IAU/Astronomy-FAQs/Constellations.aspx)
+- [Lista de estrellas de Tauro y sus posiciones](https://en.wikipedia.org/wiki/List_of_stars_in_Taurus)
+- [M1: coordenadas NASA/Hubble](https://science.nasa.gov/asset/hubble/scale-and-compass-for-crab-nebula/)
+
+La carta muestra una **rejilla RA/Dec**, con norte arriba y ascensión recta
+creciente hacia la izquierda (este). Las líneas que unen estrellas son
+**orientativas, no los límites oficiales de la UAI**; no hay inventario
+completo de estrellas y la carta no se presenta como una imagen SPHEREx.
+La cobertura real en IRSA depende de las observaciones disponibles. En
+esta fase el atlas por nombre admite **solo Tauro y objetos seleccionados**;
+la estructura permite añadir otras constelaciones más adelante.
