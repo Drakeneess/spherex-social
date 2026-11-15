@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Bell, Bookmark, LogOut, Settings, Users } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
 import BrandLogo from './components/BrandLogo';
@@ -11,6 +11,11 @@ import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
+import OnboardingTour from './components/OnboardingTour';
+import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
+  nudgeStep, publishingSteps, readFlag, readTasks, saveTasks, signalTask,
+  storageKey, welcomeSteps, writeFlag,
+  type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
 type PublishRegion = ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe};
 type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
@@ -110,6 +115,7 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
       await api.createPost({caption:caption.trim(),visibility,observation_id,
         sky_job_id:attach && region?.sky_job_id ? region.sky_job_id : null,
         display_recipe:attach&&region?.display_recipe?region.display_recipe:null});
+      signalTask('post'); // Only an acknowledged API write completes the mission.
       onDone();
     }catch(e){setError(message(e));}finally{setBusy(false);}
   }
@@ -119,12 +125,12 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
       {error&&<p className="form-error" role="alert">{error}</p>}
       <form onSubmit={e=>void submit(e)}>
         <div className="field"><label htmlFor="caption">¿Qué observaste?</label>
-          <textarea id="caption" maxLength={3000} rows={5} required value={caption} onChange={e=>setCaption(e.target.value)}
+          <textarea id="caption" data-tour="publish-caption" maxLength={3000} rows={5} required value={caption} onChange={e=>setCaption(e.target.value)}
             placeholder="Entre dos observaciones parece que este punto cambió de posición…"/></div>
         <div className="field"><label htmlFor="visibility">Visibilidad</label><select id="visibility" value={visibility} onChange={e=>setVisibility(e.target.value as Post['visibility'])}>
           <option value="public">Pública — aparece en el feed</option><option value="unlisted">No listada — solo mediante enlace</option><option value="private">Privada — solo tú</option>
         </select></div>
-        {region&&<label className="attach-observation"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/>
+        {region&&<label data-tour="publish-region" className="attach-observation"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/>
           Adjuntar RA {region.ra_deg.toFixed(4)}° · Dec {region.dec_deg.toFixed(4)}° · D{region.detector}</label>}
         {attach&&region?.display_recipe&&<p className="reveal-publish-confirm">
           <strong>Revelado listo:</strong> paleta {region.display_recipe.palette},
@@ -134,22 +140,23 @@ function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose
         {!region&&<p className="hint">Puedes publicar solo texto. Para adjuntar coordenadas, abre primero el explorador.</p>}
         <p className="hint">Las coordenadas guardadas no constituyen un hallazgo astronómico confirmado.</p>
         <div className="mrow"><button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn p" disabled={busy}>{busy?'Publicando…':'Publicar'}</button></div>
+          <button type="submit" data-tour="publish-submit" className="btn p" disabled={busy}>{busy?'Publicando…':'Publicar'}</button></div>
       </form>
     </div>
   </div>;
 }
 
-function FeedPage({user,onProfile,onExplore,onLogin,onPublish}:{
+function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,onHideGuide}:{
   user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void;
+  tasks:TaskProgress;guideHidden:boolean;onHideGuide:()=>void;
 }){
   const [posts,setPosts]=useState<Post[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
   const [offset,setOffset]=useState(0);
   const [more,setMore]=useState(true);
-  const [guideVisible,setGuideVisible]=useState(true);
   const streak=getGameStreak();
+  const completed=TASKS.filter(task=>tasks[task.key]).length;
   async function fetchFeed(reset=false){
     setLoading(true);setError('');
     try{
@@ -170,18 +177,25 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish}:{
       {!loading&&posts.length>0&&<button type="button" className="refresh-feed" onClick={()=>void fetchFeed(true)}>Actualizar feed</button>}
     </main>
     <aside className="side" aria-label="Explorar y perfil">
-      {guideVisible && <section className="card first-steps">
-        <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Primeros pasos</span>
-          <span className="chip">Guía</span></div>
-        <div className="first-steps-links">
-          <button type="button" onClick={()=>go('explore')}><AstroGlyph name="telescope" size={17}/> Explora el cielo</button>
-          <button type="button" onClick={()=>go('explore')}><AstroGlyph name="pin" size={17}/> Marca un objeto en movimiento</button>
-          <button type="button" onClick={()=>go('game')}><AstroGlyph name="target" size={17}/> Juega el reto diario</button>
-          <button type="button" onClick={()=>go('home')}><AstroGlyph name="ship" size={17}/> Envía tu primer «Me encoheta»</button>
-          <button type="button" onClick={()=>go('settings')}><AstroGlyph name="pen" size={17}/> Completa tu bio</button>
-          <button type="button" onClick={onPublish}><AstroGlyph name="spark" size={17}/> Publica tu primer hallazgo</button>
+      {!guideHidden && <section className="card first-steps" data-tour="first-steps">
+        <div className="card-h"><span><AstroGlyph name="ship" size={18}/> Primeros pasos</span>
+          <span className="chip">{completed}/{TASKS.length}</span></div>
+        <div className="first-steps-progress" role="progressbar" aria-label="Misiones completadas"
+          aria-valuemin={0} aria-valuemax={TASKS.length} aria-valuenow={completed}>
+          <span style={{width:`${completed/TASKS.length*100}%`}}/>
         </div>
-        <button type="button" className="first-steps-hide" onClick={()=>setGuideVisible(false)}>Ocultar</button>
+        <div className="first-steps-links">
+          {TASKS.map(task=><button type="button" key={task.key}
+            className={tasks[task.key]?'onboard-mission done':'onboard-mission'}
+            aria-label={`${task.title}${tasks[task.key]?', completada':''}`}
+            onClick={()=>task.route==='publish'?onPublish():go(task.route)}>
+            <span className="onboard-mission-icon">{tasks[task.key]
+              ? <Check size={16} strokeWidth={3}/>
+              : <AstroGlyph name={task.icon} size={17}/>}</span>
+            <span>{task.title}</span>
+          </button>)}
+        </div>
+        <button type="button" className="first-steps-hide" onClick={onHideGuide}>Ocultar</button>
       </section>}
       <button type="button" className="card streak" onClick={()=>go('game')}>
         <div className="streak-counter"><AstroGlyph name="flame" size={29} className={streak.count>0?'streak-active':'streak-inactive'}/>
@@ -303,12 +317,16 @@ function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:
   </main>;
 }
 
-function SettingsPage({user,onUpdate,onLogout}:{user:Profile;onUpdate:(p:Profile)=>void;onLogout:()=>void}){
+function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
+  user:Profile;onUpdate:(p:Profile)=>void;onLogout:()=>void;
+  onReplayTour:()=>void;onShowGuide:()=>void;
+}){
   const [name,setName]=useState(user.display_name),[bio,setBio]=useState(user.bio??'');
   const [error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
   async function update(event:FormEvent){
     event.preventDefault();setSaved(false);setError('');setBusy(true);
-    try{const updated=await api.patchMe({display_name:name.trim(),bio:bio.trim()||null});onUpdate(updated);setSaved(true);}
+    try{const updated=await api.patchMe({display_name:name.trim(),bio:bio.trim()||null});
+      onUpdate(updated);if(updated.bio?.trim())signalTask('bio');setSaved(true);}
     catch(e){setError(message(e))}finally{setBusy(false)}
   }
   return <main className="wrap narrow settings-page">
@@ -320,6 +338,19 @@ function SettingsPage({user,onUpdate,onLogout}:{user:Profile;onUpdate:(p:Profile
         {error&&<p className="form-error" role="alert">{error}</p>}{saved&&<p className="success-note">Cambios guardados.</p>}
         <button className="btn p" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar perfil'}</button>
       </form>
+      <div className="sec onboarding-settings">
+        <h3>Aprender AstroGram</h3>
+        <p>Puedes repetir la guía de bienvenida o recuperar las misiones que ocultaste.
+          Tu progreso no se reiniciará.</p>
+        <div className="mrow">
+          <button type="button" className="btn" onClick={onReplayTour}>
+            <AstroGlyph name="telescope" size={16}/> Repetir recorrido
+          </button>
+          <button type="button" className="btn" onClick={onShowGuide}>
+            <AstroGlyph name="ship" size={16}/> Ver primeros pasos
+          </button>
+        </div>
+      </div>
       <div className="sec"><h3>Cuenta</h3><p>El cambio y recuperación de contraseña todavía no están implementados en FastAPI.</p>
         <div className="row"><span>Correo</span><b>{user.email??'—'}</b></div>
         <button className="btn danger" onClick={onLogout}><LogOut size={16}/> Cerrar sesión</button></div>
@@ -346,6 +377,12 @@ export default function App(){
   const [toast,setToast]=useState('');
   const [backgroundStatus,setBackgroundStatus]=useState<ExplorerBackgroundStatus | null>(null);
   const [dockDismissed,setDockDismissed]=useState(false);
+  const [missions,setMissions]=useState<TaskProgress>({});
+  const [guideHidden,setGuideHidden]=useState(false);
+  const [tour,setTour]=useState<TourSpec|null>(null);
+  const [tourRevision,setTourRevision]=useState(0);
+  const [onboardingNotice,setOnboardingNotice]=useState('');
+  const [celebrate,setCelebrate]=useState(false);
   useEffect(()=>{setDockDismissed(false)},[backgroundStatus?.trace?.startedAt]);
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
   // Previous route state must never leave the auth page panned horizontally.
@@ -353,13 +390,128 @@ export default function App(){
   useEffect(()=>{if(!hasToken()){setChecking(false);return;}let active=true;
     api.me().then(p=>{if(active)setUser(p)}).catch(()=>{if(active){api.logout();setUser(null)}}).finally(()=>{if(active)setChecking(false)});
     return()=>{active=false};},[]);
+  useEffect(()=>{
+    if(!user){setMissions({});setGuideHidden(false);setTour(null);return;}
+    const id=user.id;
+    const refresh=()=>{
+      const stored=readTasks(id);
+      if(user.bio?.trim()&&!stored.bio){
+        stored.bio=true;saveTasks(id,stored);
+      }
+      setMissions(stored);
+      setGuideHidden(readFlag(id,'hidden'));
+    };
+    refresh();
+    // Existing accounts earn their already-published mission without a fake action.
+    let active=true;
+    api.userPosts(user.username).then(posts=>{
+      if(!active || !posts.some(post=>post.username===user.username))return;
+      const state=readTasks(id);
+      if(!state.post){state.post=true;saveTasks(id,state);setMissions(state);}
+    }).catch(()=>{/* Onboarding never interrupts the real feed. */});
+    const handleStorage=(event:StorageEvent)=>{
+      if(event.key?.startsWith(storageKey(id,'')))refresh();
+    };
+    window.addEventListener('storage',handleStorage);
+    return()=>{active=false;window.removeEventListener('storage',handleStorage);};
+  },[user?.id,user?.username,user?.bio]);
+  useEffect(()=>{
+    if(!user)return;
+    const task=(event:Event)=>{
+      const key=(event as CustomEvent<{key?:unknown}>).detail?.key;
+      if(!isTaskKey(key))return;
+      const prior=readTasks(user.id);
+      if(prior[key])return;
+      const updated:TaskProgress={...prior,[key]:true};
+      saveTasks(user.id,updated);
+      setMissions(updated);
+      const completed=TASKS.filter(item=>updated[item.key]).length;
+      if(completed===TASKS.length){
+        setOnboardingNotice('¡Completaste los primeros pasos! Ya conoces AstroGram.');
+        setCelebrate(true);
+      }else{
+        setOnboardingNotice(`${TASKS.find(item=>item.key===key)?.title} · ${completed}/${TASKS.length}`);
+      }
+    };
+    window.addEventListener(TASK_EVENT,task);
+    return()=>window.removeEventListener(TASK_EVENT,task);
+  },[user?.id]);
+  useEffect(()=>{
+    if(!onboardingNotice)return;
+    const timer=window.setTimeout(()=>setOnboardingNotice(''),3600);
+    return()=>window.clearTimeout(timer);
+  },[onboardingNotice]);
+  useEffect(()=>{
+    if(!celebrate)return;
+    const timer=window.setTimeout(()=>setCelebrate(false),3400);
+    return()=>window.clearTimeout(timer);
+  },[celebrate]);
+  const closeTour=useCallback((_completed:boolean)=>{
+    if(user&&tour)writeFlag(user.id,tour.key);
+    setTour(null);setTourRevision(n=>n+1);
+  },[user?.id,tour?.key]);
+  useEffect(()=>{
+    if(!user||checking||tour||publish)return;
+    const id=user.id;
+    const isWelcome=route.page==='home'&&!readFlag(id,'welcome');
+    const page=route.page==='explore'?'explore':route.page==='game'?'game':null;
+    const needsPage=page&&readFlag(id,'welcome')&&!readFlag(id,`page-${page}`);
+    if(!isWelcome&&!needsPage)return;
+    const timer=window.setTimeout(()=>{
+      if(isWelcome){
+        setTour({key:'welcome',steps:welcomeSteps(
+          user.display_name.trim().split(/\s+/)[0]||user.username)});
+      }else if(page==='explore'){
+        setTour({key:'page-explore',steps:explorerSteps});
+      }else if(page==='game'){
+        setTour({key:'page-game',steps:gameSteps});
+      }
+    },650);
+    return()=>window.clearTimeout(timer);
+  },[user?.id,user?.display_name,user?.username,checking,route.page,tour,publish,tourRevision]);
+  useEffect(()=>{
+    if(!user||!publish||tour||!readFlag(user.id,'welcome')
+      ||readFlag(user.id,'publish'))return;
+    const timer=window.setTimeout(()=>setTour({
+      key:'publish',steps:publishingSteps(Boolean(publishRegion)),soft:true,
+    }),450);
+    return()=>window.clearTimeout(timer);
+  },[user?.id,publish,publishRegion,tour,tourRevision]);
+  useEffect(()=>{
+    if(!user)return;
+    const nudge=(event:Event)=>{
+      const kind=(event as CustomEvent<{key?:NudgeKey}>).detail?.key;
+      if(!kind||!['like','mark','game'].includes(kind)||tour
+        ||!readFlag(user.id,'welcome')||readFlag(user.id,`nudge-${kind}`))return;
+      setTour({key:`nudge-${kind}`,steps:[nudgeStep(kind)],soft:true});
+    };
+    window.addEventListener(NUDGE_EVENT,nudge);
+    return()=>window.removeEventListener(NUDGE_EVENT,nudge);
+  },[user?.id,tour]);
+  useEffect(()=>{if(tour&&((tour.key==='publish'&&!publish)
+      ||(tour.key==='page-explore'&&route.page!=='explore')
+      ||(tour.key==='page-game'&&route.page!=='game')
+      ||(tour.key==='welcome'&&route.page!=='home'))){
+      setTour(null);
+    }
+  },[tour,route.page,publish]);
+  function hideGuide(){
+    if(!user)return;writeFlag(user.id,'hidden');setGuideHidden(true);
+  }
+  function showGuide(){
+    if(!user)return;writeFlag(user.id,'hidden',false);setGuideHidden(false);go('home');
+  }
+  function replayTour(){
+    if(!user)return;writeFlag(user.id,'welcome',false);setTour(null);
+    setTourRevision(n=>n+1);go('home');
+  }
   function loginRequired(){setToast('Inicia sesión para utilizar esta función.');go('home');}
   function navigateProfile(name:string){go(`u/${encodeURIComponent(name)}`)}
   function openObservation(id:string){go(`explore?observation_id=${encodeURIComponent(id)}`)}
   function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
-  function logout(){api.logout();setUser(null);setPublish(false);go('home');}
+  function logout(){api.logout();setTour(null);setUser(null);setPublish(false);go('home');}
   function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
     const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
@@ -373,23 +525,23 @@ export default function App(){
       ? <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>
       : <>
     <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><BrandLogo size={36}/><span>AstroGram</span></button>
-      <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
+      <form className="search" onSubmit={doSearch}><input data-tour="global-search" aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
         placeholder="Buscar astroamigos"/></form>
       <nav className="nav" aria-label="Navegación principal">
-        <button className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
+        <button data-tour="nav-home" className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
           <AstroGlyph name="home" size={19}/><span className="t">Inicio</span></button>
-        <button className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
+        <button data-tour="nav-explore" className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
           <AstroGlyph name="telescope" size={19}/><span className="t">Explorar</span></button>
-        <button className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
+        <button data-tour="nav-game" className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
           <AstroGlyph name="target" size={19}/><span className="t">Juego</span></button>
         {user&&<>
           <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Solicitudes (pendiente de backend)">
             <AstroGlyph name="bell" size={19}/><span className="t">Solicitudes</span></button>
-          <button className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
+          <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
             <Avatar name={user.username} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
             <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
-          <button className="btn p sm newpost" onClick={()=>openPublish()}>
+          <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()}>
             <AstroGlyph name="spark" size={15}/><span className="t">Publicar</span></button>
         </>}
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
@@ -411,13 +563,22 @@ export default function App(){
       (route.page==='game'?<GamePage onExplore={()=>go('explore')}/>:
        route.page==='profile'&&route.username?<ProfilePage username={route.username} current={user}
          onExplore={openObservation} onLogin={loginRequired}/>:
-       route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}/>:
+       route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}
+          onReplayTour={replayTour} onShowGuide={showGuide}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'?<ActivityPage/>:
-       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired} onPublish={()=>openPublish()}/>)}
+       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
+          onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden} onHideGuide={hideGuide}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
     {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}
+    {onboardingNotice&&user&&<div className="ag-onboard-toast" role="status" aria-live="polite">
+      <Check size={17}/> {onboardingNotice}</div>}
+    {celebrate&&user&&<div className="ag-onboard-confetti" aria-hidden="true">{Array.from({length:30},(_,i)=>
+      <span key={i} style={{left:`${(i*37)%100}%`,animationDelay:`${(i%7)*.09}s`,fontSize:`${17+(i%5)*4}px`}}>
+        <AstroGlyph name={i%2===0?'spark':'ship'} size={20}/>
+      </span>)}</div>}
+    {tour&&user&&<OnboardingTour key={tour.key} spec={tour} onClose={closeTour}/>}
     {!explorerVisible && !dockDismissed && backgroundStatus?.trace &&
       <BackgroundSkyDock status={backgroundStatus} onOpen={()=>go('explore')}
         onDismiss={()=>setDockDismissed(true)}/>}

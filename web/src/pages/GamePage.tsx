@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Flag, Lightbulb, Trophy } from 'lucide-react';
 import AstroGlyph from '../components/AstroGlyph';
 import { recordGameCompleted } from '../lib/gameStreak';
+import { signalTask, signalNudge } from '../lib/onboarding';
 
 const names=['WISE 0855','Estrella de Barnard','Luhman 16','Cometa en tránsito','Candidato móvil'];
 function random(seed:number){let s=seed;return ()=>{s=(Math.imul(s,1664525)+1013904223)|0;return(s>>>0)/4294967296;};}
@@ -35,6 +36,7 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
     const correct=Math.hypot(answer.x-x,answer.y-y)<26;
     const points=correct?(hint?50:100):0;
     if(correct){setScore(s=>s+points);setFound(n=>n+1);}
+    signalTask('game');signalNudge('game');
     setDone(true);setFeedback(correct?`¡Encontraste el objeto! +${points} puntos.`:'Esta vez no lo encontraste.');
   }
   return <main className="wrap narrow"><div className="card">
@@ -42,18 +44,18 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
     {round<0?<div className="gend"><AstroGlyph name="target" size={56}/><h2>Reto de hoy: 5 cielos</h2>
       <p>Compara dos campos estelares sintéticos y señala el objeto que cambió de posición.</p>
       <p className="hint">Este juego es una demostración: no usa imágenes SPHEREx ni valida descubrimientos.</p>
-      <button className="btn p" onClick={next}>Empezar</button></div>:
+      <button data-tour="game-start" className="btn p" onClick={next}>Empezar</button></div>:
     round>=5?<div className="gend"><Trophy size={54}/><h2>¡Reto completado!</h2>
       <div className="big grad">{score} puntos</div><p>Encontraste {found} de 5 objetos.</p>
       <div className="mrow"><button className="btn" onClick={()=>{setRound(-1);setScore(0);setFound(0);}}>Volver a jugar</button>
         <button className="btn p" onClick={onExplore}>Abrir explorador real</button></div></div>:
     <><div className="gbar"><span>Cielo {round+1} de 5 · {names[round]}</span><b>{score} puntos</b></div>
       <div className="gpair"><SkyRound index={round} answer={answer} hint={false}/>
-        <SkyRound index={round} after answer={answer} hint={hint} onGuess={guess}/></div>
+        <div data-tour="game-after"><SkyRound index={round} after answer={answer} hint={hint} onGuess={guess}/></div></div>
       <div className={`gres ${done?'good':''}`}>{done?feedback:'¿Qué punto de luz se movió? Toca la imagen derecha.'}</div>
       <div className="xctrl">{done?<button className="btn p sm" onClick={next}>{round===4?'Ver resultado':'Siguiente cielo'}</button>:<>
         <button className="btn sm" disabled={hint} onClick={()=>setHint(true)}><Lightbulb size={15}/> Pista (−50 puntos)</button>
-        <button className="btn sm" onClick={()=>{setDone(true);setFeedback('El punto se desplazó hacia arriba y a la derecha.')}}><Flag size={15}/> Me rindo</button>
+        <button className="btn sm" onClick={()=>{signalTask('game');signalNudge('game');setDone(true);setFeedback('El punto se desplazó hacia arriba y a la derecha.')}}><Flag size={15}/> Me rindo</button>
       </>}</div>
     </>}
   </div></main>;
