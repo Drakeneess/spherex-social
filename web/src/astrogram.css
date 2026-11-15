@@ -1345,24 +1345,78 @@ body {
   font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .profile-tile-share{font-size:.62rem;color:#a9c7ff}
-.profile-post-modal{z-index:80}
+/* Profile post reader: keep the header and actions reachable even at 150% zoom.
+   The post content scrolls independently of the dialog and the profile. */
+.profile-post-modal{z-index:80;padding:clamp(8px,2dvh,18px)}
 .profile-post-dialog{
   display:flex;flex-direction:column;
-  width:min(530px,calc(100vw - 28px));
-  max-height:90dvh;overflow-y:auto;
+  width:min(550px,100%);min-width:0;
+  max-height:calc(100dvh - clamp(16px,4dvh,36px));
+  overflow:hidden;
   border-radius:18px;background:var(--panel);
   border:1px solid var(--line);
   box-shadow:0 20px 80px rgba(0,0,0,.65);
 }
 .profile-post-dialog-top{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:10px 14px;border-bottom:1px solid var(--line);font-size:.84rem;font-weight:700;
-  position:sticky;top:0;background:var(--panel);z-index:4;
+  flex:0 0 auto;min-height:52px;
+  padding:11px 16px;border-bottom:1px solid var(--line);font-size:.84rem;font-weight:700;
+  background:var(--panel);z-index:4;
 }
-.profile-post-dialog-top span{display:flex;align-items:center;gap:7px;min-width:0}
-.profile-post-dialog-top button{border-radius:8px;padding:4px 9px;color:var(--muted);font-size:1.15rem}
+.profile-post-dialog-top span{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+.profile-post-dialog-top button{
+  display:grid;place-items:center;flex:none;width:36px;height:36px;
+  border-radius:10px;color:var(--muted);transition:background .15s,color .15s;
+}
 .profile-post-dialog-top button:hover{background:var(--panel2);color:var(--text)}
-.profile-post-dialog>.post-card{border:0;border-radius:0}
+.profile-post-dialog>.post-card{
+  border:0;border-radius:0;min-height:0;flex:1 1 auto;overflow-y:auto;
+  overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#445271 transparent;
+}
+.profile-post-dialog .post-actions{
+  padding:12px 12px 8px;gap:4px;
+  border-bottom:1px solid var(--line);
+}
+.profile-post-dialog .post-blink-preview.has-picture{
+  /* A real image keeps its framing, but must not push every action offscreen. */
+  aspect-ratio:auto;height:clamp(190px,48dvh,450px);min-height:0;
+}
+.profile-post-dialog .post-blink-preview.is-placeholder{
+  /* No square, empty canvas when the image does not yet exist. */
+  display:flex;flex-direction:column;height:auto;min-height:0;aspect-ratio:auto;
+  background:radial-gradient(ellipse at 50% 55%,#131d3b 0%,#070b18 80%);
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-top{
+  position:relative;inset:auto;flex:0 0 auto;
+  padding:14px 16px 2px;background:none;
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-placeholder{
+  position:relative;inset:auto;flex:1 1 auto;
+  min-height:148px;padding:18px 18px 22px;gap:9px;background:none;
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-placeholder strong{
+  font-size:.98rem;line-height:1.35;
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-placeholder span{
+  max-width:330px;font-size:.76rem;
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-bottom{
+  position:relative;inset:auto;flex:0 0 auto;
+  align-items:center;padding:12px 16px 15px;
+  border-top:1px solid rgba(146,172,225,.12);background:rgba(5,9,22,.45);
+}
+.profile-post-dialog .post-blink-preview.is-placeholder .post-blink-controls{flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:520px){
+  .profile-post-modal{padding:8px}
+  .profile-post-dialog{width:100%;max-height:calc(100dvh - 16px);border-radius:14px}
+  .profile-post-dialog .post-blink-preview.has-picture{height:clamp(185px,43dvh,320px)}
+  .profile-post-dialog .post-blink-preview.is-placeholder .post-blink-bottom{
+    align-items:flex-start;gap:8px;padding:12px;
+  }
+  .profile-post-dialog .post-blink-preview.is-placeholder .post-blink-top{padding:12px 12px 0}
+  .profile-post-dialog .post-blink-preview.is-placeholder .post-blink-controls{gap:6px}
+  .profile-post-dialog .post-actions{padding:10px 8px}
+}
 @media(max-width:700px){.profile-posts{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}
 @media(max-width:420px){.profile-posts{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:8px}}
 @media(prefers-reduced-motion:reduce){.profile-tile{transition:none}.profile-tile:hover{transform:none}}
