@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
+from sky_reveal import RevealRecipe
 
 from .auth import bearer, current_user
 from .db import get_db
@@ -26,6 +27,7 @@ class PostCreate(BaseModel):
     visibility: Visibility = 'public'
     observation_id: UUID | None = None
     sky_job_id: UUID | None = None
+    display_recipe: RevealRecipe | None = None
 
     @field_validator('caption')
     @classmethod
@@ -42,6 +44,7 @@ class PostPatch(BaseModel):
     visibility: Visibility | None = None
     observation_id: UUID | None = None
     sky_job_id: UUID | None = None
+    display_recipe: RevealRecipe | None = None
 
     @field_validator('caption')
     @classmethod
@@ -68,6 +71,7 @@ class PostOut(BaseModel):
     observation_id: UUID | None
     visibility: Visibility
     created_at: datetime
+    display_recipe: RevealRecipe | None = None
     likes_count: int = 0
     comments_count: int = 0
     reposts_count: int = 0
@@ -139,7 +143,8 @@ def serialize(
     return PostOut(
         id=post.id, username=username, caption=post.caption,
         observation_id=post.observation_id, visibility=post.visibility,
-        created_at=post.created_at, likes_count=likes, comments_count=comments,
+        created_at=post.created_at, display_recipe=post.display_recipe,
+        likes_count=likes, comments_count=comments,
         reposts_count=reposts, reposted_by_me=post.id in (viewer_reposts or set()),
         bookmarked_by_me=post.id in (viewer_bookmarks or set()),
         reposted_by=reposted_by, reposted_at=reposted_at,
@@ -172,6 +177,21 @@ def validate_blink_job(db: Session, observation_id: UUID | None,
     return job_id
 
 
+def validate_reveal(db: Session, job_id: UUID | None,
+                    recipe: RevealRecipe | None) -> dict | None:
+    if recipe is None:
+        return None
+    job = db.get(SkySearchJob, job_id) if job_id else None
+    if job is None or job.demo or not any(
+        state.get("status") == "ready"
+        and (state.get("metadata") or {}).get("raw_available")
+        for state in (job.frame_states or [])
+    ):
+        raise HTTPException(status_code=422,
+                            detail="Este hallazgo todavía no tiene FITS editables. Realiza una búsqueda nueva.")
+    return recipe.model_dump(mode="json")
+
+
 def owned_post(db: Session, post_id: UUID, user: User) -> Post:
     post = db.get(Post, post_id)
     # Return identical errors for an absent post and a post owned by someone else.
@@ -188,10 +208,11 @@ def create_post(
 ):
     ensure_observation(db, body.observation_id)
     checked_job = validate_blink_job(db, body.observation_id, body.sky_job_id)
+    recipe = validate_reveal(db, checked_job, body.display_recipe)
     post = Post(
         author_id=user.id, caption=body.caption,
         visibility=body.visibility, observation_id=body.observation_id,
-        sky_job_id=checked_job,
+        sky_job_id=checked_job, display_recipe=recipe,
     )
     db.add(post)
     db.commit()
@@ -234,11 +255,18 @@ def update_post(
         ensure_observation(db, body.observation_id)
     target_observation = (body.observation_id if 'observation_id' in body.model_fields_set
                           else post.observation_id)
+    target_job = post.sky_job_id
     if 'sky_job_id' in body.model_fields_set:
-        validate_blink_job(db, target_observation, body.sky_job_id)
+        target_job = validate_blink_job(db, target_observation, body.sky_job_id)
     elif 'observation_id' in body.model_fields_set:
+        target_job = None
         post.sky_job_id = None
-    for key in body.model_fields_set:
+        post.display_recipe = None
+    if 'display_recipe' in body.model_fields_set:
+        post.display_recipe = validate_reveal(db, target_job, body.display_recipe)
+    elif 'sky_job_id' in body.model_fields_set and target_job != post.sky_job_id:
+        post.display_recipe = None
+    for key in body.model_fields_set - {'display_recipe'}:
         setattr(post, key, getattr(body, key))
     db.commit()
     db.refresh(post)
@@ -385,6 +413,7 @@ def prepare_post_blink(
         'status': job.status,
         'detector': job.detector,
         'source': job.source,
+        'display_recipe': post.display_recipe,
         'frames': [
             {
                 'index': item['index'],

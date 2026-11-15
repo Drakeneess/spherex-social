@@ -80,6 +80,8 @@ class Post(Base):
         nullable=True, index=True,
     )
     caption: Mapped[str] = mapped_column(Text, nullable=False)
+    # Immutable-at-publication visual recipe; original FITS stay independent.
+    display_recipe: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     visibility: Mapped[str] = mapped_column(String(16), server_default='public', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
