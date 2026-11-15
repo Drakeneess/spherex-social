@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Bell, Bookmark, LogOut, Settings, Users } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
+import BrandLogo from './components/BrandLogo';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
@@ -58,13 +59,15 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
     }catch(e){setError(message(e));}finally{setBusy(false);}
   }
   return <div className="auth">
-    <div className="hero"><HeroStarfield/><div className="txt">
-      <div className="logo"><span className="orb"/><span>AstroGram</span></div>
+    <div className="hero"><HeroStarfield/>
+      <img className="auth-brand-art" src="/astrogram-logo.svg" alt="Logo de AstroGram" decoding="async"/>
+      <div className="txt">
+      <div className="logo"><BrandLogo size={34}/><span>AstroGram</span></div>
       <h1>Mira cómo se <span className="grad">mueve</span> el universo.</h1>
       <p>Compara imágenes del cielo tomadas por la misión SPHEREx, encuentra lo que cambió y comparte tu hallazgo con otros astrónomos.</p>
     </div></div>
     <section className="authbox">
-      <div className="logo auth-logo"><span className="orb"/><span>AstroGram</span></div>
+      <div className="logo auth-logo"><BrandLogo size={36}/><span>AstroGram</span></div>
       <h2>{mode==='register'?'Crea tu cuenta':'Bienvenida de vuelta'}</h2>
       <div className="tabs"><button type="button" className={mode==='register'?'on':''} onClick={()=>{setMode('register');setError('')}}>Registrarse</button>
         <button type="button" className={mode==='login'?'on':''} onClick={()=>{setMode('login');setError('')}}>Entrar</button></div>
@@ -358,14 +361,14 @@ export default function App(){
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
     else navigateProfile(term.replace(/^@/,''));setSearch('');
   }
-  if(checking)return <div className="boot-screen"><span className="orb"/> Conectando con AstroGram…</div>;
+  if(checking)return <div className="boot-screen"><BrandLogo size={44}/> Conectando con AstroGram…</div>;
   const authOnly = !user && !['explore','game'].includes(route.page);
   const explorerVisible = route.page === 'explore';
   return <div className="astrogram-shell">
     {authOnly
       ? <AuthPage onSuccess={p=>{setUser(p);go('home')}} onExplore={()=>go('explore')}/>
       : <>
-    <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><span className="orb"/><span>AstroGram</span></button>
+    <header className="navbar"><button className="logo" onClick={()=>go('home')} aria-label="AstroGram inicio"><BrandLogo size={36}/><span>AstroGram</span></button>
       <form className="search" onSubmit={doSearch}><input aria-label="Buscar usuario o coordenadas" value={search} onChange={e=>setSearch(e.target.value)}
         placeholder="Buscar astroamigos"/></form>
       <nav className="nav" aria-label="Navegación principal">
