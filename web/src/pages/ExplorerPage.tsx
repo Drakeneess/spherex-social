@@ -110,7 +110,7 @@ export default function ExplorerPage({
     setRetryUntil(0);
     setTrace({
       phase: 'catalog', startedAt,
-      source: params.demo ? 'simulated' : params.catalogMethod, frames: [],
+      source: params.demo ? 'simulated' : params.catalogMethod === 'tap' ? 'irsa' : 'sia2', frames: [],
     });
     setPlaying(false);
     setCompare(false);
