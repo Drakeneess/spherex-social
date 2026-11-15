@@ -5,7 +5,7 @@ import PostCard from './PostCard';
 
 export default function PostDetailPage({postId,showComments,searchBack,currentUsername,onProfile,onExplore,onLogin}:{
   postId:string;showComments:boolean;searchBack?:string;currentUsername?:string;
-  onProfile:(username:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;
+  onProfile:(username:string)=>void;onExplore:(id:string,sourcePostId?:string)=>void;onLogin:()=>void;
 }){
   const [post,setPost]=useState<Post|null>(null);
   const [error,setError]=useState('');

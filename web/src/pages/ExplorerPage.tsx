@@ -29,10 +29,11 @@ type Params = {
 };
 
 export default function ExplorerPage({
-  observationId, initialRa, initialDec, constellation, prefillOnly,
+  observationId, sourcePostId, initialRa, initialDec, constellation, prefillOnly,
   onPublish, onLogin, onProgress, onGoHome, active,
 }: {
   observationId?: string;
+  sourcePostId?: string;
   initialRa?: number;
   initialDec?: number;
   constellation?: string;
@@ -116,7 +117,7 @@ export default function ExplorerPage({
   // Disconnecting a browser watcher never cancels the server-side job.
   useEffect(() => () => { controller.current?.abort(); }, []);
 
-  const watchSearch = useCallback((jobId: string, params: Params, restored=false) => {
+  const watchSearch = useCallback((jobId: string, params: Params, restored=false, alreadyStored=false) => {
     if (activeJobId.current === jobId && controller.current &&
         !controller.current.signal.aborted) return;
     controller.current?.abort();
@@ -186,7 +187,9 @@ export default function ExplorerPage({
       let lastSnapshot: PersistentSkyJob | null = null;
       try {
         // A stable UUID makes concurrent tab POSTs idempotent.
-        await api.createPersistentSkyJob(jobId, params, request.signal);
+        // Published observations can link directly to archived IRSA images.
+        // Never create a redundant remote job when the post already has one.
+        if (!alreadyStored) await api.createPersistentSkyJob(jobId, params, request.signal);
         while (!request.signal.aborted) {
           try {
             const state = await api.getPersistentSkyJob(jobId, request.signal);
@@ -353,25 +356,68 @@ export default function ExplorerPage({
 
   useEffect(() => {
     if (!observationId) return;
-    let active = true;
-    api.observation(observationId).then(saved => {
-      if (!active) return;
-      if (saved.detector == null) throw new Error('La observación no tiene detector');
-      setRa(String(saved.ra_deg));
-      setDec(String(saved.dec_deg));
-      setSize(String(saved.fov_arcmin));
-      setDetector(String(saved.detector));
-      setDemo(false);
-      void load({
-        ra: saved.ra_deg, dec: saved.dec_deg, size: saved.fov_arcmin,
-        detector: saved.detector, frames: 12, demo: false, catalogMethod: 'sia2',
-      });
-      setSavedId(saved.id);
-    }).catch(() => {
-      if (active) setError('No pudimos abrir esta región guardada. Intenta nuevamente.');
-    });
-    return () => { active = false; };
-  }, [observationId, load]);
+    let mounted = true;
+    const openObservation = async () => {
+      try {
+        const saved = await api.observation(observationId);
+        if (!mounted) return;
+        if (saved.detector == null) throw new Error('La observación no tiene detector');
+        const params: Params = {
+          ra: saved.ra_deg, dec: saved.dec_deg, size: saved.fov_arcmin,
+          detector: saved.detector, frames: 12, demo: false, catalogMethod: 'sia2',
+        };
+        setRa(String(saved.ra_deg));
+        setDec(String(saved.dec_deg));
+        setSize(String(saved.fov_arcmin));
+        setDetector(String(saved.detector));
+        setDemo(false);
+
+        if (sourcePostId) {
+          // A published blink can already have 2-16 processed and archived
+          // epochs. Reopen that job instead of calling IRSA again.
+          const linked = await api.preparePostBlink(sourcePostId);
+          if (!mounted) return;
+          const existing = await api.getPersistentSkyJob(linked.job_id);
+          if (!mounted) return;
+          const query = existing.query;
+          if (query.demo ||
+              Math.abs(query.ra - saved.ra_deg) > 1e-7 ||
+              Math.abs(query.dec - saved.dec_deg) > 1e-7 ||
+              Math.abs(query.size_arcmin - saved.fov_arcmin) > 1e-7 ||
+              query.detector !== saved.detector) {
+            throw new Error('La publicación no corresponde a esta región del cielo.');
+          }
+          const storedParams: Params = {
+            ra: query.ra, dec: query.dec,
+            size: query.size_arcmin, detector: query.detector,
+            frames: query.max_frames, demo: false, catalogMethod: 'sia2',
+          };
+          // Preserve the correct job for reloads or continuing in another tab.
+          try {
+            localStorage.setItem(CURRENT_SKY_JOB,
+              JSON.stringify({jobId:existing.job_id,params:storedParams}));
+          } catch {/* Browsers may block storage, but the viewer still works. */}
+          watchSearch(existing.job_id,storedParams,true,true);
+          setSavedId(saved.id);
+          setNotice('Mostrando las épocas archivadas de esta publicación. No se consultó IRSA nuevamente.');
+          return;
+        }
+
+        // A standalone saved region has no linked post. A fresh search is
+        // still available and its parameters are identical to the saved one.
+        load(params);
+        setSavedId(saved.id);
+      } catch (error) {
+        if (!mounted) return;
+        setError(sourcePostId
+          ? 'No fue posible recuperar las imágenes archivadas de la publicación. Puedes iniciar una búsqueda nueva desde el formulario.'
+          : 'No pudimos abrir esta región guardada. Intenta nuevamente.');
+        setFolds(previous=>({...previous,search:true,status:false}));
+      }
+    };
+    void openObservation();
+    return () => { mounted = false; };
+  }, [observationId, sourcePostId, load, watchSearch]);
 
   useEffect(() => {
     if (observationId || initialRa === undefined || initialDec === undefined) return;

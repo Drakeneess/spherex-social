@@ -34,7 +34,7 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, allMissionsCompleted,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'|'search'; q?:string; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; searchBack?:string; constellation?:string; prefill?:boolean};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'|'search'; q?:string; username?:string; observationId?:string; sourcePostId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean; searchBack?:string; constellation?:string; prefill?:boolean};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
@@ -54,6 +54,7 @@ function parseRoute():Route {
   if(parts[0]==='home')return {page:'home',tag:params.get('tag')||undefined};
   if(parts[0]==='search')return {page:'search',q:params.get('q')||''};
   if(parts[0]==='explore')return {page:'explore',observationId:params.get('observation_id')||undefined,
+    sourcePostId:params.get('source_post')||undefined,
     ra:params.has('ra')?Number(params.get('ra')):undefined,
     dec:params.has('dec')?Number(params.get('dec')):undefined,
     constellation:params.get('constellation')||undefined,
@@ -120,7 +121,7 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
 }
 
 function FeedPage({user,onProfile,onExplore,onLogin,onPublish,onReplayFinale,tasks,guideHidden,onHideGuide,tag}:{
-  user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void;
+  user:Profile;onProfile:(u:string)=>void;onExplore:(id:string,sourcePostId?:string)=>void;onLogin:()=>void;onPublish:()=>void;
   onReplayFinale:()=>void;
   tasks:TaskProgress;guideHidden:boolean;onHideGuide:()=>void;tag?:string;
 }){
@@ -273,7 +274,7 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,onReplayFinale,tas
   </div>;
 }
 
-function ProfilePage({username,current,onExplore,onLogin}:{username:string;current:Profile|null;onExplore:(id:string)=>void;onLogin:()=>void}){
+function ProfilePage({username,current,onExplore,onLogin}:{username:string;current:Profile|null;onExplore:(id:string,sourcePostId?:string)=>void;onLogin:()=>void}){
   const [person,setPerson]=useState<Profile|null>(null),[stats,setStats]=useState<UserStats|null>(null);
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [selectedId,setSelectedId]=useState<string|null>(null);
@@ -410,7 +411,7 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
         </div>
         <PostCard key={selectedPost.id} post={selectedPost}
           onProfile={name=>{setSelectedId(null);go(`u/${encodeURIComponent(name)}`);}}
-          onExplore={id=>{setSelectedId(null);onExplore(id);}}
+          onExplore={(id,sourcePostId)=>{setSelectedId(null);onExplore(id,sourcePostId);}}
           onRequireLogin={onLogin} currentUsername={current?.username}
           onRepostChange={()=>void refreshPosts()}/>
       </div>
@@ -418,7 +419,7 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
   </main>;
 }
 
-function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:string)=>void;onProfile:(u:string)=>void;onLogin:()=>void;currentUsername?:string}){
+function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:string,sourcePostId?:string)=>void;onProfile:(u:string)=>void;onLogin:()=>void;currentUsername?:string}){
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   useEffect(()=>{let active=true;api.bookmarks().then(data=>{if(active)setPosts(data)}).catch(e=>{if(active)setError(message(e))})
     .finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
@@ -691,7 +692,10 @@ export default function App(){
   }
   function loginRequired(){setToast('Inicia sesión para utilizar esta función.');go('home');}
   function navigateProfile(name:string){go(`u/${encodeURIComponent(name)}`)}
-  function openObservation(id:string){go(`explore?observation_id=${encodeURIComponent(id)}`)}
+  function openObservation(id:string,sourcePostId?:string){
+    go(`explore?observation_id=${encodeURIComponent(id)}`+
+      (sourcePostId?`&source_post=${encodeURIComponent(sourcePostId)}`:''));
+  }
   function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
@@ -753,6 +757,7 @@ export default function App(){
     <div className="epoch-persistent-page" style={{display:explorerVisible?'block':'none'}}>
       <ExplorerPage
         observationId={explorerVisible?route.observationId:undefined}
+        sourcePostId={explorerVisible?route.sourcePostId:undefined}
         initialRa={explorerVisible?route.ra:undefined}
         initialDec={explorerVisible?route.dec:undefined}
         constellation={explorerVisible&&constellationForBirthday(user?.birth_date)?.id===route.constellation
