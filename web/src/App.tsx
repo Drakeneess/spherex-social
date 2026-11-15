@@ -228,9 +228,10 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     {error&&<div className="form-error" role="alert">{error}</div>}
     {!person?<div className="card empty">Cargando perfil…</div>:<>
       <div className="card phead"><div className="profile-avatar"><Avatar name={person.username} size={84}/></div><div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
-        {person.bio&&<p>{person.bio}</p>}
+        <p className={person.bio?'':'profile-bio-placeholder'}>{person.bio||(mine?'Añade una bio para contarle al universo quién eres.':'Sin bio todavía.')}</p>
         <div className="stats"><span><b>{posts.length}</b> publicaciones y compartidos</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
-          <span><b>{stats?.following_count??0}</b> siguiendo</span></div>
+          <span><b>{stats?.following_count??0}</b> siguiendo</span>
+          <span><b>{new Date(person.created_at).toLocaleDateString('es',{month:'short',year:'numeric'})}</b> se unió</span></div>
         <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div>
