@@ -207,10 +207,11 @@ def query_sia2(ra: float, dec: float, size_arcmin: float, detector: int) -> dict
             discarded["duplicate_fits_path"] += 1
             continue
         seen.add(path)
-        mjd = _plain(row["t_min"])
-        date = _date_from_mjd(mjd)
+        mjd_raw = _plain(row["t_min"])
+        date = _date_from_mjd(mjd_raw)
+        mjd = float(mjd_raw) if date is not None else None
         release = "DR1" if "/dr1/" in path else "QR3"
-        records.append({"path": path, "date": date, "release": release})
+        records.append({"path": path, "date": date, "mjd": mjd, "release": release})
     records.sort(key=lambda item: (item["date"] is None, item["date"] or ""))
     return {
         "elapsed_ms": _elapsed_ms(t0),

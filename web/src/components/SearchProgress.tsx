@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, XCircle } from 'lucide-react';
-import type { FrameTiming, TapTiming } from '../lib/api';
+import type { FrameTiming, Sia2Discovery, TapTiming } from '../lib/api';
 
 export type FrameState = 'pending' | 'loading' | 'ready' | 'failed';
 export type FrameTrace = {
@@ -14,7 +14,7 @@ export type FrameTrace = {
 export type SearchTrace = {
   phase: 'catalog' | 'frames' | 'complete' | 'partial' | 'empty' | 'failed' | 'cancelled';
   startedAt: number;
-  source: 'irsa' | 'simulated';
+  source: 'irsa' | 'simulated' | 'sia2';
   catalogMs?: number;
   totalMatches?: number;
   count?: number;
@@ -25,6 +25,8 @@ export type SearchTrace = {
   remoteWarning?: string;
   retryAfterSeconds?: number;
   tapTiming?: TapTiming;
+  sia2Timing?: Sia2Discovery;
+  catalogWarning?: string;
 };
 
 function duration(ms: number): string {
@@ -106,6 +108,8 @@ export default function SearchProgress({
         total_matches: trace.totalMatches ?? null,
         catalog_phase: trace.remotePhase ?? null,
         tap_timing: trace.tapTiming ?? null,
+        sia2_timing: trace.sia2Timing ?? null,
+        catalog_warning: trace.catalogWarning ?? null,
         frames: trace.frames,
       }, null, 2));
       setCopied(true);
@@ -126,8 +130,10 @@ export default function SearchProgress({
       <li>
         <Marker done={catalogDone} bad={catalogBad} active={catalogActive}/>
         <div>
-          <b>1. Catálogo {trace.source === 'irsa' ? 'NASA/IPAC IRSA' : 'de demostración'}</b>
-          <p>{catalogActive ? (trace.remotePhase === 'RETRYING'
+          <b>1. Catálogo {trace.source === 'simulated' ? 'de demostración'
+            : trace.source === 'sia2' ? 'NASA/IPAC IRSA SIA2' : 'NASA/IPAC IRSA TAP'}</b>
+          <p>{catalogActive && trace.source === 'sia2' ? 'Consultando metadatos SIA2 directamente…'
+            : catalogActive ? (trace.remotePhase === 'RETRYING'
               ? `${trace.remoteWarning ?? 'El servidor IRSA no respondió.'} Reintento en ${trace.retryAfterSeconds ?? '?'} s; el trabajo sigue conservado.`
               : trace.remotePhase
                 ? `Trabajo TAP asíncrono: ${trace.remotePhase}. Consultando IRSA cada 2,5 s.`
@@ -135,6 +141,8 @@ export default function SearchProgress({
             catalogBad ? (trace.catalogError ?? 'La consulta no devolvió resultados válidos.') :
             catalogDone ? `${trace.totalMatches ?? 0} coincidencias encontradas · ${duration(trace.catalogMs!)}` :
             'Pendiente'}</p>
+          {trace.catalogWarning && <p className="irsa-progress-disclaimer">
+            {trace.catalogWarning}</p>}
         </div>
       </li>
       <li>
@@ -167,6 +175,26 @@ export default function SearchProgress({
         </div>
       </li>
     </ol>
+    {trace.sia2Timing && <details className="irsa-timing-details">
+      <summary>Desglose SIA2 · {trace.sia2Timing.attempts} intento(s)</summary>
+      <dl className="irsa-timing-grid">
+        <dt>Respuesta SIA2</dt><dd>{duration(trace.sia2Timing.elapsed_ms)}</dd>
+        <dt>Red (HTTP acumulado)</dt><dd>{duration(trace.sia2Timing.http_ms)}</dd>
+        <dt>Procesamiento del catálogo</dt><dd>{duration(trace.sia2Timing.parse_ms)}</dd>
+        <dt>Observaciones del detector</dt>
+        <dd>{trace.sia2Timing.matching_detector_rows}</dd>
+        <dt>Épocas con datos válidos</dt>
+        <dd>{trace.sia2Timing.usable_epoch_rows}</dd>
+        <dt>Estado</dt><dd>{trace.sia2Timing.query_status}</dd>
+      </dl>
+      {trace.sia2Timing.retry_events.map((item, index) =>
+        <p key={index} className="irsa-progress-disclaimer">
+          Intento {item.attempt}: {item.failure} · {duration(item.elapsed_ms)}
+        </p>)}
+      <p className="irsa-progress-disclaimer">
+        Las coincidencias se filtran por detector y fecha. El método SIA2
+        no ha sido verificado aún producto por producto frente a TAP.</p>
+    </details>}
     {timing && <details className="irsa-timing-details">
       <summary>Desglose TAP · {timing.poll_count} sondeos</summary>
       <dl className="irsa-timing-grid">

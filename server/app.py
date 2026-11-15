@@ -772,6 +772,71 @@ def cancel_search_job(ticket: str):
         pass
     return None
 
+@app.post("/api/search/sia2")
+def search_sia2_primary(params: SearchStart):
+    """Explore SPHEREx using the fast SIA2 metadata API, without any TAP job.
+
+    Only complete, correctly typed responses may drive the preview session.
+    A non-OK/overflow SIA2 response fails cleanly so the frontend can offer
+    the existing async TAP fallback. No silent scientific truncation.
+    """
+    try:
+        sia = query_sia2(params.ra, params.dec, params.size_arcmin, params.detector)
+    except Sia2ComparisonError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (RequestsTimeout, RequestsConnectionError) as exc:
+        raise HTTPException(status_code=504,
+                            detail=f"IRSA SIA2 no respondió: {type(exc).__name__}") from exc
+
+    if not sia["complete"]:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Resultado SIA2 incompleto ({sia['query_status']}); utiliza TAP como respaldo",
+        )
+
+    records = []
+    for row in sia["records"]:
+        mjd = row.get("mjd")
+        if mjd is None or not math.isfinite(mjd) or row.get("date") is None:
+            continue
+        url = ("https://irsa.ipac.caltech.edu" + row["path"]
+               + f"?center={params.ra},{params.dec}d&size={params.size_arcmin / 60}")
+        if not ensure_irsa_cutout_url(url):
+            continue
+        records.append({
+            "url": url, "mjd": mjd,
+            "date": row["date"], "release": row["release"],
+        })
+
+    # If SIA reports matching products but all are unusable, this is not an
+    # empty sky field. Avoid falsely promising there are no observations.
+    if sia["matching_detector_rows"] > 0 and not records:
+        raise HTTPException(
+            status_code=502,
+            detail="SIA2 devolvió productos para el detector, pero ninguno permite crear épocas válidas",
+        )
+
+    records.sort(key=lambda record: record["mjd"])
+    result = make_search_result(
+        params.ra, params.dec, params.size_arcmin, params.detector,
+        params.max_frames, "sia2", records,
+    )
+    result["discovery"] = {
+        "method": "sia2",
+        "elapsed_ms": sia["elapsed_ms"],
+        "http_ms": sia["http_ms"],
+        "parse_ms": sia["parse_ms"],
+        "attempts": sia["attempts"],
+        "retry_events": sia["retry_events"],
+        "query_status": sia["query_status"],
+        "matching_detector_rows": sia["matching_detector_rows"],
+        "valid_cutout_rows": sia["valid_cutout_rows"],
+        "usable_epoch_rows": len(records),
+        "radius_arcsec": sia["radius_arcsec"],
+    }
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
 @app.get("/api/diagnostics/sia2/{search_id}")
 def compare_sia2_with_existing_tap(search_id: str):
     """Read-only SIA2 benchmark using a completed TAP catalog already in RAM.

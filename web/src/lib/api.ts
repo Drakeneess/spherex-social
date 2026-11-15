@@ -31,8 +31,15 @@ export type Observation = {
 export type ObservationParams = Pick<Observation, 'ra_deg' | 'dec_deg' | 'fov_arcmin'> & { detector: number };
 export type UserStats = { username: string; followers_count: number; following_count: number; is_following: boolean };
 export type Comment = { id: string; post_id: string; username: string; body: string; parent_id: string | null; created_at: string };
+export type Sia2Discovery = {
+  method: 'sia2'; elapsed_ms:number; http_ms:number; parse_ms:number;
+  attempts:number; retry_events:{attempt:number;elapsed_ms:number;failure:string}[];
+  query_status:string; matching_detector_rows:number; valid_cutout_rows:number;
+  usable_epoch_rows:number; radius_arcsec:number;
+};
 export type SkySearch = {
-  search_id: string; source: 'simulated' | 'irsa'; count: number; total_matches: number;
+  search_id: string; source: 'simulated' | 'irsa' | 'sia2'; count: number; total_matches: number;
+  discovery?: Sia2Discovery;
   ra: number; dec: number; detector: number;
   observations: {index: number;date: string;release: string;mjd: number}[];
 };
@@ -184,6 +191,14 @@ export const api = {
     });
     return get<SkySearch>(`/api/search?${query}`,false,signal);
   },
+  searchSia2: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
+    request<SkySearch>('/api/search/sia2', {
+      method: 'POST',
+      body: JSON.stringify({
+        ra:data.ra, dec:data.dec, size_arcmin:data.size,
+        detector:data.detector, max_frames:data.frames,
+      }),
+    },false,signal),
   startSkyJob: (data: {ra:number;dec:number;size:number;detector:number;frames:number},signal?:AbortSignal) =>
     request<{job_id:string;phase:string;timing:TapTiming}>('/api/search/jobs',{
       method:'POST',

@@ -13,6 +13,7 @@ const presets = [
 
 type Params = {
   ra: number; dec: number; size: number; detector: number; frames: number; demo: boolean;
+  catalogMethod: 'sia2' | 'tap';
 };
 
 export default function ExplorerPage({
@@ -30,6 +31,7 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
+  const [catalogMethod, setCatalogMethod] = useState<'sia2' | 'tap'>('sia2');
 
   const [result, setResult] = useState<SkySearch | null>(null);
   const [frames, setFrames] = useState<Record<number, SkyFrame>>({});
@@ -85,8 +87,9 @@ export default function ExplorerPage({
   }, []);
 
   const load = useCallback(async (params: Params) => {
-    if (Date.now() < retryUntilRef.current) {
-      setError('IRSA no está aceptando nuevos trabajos. Espera a que termine el intervalo recomendado antes de reintentar.');
+    if (!params.demo && params.catalogMethod === 'tap' &&
+        Date.now() < retryUntilRef.current) {
+      setError('TAP continúa en espera de reintento. Puedes buscar con SIA2 mientras tanto.');
       return;
     }
     controller.current?.abort();
@@ -107,7 +110,7 @@ export default function ExplorerPage({
     setRetryUntil(0);
     setTrace({
       phase: 'catalog', startedAt,
-      source: params.demo ? 'simulated' : 'irsa', frames: [],
+      source: params.demo ? 'simulated' : params.catalogMethod, frames: [],
     });
     setPlaying(false);
     setCompare(false);
@@ -131,66 +134,87 @@ export default function ExplorerPage({
       );
     };
 
+    let fallbackFailure = '';
+    let tapAttempted = false;
     try {
       const catalogStartedAt = Date.now();
-      let search: SkySearch;
+      let search: SkySearch | null = null;
       if (params.demo) {
         search = await api.searchSky(params, request.signal);
       } else {
-        // IRSA sync TAP has a five-minute hard limit. Submit /TAP/async
-        // and poll short requests instead of keeping /api/search open.
-        const started = await api.startSkyJob(params, request.signal);
-        if (request.signal.aborted) return;
-        remoteJob.current = started.job_id;
-        updateTrace(old => ({ ...old, remotePhase: started.phase, tapTiming: started.timing }));
-        while (true) {
+        if (params.catalogMethod === 'sia2') {
+          try {
+            search = await api.searchSia2(params, request.signal);
+          } catch (cause) {
+            if (request.signal.aborted) return;
+            if (!(cause instanceof ApiError) || ![502, 503, 504].includes(cause.status)) {
+              throw cause;
+            }
+            fallbackFailure = frameErrorMessage(cause);
+            updateTrace(old => ({
+              ...old, source: 'irsa', remotePhase: undefined,
+              catalogWarning: `SIA2 no disponible (${fallbackFailure}). Consultando TAP como respaldo.`,
+            }));
+          }
+        }
+        if (search === null) {
+          // Exactly one TAP submission; never retry this non-idempotent POST.
+          tapAttempted = true;
+          const started = await api.startSkyJob(params, request.signal);
           if (request.signal.aborted) return;
-          const snapshot = await api.pollSkyJob(started.job_id, request.signal);
-          if (request.signal.aborted) return;
+          remoteJob.current = started.job_id;
           updateTrace(old => ({
-            ...old,
-            remotePhase: snapshot.phase,
-            remoteWarning: snapshot.warning,
-            retryAfterSeconds: snapshot.retry_after_seconds,
-            tapTiming: snapshot.timing ?? old.tapTiming,
+            ...old, source: 'irsa', remotePhase: started.phase, tapTiming: started.timing,
           }));
-          if (snapshot.phase === 'COMPLETED') {
-            if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
-            search = snapshot.result;
-            remoteJob.current = null;
-            // Results are registered as a separate in-memory image session.
-            // Releasing the remote TAP job does not remove that image session.
-            void api.cancelSkyJob(started.job_id).catch(() => {});
-            break;
+          while (true) {
+            if (request.signal.aborted) return;
+            const snapshot = await api.pollSkyJob(started.job_id, request.signal);
+            if (request.signal.aborted) return;
+            updateTrace(old => ({
+              ...old,
+              remotePhase: snapshot.phase,
+              remoteWarning: snapshot.warning,
+              retryAfterSeconds: snapshot.retry_after_seconds,
+              tapTiming: snapshot.timing ?? old.tapTiming,
+            }));
+            if (snapshot.phase === 'COMPLETED') {
+              if (!snapshot.result) throw new Error('IRSA completó el trabajo sin devolver datos');
+              search = snapshot.result;
+              remoteJob.current = null;
+              void api.cancelSkyJob(started.job_id).catch(() => {});
+              break;
+            }
+            if (snapshot.phase === 'ERROR' || snapshot.phase === 'ABORTED') {
+              throw new Error(snapshot.error ?? 'El trabajo TAP terminó sin resultados');
+            }
+            if (Date.now() - catalogStartedAt > 15 * 60_000) {
+              throw new Error('El catálogo continúa procesando tras 15 minutos. Cancela o repite la búsqueda.');
+            }
+            await new Promise<void>((resolve, reject) => {
+              const timer = window.setTimeout(() => {
+                request.signal.removeEventListener('abort', onAbort);
+                resolve();
+              }, Math.max(2500, (snapshot.retry_after_seconds ?? 0) * 1000));
+              const onAbort = () => {
+                window.clearTimeout(timer);
+                request.signal.removeEventListener('abort', onAbort);
+                reject(new DOMException('Búsqueda cancelada', 'AbortError'));
+              };
+              request.signal.addEventListener('abort', onAbort, { once: true });
+              if (request.signal.aborted) onAbort();
+            });
           }
-          if (snapshot.phase === 'ERROR' || snapshot.phase === 'ABORTED') {
-            throw new Error(snapshot.error ?? 'El trabajo TAP terminó sin resultados');
-          }
-          if (Date.now() - catalogStartedAt > 15 * 60_000) {
-            throw new Error('El catálogo continúa procesando tras 15 minutos. Cancela o repite la búsqueda.');
-          }
-          // Abortable polling delay: cancelling does not wait for the timer.
-          await new Promise<void>((resolve, reject) => {
-            const timer = window.setTimeout(() => {
-              request.signal.removeEventListener('abort', onAbort);
-              resolve();
-            }, Math.max(2500, (snapshot.retry_after_seconds ?? 0) * 1000));
-            const onAbort = () => {
-              window.clearTimeout(timer);
-              request.signal.removeEventListener('abort', onAbort);
-              reject(new DOMException('Búsqueda cancelada', 'AbortError'));
-            };
-            request.signal.addEventListener('abort', onAbort, { once: true });
-            if (request.signal.aborted) onAbort();
-          });
         }
       }
+      if (!search) throw new Error('El catálogo no devolvió una respuesta válida');
       if (request.signal.aborted) return;
       const catalogMs = Date.now() - catalogStartedAt;
       setResult(search);
       setActiveParams(params);
       updateTrace(previous => ({
         ...previous,
+        source: search.source,
+        sia2Timing: search.discovery,
         phase: search.count > 0 ? 'frames' : 'empty',
         catalogMs,
         totalMatches: search.total_matches,
@@ -200,7 +224,7 @@ export default function ExplorerPage({
         ...(search.count === 0 ? { finishedAt: Date.now() } : {}),
       }));
       if (search.count === 0) {
-        setNotice('IRSA no devolvió épocas para este campo y detector.');
+        setNotice('El catálogo consultado no devolvió épocas para este campo y detector.');
         return;
       }
       let cursor = 0;
@@ -280,7 +304,7 @@ export default function ExplorerPage({
       }
       if (!request.signal.aborted) {
         const detail = frameErrorMessage(cause);
-        if (cause instanceof ApiError && cause.status === 503) {
+        if (tapAttempted && cause instanceof ApiError && cause.status === 503) {
           // Retry only after a separate user action. POST /TAP/async is not
           // idempotent and auto-retrying could create orphaned remote jobs.
           const deadline = Date.now() + 30_000;
@@ -288,9 +312,12 @@ export default function ExplorerPage({
           setRetryUntil(deadline);
           setNowTick(Date.now());
         }
-        setError(detail);
+        const fullDetail = fallbackFailure
+          ? `SIA2 falló: ${fallbackFailure}. TAP tampoco pudo completar la búsqueda: ${detail}`
+          : detail;
+        setError(fullDetail);
         updateTrace(previous => ({
-          ...previous, phase: 'failed', catalogError: detail, finishedAt: Date.now(),
+          ...previous, phase: 'failed', catalogError: fullDetail, finishedAt: Date.now(),
         }));
       }
     } finally {
@@ -326,7 +353,7 @@ export default function ExplorerPage({
       setDemo(false);
       void load({
         ra: saved.ra_deg, dec: saved.dec_deg, size: saved.fov_arcmin,
-        detector: saved.detector, frames: 12, demo: false,
+        detector: saved.detector, frames: 12, demo: false, catalogMethod: 'sia2',
       });
       setSavedId(saved.id);
     }).catch(cause => {
@@ -340,7 +367,8 @@ export default function ExplorerPage({
     if (!Number.isFinite(initialRa) || !Number.isFinite(initialDec)) return;
     setRa(String(initialRa));
     setDec(String(initialDec));
-    void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2, frames: 12, demo: false });
+    void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2,
+      frames: 12, demo: false, catalogMethod: 'sia2' });
     return () => controller.current?.abort();
   }, [observationId, initialRa, initialDec, load]);
 
@@ -358,7 +386,7 @@ export default function ExplorerPage({
     }
     const params = {
       ra: Number(ra), dec: Number(dec), size: Number(size),
-      detector: Number(detector), frames: Number(epochs), demo,
+      detector: Number(detector), frames: Number(epochs), demo, catalogMethod,
     };
     if (!Number.isFinite(params.ra) || params.ra < 0 || params.ra >= 360 ||
         !Number.isFinite(params.dec) || params.dec < -90 || params.dec > 90 ||
@@ -408,7 +436,7 @@ export default function ExplorerPage({
     setDec(String(preset.dec));
     const params = {
       ra: preset.ra, dec: preset.dec, size: Number(size),
-      detector: Number(detector), frames: Number(epochs), demo,
+      detector: Number(detector), frames: Number(epochs), demo, catalogMethod,
     };
     if (params.size >= 1 && params.size <= 12 && params.detector >= 1 &&
         params.detector <= 6 && Number.isInteger(params.frames) &&
@@ -487,6 +515,8 @@ export default function ExplorerPage({
       remote_warning: trace.remoteWarning,
       retry_after_seconds: trace.retryAfterSeconds,
       tap_timing: trace.tapTiming,
+      sia2_timing: trace.sia2Timing,
+      catalog_warning: trace.catalogWarning,
       catalog_ms: trace.catalogMs,
       count: trace.count,
       frames: trace.frames,
@@ -528,7 +558,8 @@ export default function ExplorerPage({
         </div>
         <div className="epoch-help">Las estrellas se quedan quietas; lo que se mueve es el hallazgo.
           Toca la imagen para <strong>marcar</strong> su posición en cada época.
-          {result?.source === 'irsa' && ' Para comparar movimiento real, verifica la calidad y calibración de cada imagen.'}
+          {result?.source !== 'simulated' && result &&
+            ' Para comparar movimiento real, verifica la calidad y calibración de cada imagen.'}
         </div>
       </section>
 
@@ -537,7 +568,8 @@ export default function ExplorerPage({
           <div className="card-h"><span>Buscar en el cielo</span></div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick">
-              {presets.map(preset => <button key={preset.name} type="button" disabled={loading || retrySeconds > 0}
+              {presets.map(preset => <button key={preset.name} type="button"
+                disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
                 onClick={() => applyPreset(preset)}>{preset.name}</button>)}
             </div>
             <div className="two">
@@ -564,9 +596,23 @@ export default function ExplorerPage({
               <label className="epoch-demo"><input type="checkbox" checked={demo}
                 onChange={event => setDemo(event.target.checked)}/> Modo demo API</label>
             </div>
-            <button className="btn p full" disabled={loading || retrySeconds > 0} type="submit">
+            <div className="field">
+              <label htmlFor="epoch-method">Catálogo astronómico</label>
+              <select id="epoch-method" value={catalogMethod} disabled={loading || demo}
+                onChange={event => setCatalogMethod(event.target.value as 'sia2' | 'tap')}>
+                <option value="sia2">SIA2 (rápido · predeterminado)</option>
+                <option value="tap">TAP asíncrono (comparación manual)</option>
+              </select>
+              {!demo && <small>SIA2 intenta primero la búsqueda directa; si el servicio falla,
+                TAP funciona como respaldo. TAP manual permite comparar ambos catálogos.</small>}
+            </div>
+            <button className="btn p full"
+              disabled={loading || (retrySeconds > 0 && !demo && catalogMethod === 'tap')}
+              type="submit">
               {loading ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>}
-              {loading ? 'Procesando búsqueda…' : retrySeconds > 0 ? `Reintentar en ${retrySeconds} s` : 'Buscar'}
+              {loading ? 'Procesando búsqueda…'
+                : retrySeconds > 0 && !demo && catalogMethod === 'tap'
+                  ? `Reintentar TAP en ${retrySeconds} s` : 'Buscar'}
             </button>
           </form>
           <div className="epoch-secondary-actions">

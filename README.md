@@ -393,3 +393,38 @@ tres intentos fallan, el cliente recibe un error explicativo sin direcciones
 de archivos FITS. Una comparación ya exitosa se conserva en caché en la
 sesión del catálogo TAP. Estos cambios **no garantizan** que IRSA esté
 disponible, y no demuestran ventaja de SIA2 hasta obtener resultados reales.
+
+
+## SIA2 como búsqueda principal; TAP como respaldo
+
+En el explorador, el método seleccionado por defecto es **SIA2 (rápido)**.
+La búsqueda de imágenes reales llama primero a `POST /api/search/sia2`:
+- Valida parámetros con el contrato `SearchStart` existente.
+- Ejecuta `query_sia2` (metadatos VOTable) sin crear trabajo TAP.
+- Acepta únicamente `QUERY_STATUS=OK`; un catálogo `OVERFLOW` no se
+  representa como completo.
+- Filtra el detector `SPHEREx-Dn`, construye enlaces de recorte FITS
+  válidos para IRSA y selecciona épocas equiespaciadas con fechas MJD.
+- Crea una sesión temporal `source=sia2` compatible con el mismo endpoint
+  `/api/frame/{search_id}/{index}` para obtener los PNG reales.
+- Devuelve `discovery` con latencia, intentos, filas válidas y estado SIA2.
+
+Si la solicitud SIA2 falla con error de servicio 502/503/504, React activa
+**exactamente un** trabajo TAP asíncrono como respaldo, conserva su
+telemetría y muestra el motivo de la sustitución. Si TAP no acepta ese
+trabajo, la interfaz explica los dos fallos; no repite automáticamente
+el POST TAP, que no es idempotente. Una respuesta SIA2 completa de cero
+épocas es válida: **no crea TAP para forzar resultados**.
+
+Existe además un selector para usar **TAP asíncrono (comparación manual)**
+desde el inicio; el botón «Medir SIA2 y comparar» sigue disponible
+únicamente para sesiones TAP completas. El modo demo no cambia.
+
+La coincidencia de 48 resultados del detector 2 entre SIA2 y TAP para
+WISE 0855 es solo una coincidencia de recuentos, **no prueba identidad
+de archivos**. No se promete cobertura idéntica para otras coordenadas
+ni que un enlace FITS válido sea descargable; IRSA continúa siendo una
+dependencia externa sujeta a retrasos, errores y cadencias de ingestión.
+
+Las sesiones de búsqueda y frames siguen siendo efímeras en RAM, sin
+escrituras en PostgreSQL ni cambios en la lógica de imagen.
