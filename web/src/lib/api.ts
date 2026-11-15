@@ -25,6 +25,7 @@ export type Post = {
   comments_count: number;
   reposts_count: number;
   reposted_by_me: boolean;
+  bookmarked_by_me: boolean;
   reposted_by: string | null;
   reposted_at: string | null;
 };

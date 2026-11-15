@@ -234,7 +234,10 @@ function SavedPage({onExplore,onProfile,onLogin,currentUsername}:{onExplore:(id:
   return <main className="wrap narrow saved-page"><h1><Bookmark size={24}/> Guardados</h1>
     <p className="muted">Solo tú puedes consultar tus publicaciones guardadas.</p>
     {error&&<p className="form-error">{error}</p>}
-    {loading?<div className="card empty">Cargando…</div>:posts.length===0?<div className="card empty">Todavía no guardaste publicaciones.</div>:posts.map(p=><PostCard key={p.id} post={p} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin} currentUsername={currentUsername}/>)}
+    {loading?<div className="card empty">Cargando…</div>:posts.length===0?<div className="card empty">Todavía no guardaste publicaciones.</div>:posts.map(p=><PostCard key={p.id} post={p} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin}
+      currentUsername={currentUsername} onBookmarkChange={(id,saved)=>{
+        if(!saved)setPosts(current=>current.filter(item=>item.id!==id));
+      }}/>)}
   </main>;
 }
 
