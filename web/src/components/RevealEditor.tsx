@@ -39,7 +39,6 @@ export default function RevealEditor({
   const source=JSON.stringify([jobId,index]);
   const key=JSON.stringify([jobId,index,recipe]);
   const processed=image?.source===source?image.data:'';
-  const editablePosition=editableIndices.indexOf(index);
 
   useEffect(()=>{
     if(!active||!jobId||!rawAvailable){
@@ -168,8 +167,8 @@ export default function RevealEditor({
                 <span>Época</span>
                 <select aria-label="Época a revelar" value={index}
                   onChange={event=>onSelectEpoch(Number(event.target.value))}>
-                  {editableIndices.map(availableIndex=><option key={availableIndex} value={availableIndex}>
-                    {availableIndex+1}{editableIndices.length>1?' · '+(editablePosition+1)+' de '+editableIndices.length:''}
+                  {editableIndices.map((availableIndex,position)=><option key={availableIndex} value={availableIndex}>
+                    {availableIndex+1}{editableIndices.length>1?' · '+(position+1)+' de '+editableIndices.length:''}
                   </option>)}
                 </select>
               </label>
