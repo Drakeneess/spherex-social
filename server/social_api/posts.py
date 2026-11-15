@@ -2,66 +2,93 @@
 from __future__ import annotations
 
 from datetime import datetime
+import base64
 from uuid import uuid4
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
 from sky_reveal import RevealRecipe
 
 from .auth import bearer, current_user
 from .db import get_db
-from .models import Bookmark, Comment, Observation, Post, PostLike, PostRepost, SkySearchJob, User
+from .models import Bookmark, Comment, Observation, Post, PostHashtag, PostMedia, PostLike, PostRepost, SkySearchJob, User
+from .post_content import extract_hashtags, validate_link
+from post_storage import decode_image, put_post_image, get_post_image, delete_post_image
 
 router = APIRouter(prefix='/v1', tags=['posts'])
 Visibility = Literal['public', 'unlisted', 'private']
 
 
+class UploadImage(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    data_url: str = Field(min_length=32, max_length=5_500_000)
+
+
 class PostCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    caption: str = Field(min_length=1, max_length=3000)
+    caption: str = Field(default='', max_length=3000)
     visibility: Visibility = 'public'
     observation_id: UUID | None = None
     sky_job_id: UUID | None = None
     display_recipe: RevealRecipe | None = None
+    images: list[UploadImage] = Field(default_factory=list, max_length=4)
+    link_url: str | None = Field(default=None, max_length=800)
 
     @field_validator('caption')
     @classmethod
     def clean_caption(cls, caption: str) -> str:
-        caption = caption.strip()
-        if not caption:
-            raise ValueError('Caption cannot be blank')
-        return caption
+        return caption.strip()
+
+    @field_validator('link_url')
+    @classmethod
+    def clean_link(cls, link: str | None) -> str | None:
+        return validate_link(link)
+
+    @model_validator(mode='after')
+    def ensure_content(self):
+        if not self.caption and not self.images and not self.observation_id and not self.link_url:
+            raise ValueError('Añade texto, imágenes, enlace u observación')
+        if len(extract_hashtags(self.caption)) > 12:
+            raise ValueError('Máximo 12 hashtags por publicación')
+        return self
 
 
 class PostPatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    caption: str | None = Field(default=None, min_length=1, max_length=3000)
+    caption: str | None = Field(default=None, max_length=3000)
     visibility: Visibility | None = None
     observation_id: UUID | None = None
     sky_job_id: UUID | None = None
     display_recipe: RevealRecipe | None = None
+    link_url: str | None = Field(default=None, max_length=800)
 
     @field_validator('caption')
     @classmethod
     def clean_caption(cls, caption: str | None) -> str:
-        if caption is None:
-            raise ValueError('Caption cannot be null')
-        caption = caption.strip()
-        if not caption:
-            raise ValueError('Caption cannot be blank')
-        return caption
+        if caption is None: raise ValueError('Caption cannot be null')
+        return caption.strip()
+
+    @field_validator('link_url')
+    @classmethod
+    def clean_link(cls, link: str | None) -> str | None:
+        return validate_link(link)
 
     @field_validator('visibility')
     @classmethod
     def check_visibility(cls, visibility: Visibility | None) -> Visibility:
-        if visibility is None:
-            raise ValueError('Visibility cannot be null')
+        if visibility is None: raise ValueError('Visibility cannot be null')
         return visibility
+
+
+class PostMediaOut(BaseModel):
+    id: UUID
+    media_type: Literal['image/webp'] = 'image/webp'
+    position: int
 
 
 class PostOut(BaseModel):
@@ -72,6 +99,9 @@ class PostOut(BaseModel):
     visibility: Visibility
     created_at: datetime
     display_recipe: RevealRecipe | None = None
+    link_url: str | None = None
+    media: list[PostMediaOut] = Field(default_factory=list)
+    hashtags: list[str] = Field(default_factory=list)
     likes_count: int = 0
     comments_count: int = 0
     reposts_count: int = 0
@@ -79,6 +109,22 @@ class PostOut(BaseModel):
     bookmarked_by_me: bool = False
     reposted_by: str | None = None
     reposted_at: datetime | None = None
+
+
+def post_extras(db: Session, ids: list[UUID]) -> tuple[dict[UUID,list[PostMediaOut]],dict[UUID,list[str]]]:
+    """Fetch image metadata and tag chips for an entire feed page in two queries."""
+    media: dict[UUID,list[PostMediaOut]] = {}
+    tags: dict[UUID,list[str]] = {}
+    if ids:
+        for item in db.scalars(select(PostMedia).where(PostMedia.post_id.in_(ids))
+                               .order_by(PostMedia.post_id,PostMedia.position)).all():
+            media.setdefault(item.post_id,[]).append(
+                PostMediaOut(id=item.id,media_type='image/webp',position=item.position))
+        for post_id,tag in db.execute(select(PostHashtag.post_id,PostHashtag.tag)
+                                      .where(PostHashtag.post_id.in_(ids))
+                                      .order_by(PostHashtag.tag)).all():
+            tags.setdefault(post_id,[]).append(tag)
+    return media,tags
 
 
 def counts_by_post(db: Session, post_ids: list[UUID]) -> dict[UUID, tuple[int, int, int]]:
@@ -138,12 +184,14 @@ def serialize(
     *, viewer_reposts: set[UUID] | None = None,
     viewer_bookmarks: set[UUID] | None = None,
     reposted_by: str | None = None, reposted_at: datetime | None = None,
+    media: list[PostMediaOut] | None = None, hashtags: list[str] | None = None,
 ) -> PostOut:
     likes, comments, reposts = (counts or {}).get(post.id, (0, 0, 0))
     return PostOut(
         id=post.id, username=username, caption=post.caption,
         observation_id=post.observation_id, visibility=post.visibility,
         created_at=post.created_at, display_recipe=post.display_recipe,
+        link_url=post.link_url, media=media or [], hashtags=hashtags or [],
         likes_count=likes, comments_count=comments,
         reposts_count=reposts, reposted_by_me=post.id in (viewer_reposts or set()),
         bookmarked_by_me=post.id in (viewer_bookmarks or set()),
