@@ -16,10 +16,49 @@ const ago = (date:string) => {
   if(mins < 1440) return `hace ${Math.floor(mins/60)} h`;
   return `hace ${Math.floor(mins/1440)} días`;
 };
-export function Avatar({name,size=36}:{name:string;size?:number}) {
-  const hue = Array.from(name).reduce((sum,ch)=>sum+ch.charCodeAt(0)*17,0)%360;
+// One public profile lookup per unique author across cards; never fetch
+// missing-avatar media URLs or expose private bucket keys.
+const avatarCache=new Map<string,Promise<string|null>>();
+function cachedAvatarVersion(username:string):Promise<string|null>{
+  const key=username.toLowerCase();
+  let pending=avatarCache.get(key);
+  if(!pending){
+    pending=api.user(key).then(profile=>profile.avatar_version).catch(()=>{
+      avatarCache.delete(key);
+      return null;
+    });
+    avatarCache.set(key,pending);
+  }
+  return pending;
+}
+export function updateAvatarCache(username:string,version:string|null){
+  avatarCache.set(username.toLowerCase(),Promise.resolve(version));
+  window.dispatchEvent(new CustomEvent('astrogram:avatar-updated',{
+    detail:{username:username.toLowerCase(),version},
+  }));
+}
+export function Avatar({name,size=36,version}:{name:string;size?:number;version?:string|null}) {
+  const [resolved,setResolved]=useState<string|null>(version??null);
+  const [broken,setBroken]=useState(false);
+  useEffect(()=>{
+    setBroken(false);
+    if(version!==undefined){setResolved(version);return;}
+    let active=true;
+    void cachedAvatarVersion(name).then(value=>{if(active)setResolved(value);});
+    const listener=(event:Event)=>{
+      const data=(event as CustomEvent<{username:string;version:string|null}>).detail;
+      if(data?.username===name.toLowerCase()){setResolved(data.version);setBroken(false);}
+    };
+    window.addEventListener('astrogram:avatar-updated',listener);
+    return()=>{active=false;window.removeEventListener('astrogram:avatar-updated',listener);};
+  },[name,version]);
+  const hue=Array.from(name).reduce((sum,ch)=>sum+ch.charCodeAt(0)*17,0)%360;
+  const src=resolved&&!broken?api.profileMediaUrl(name,'avatar',resolved):null;
   return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.34),
-    background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>{name.slice(0,2).toUpperCase()}</span>;
+    background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>
+    {src?<img src={src} alt="" loading="lazy" decoding="async"
+      onError={()=>setBroken(true)}/>:name.slice(0,2).toUpperCase()}
+  </span>;
 }
 export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,onBookmarkChange,currentUsername,initialCommentsOpen=false}: {
   post:Post;onProfile:(name:string)=>void;onExplore:(id:string)=>void;onRequireLogin:()=>void;

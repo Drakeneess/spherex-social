@@ -238,3 +238,118 @@ def test_refresh_rejects_invalid_cookie_without_creating_device_session(client):
     assert client.post('/v1/auth/logout').status_code == 204
     with Session(engine) as db:
         assert db.query(AuthSession).count() == 0
+
+
+def _profile_picture_url(color=(22,92,147),exif=False):
+    import base64
+    import io
+    from PIL import Image
+    picture=Image.new('RGB',(900,500),color)
+    kwargs={}
+    if exif:
+        metadata=Image.Exif()
+        metadata[271]='Astronomy Camera'
+        kwargs['exif']=metadata
+    stream=io.BytesIO()
+    picture.save(stream,format='JPEG',quality=90,**kwargs)
+    return 'data:image/jpeg;base64,'+base64.b64encode(stream.getvalue()).decode('ascii')
+
+
+def test_profile_editor_persists_website_and_public_media_safely(
+    client,monkeypatch,tmp_path,
+):
+    import io
+    from PIL import Image
+    import profile_storage
+    import sky_storage
+
+    for name in ('SKY_S3_ENDPOINT','SKY_S3_BUCKET','SKY_S3_REGION',
+                 'SKY_S3_ACCESS_KEY','SKY_S3_SECRET_KEY'):
+        monkeypatch.delenv(name,raising=False)
+    monkeypatch.setenv('APP_ENV','development')
+    monkeypatch.setattr(profile_storage,'LOCAL_STORE',tmp_path)
+    monkeypatch.setattr(sky_storage,'LOCAL_STORE',tmp_path)
+    register(client)
+    token=login(client).json()['access_token']
+    headers={'Authorization':f'Bearer {token}'}
+
+    info=client.patch('/v1/users/me',headers=headers,json={
+        'display_name':'Astronomía Amateur', 'bio':'Buscando galaxias',
+        'website':' https://science.nasa.gov/ ',
+    })
+    assert info.status_code==200,info.text
+    assert info.json()['website']=='https://science.nasa.gov/'
+    assert info.json()['avatar_version'] is None
+    assert client.get('/v1/users/skywatcher').json()['website']=='https://science.nasa.gov/'
+    assert client.get('/v1/users/skywatcher/media/avatar').status_code==404
+    assert client.get('/v1/users/skywatcher/media/cover').status_code==404
+
+    avatar=client.post('/v1/users/me/media/avatar',headers=headers,
+        json={'data_url':_profile_picture_url(exif=True)})
+    assert avatar.status_code==200,avatar.text
+    assert avatar.json()['avatar_version'] is not None
+    assert avatar.json()['cover_version'] is None
+    response=client.get('/v1/users/skywatcher/media/avatar')
+    assert response.status_code==200,response.text
+    assert response.headers['content-type'].startswith('image/webp')
+    assert len(response.content)<=96*1024
+    with Image.open(io.BytesIO(response.content)) as picture:
+        assert picture.size==(256,256)
+        assert picture.info.get('exif') is None
+    old_version=avatar.json()['avatar_version']
+    first_key=profile_storage.image_key(
+        __import__('uuid').UUID(avatar.json()['id']),
+        __import__('uuid').UUID(old_version),'avatar')
+    assert (tmp_path/first_key).exists()
+
+    cover=client.post('/v1/users/me/media/cover',headers=headers,
+        json={'data_url':_profile_picture_url((99,20,166))})
+    assert cover.status_code==200,cover.text
+    assert cover.json()['cover_version'] is not None
+    banner=client.get('/v1/users/skywatcher/media/cover')
+    assert banner.status_code==200
+    assert len(banner.content)<=350*1024
+    with Image.open(io.BytesIO(banner.content)) as picture:
+        assert picture.size==(1280,400)
+        assert picture.info.get('exif') is None
+
+    second=client.post('/v1/users/me/media/avatar',headers=headers,
+        json={'data_url':_profile_picture_url((55,180,41))})
+    assert second.status_code==200,second.text
+    assert second.json()['avatar_version']!=old_version
+    assert not (tmp_path/first_key).exists()
+    assert client.delete('/v1/users/me/media/avatar',headers=headers).json()['avatar_version'] is None
+    assert client.get('/v1/users/skywatcher/media/avatar').status_code==404
+    assert client.delete('/v1/users/me/media/cover',headers=headers).json()['cover_version'] is None
+    assert client.get('/v1/users/skywatcher/media/cover').status_code==404
+
+
+def test_profile_editor_requires_auth_and_rejects_unsafe_media_and_links(client):
+    register(client)
+    token=login(client).json()['access_token']
+    headers={'Authorization':f'Bearer {token}'}
+    assert client.post('/v1/users/me/media/avatar',
+                       json={'data_url':_profile_picture_url()}).status_code==401
+    assert client.delete('/v1/users/me/media/cover').status_code==401
+    for value in ['javascript:alert(1)','https://user:pass@domain.test',
+                  'file:///local/path']:
+        response=client.patch('/v1/users/me',headers=headers,json={'website':value})
+        assert response.status_code==422,(value,response.text)
+    assert client.patch('/v1/users/me',headers=headers,json={'website':None}).status_code==200
+    assert client.post('/v1/users/me/media/avatar',headers=headers,
+                       json={'data_url':'data:text/html;base64,PGgxPkhlbGxvPC9oMT4='}).status_code==422
+    assert client.post('/v1/users/me/media/avatar',headers=headers,
+                       json={'data_url':'data:image/png;base64,invalid@@'}).status_code==422
+    assert client.post('/v1/users/me/media/other',headers=headers,
+                       json={'data_url':_profile_picture_url()}).status_code==422
+    assert client.get('/v1/users/skywatcher/media/other').status_code==422
+
+
+def test_real_railway_app_exposes_profile_media_paths():
+    from app import app as deployed_app
+    paths=deployed_app.openapi()['paths']
+    assert '/v1/users/me/media/{kind}' in paths
+    assert 'post' in paths['/v1/users/me/media/{kind}']
+    assert 'delete' in paths['/v1/users/me/media/{kind}']
+    assert '/v1/users/{username}/media/{kind}' in paths
+    assert 'get' in paths['/v1/users/{username}/media/{kind}']
