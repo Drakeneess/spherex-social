@@ -108,7 +108,8 @@ export default function SearchResultsPage({query,onNavigate}:Props){
         <div className="global-results-list">
           {results.posts.length?results.posts.map(post=><button type="button"
             className="global-results-post" key={post.id}
-            onClick={()=>onNavigate('post/'+encodeURIComponent(post.id))}>
+            onClick={()=>onNavigate('post/'+encodeURIComponent(post.id)+
+              '?from=search&q='+encodeURIComponent(query))}>
             <span className="global-results-post-top"><strong>@{post.username}</strong>
               <small>{new Date(post.created_at).toLocaleDateString('es-BO')}</small></span>
             <span className="global-results-post-caption">
