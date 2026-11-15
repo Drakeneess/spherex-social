@@ -8,7 +8,7 @@
 
 Una comunidad astronómica donde las observaciones reales de **SPHEREx** se encuentran con una experiencia social: explora distintas épocas de una región del cielo, prepara su revelado y comparte lo que te llama la atención.
 
-**[Explorar la plataforma](#-qué-puedes-hacer) · [Arquitectura](docs/ARCHITECTURE.md) · [Ejecutar localmente](docs/DEVELOPMENT.md) · [Rigor científico](docs/SCIENCE.md)**
+**[🌌 Abrir AstroGram](https://astrogram.up.railway.app/) · [Arquitectura](docs/ARCHITECTURE.md) · [Ejecutar localmente](docs/DEVELOPMENT.md) · [Rigor científico](docs/SCIENCE.md)**
 
 [![CI](https://github.com/Drakeneess/spherex-social/actions/workflows/ci.yml/badge.svg)](https://github.com/Drakeneess/spherex-social/actions/workflows/ci.yml)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
