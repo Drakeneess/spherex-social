@@ -89,7 +89,7 @@ export function Avatar({name,size=36,version,colorStart,colorEnd}:{
   </span>;
 }
 export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,onBookmarkChange,currentUsername,initialCommentsOpen=false}: {
-  post:Post;onProfile:(name:string)=>void;onExplore:(id:string)=>void;onRequireLogin:()=>void;
+  post:Post;onProfile:(name:string)=>void;onExplore:(id:string,sourcePostId?:string)=>void;onRequireLogin:()=>void;
   onRepostChange?:()=>void;onBookmarkChange?:(postId:string,bookmarked:boolean)=>void;
   currentUsername?:string;
   initialCommentsOpen?:boolean;
@@ -226,7 +226,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     </div>
     {post.media?.length>0&&<PostMediaGallery postId={post.id} media={post.media}/>}
     {post.observation_id&&(region
-      ? <PostBlinkPreview postId={post.id} onExplore={()=>onExplore(region.id)}/>
+      ? <PostBlinkPreview postId={post.id} onExplore={()=>onExplore(region.id,post.id)}/>
       : <div className="post-text-poster" role="status">
           <Telescope size={30} aria-hidden="true"/><strong>Abriendo observación…</strong>
         </div>)}
@@ -257,7 +257,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       <span>{(()=>{try{return new URL(post.link_url).hostname;}catch{return 'Abrir enlace';}})()}</span>
       <small>Recurso externo</small>
     </a>}
-    {region && <button className="inline-explore" onClick={()=>onExplore(region.id)}><AstroGlyph name="telescope" size={17}/> Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
+    {region && <button className="inline-explore" onClick={()=>onExplore(region.id,post.id)}><AstroGlyph name="telescope" size={17}/> Abrir en el explorador · D{region.detector} · {region.fov_arcmin}′</button>}
     {error && <div className="inline-message" role="alert">{error}</div>}
     {notice && <div className="inline-message success" role="status">{notice}</div>}
     {commentsOpen && <div className="comments">
