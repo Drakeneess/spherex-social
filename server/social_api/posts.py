@@ -110,6 +110,7 @@ class PostOut(BaseModel):
     reposted_by_me: bool = False
     bookmarked_by_me: bool = False
     liked_by_me: bool = False
+    recommended_reason: str | None = None
     reposted_by: str | None = None
     reposted_at: datetime | None = None
 
@@ -197,6 +198,7 @@ def serialize(
     viewer_reposts: set[UUID] | None = None,
     viewer_bookmarks: set[UUID] | None = None,
     reposted_by: str | None = None, reposted_at: datetime | None = None,
+    recommended_reason: str | None = None,
     media: list[PostMediaOut] | None = None, hashtags: list[str] | None = None,
 ) -> PostOut:
     likes, comments, reposts = (counts or {}).get(post.id, (0, 0, 0))
@@ -210,6 +212,7 @@ def serialize(
         bookmarked_by_me=post.id in (viewer_bookmarks or set()),
         liked_by_me=post.id in (viewer_likes or set()),
         reposted_by=reposted_by, reposted_at=reposted_at,
+        recommended_reason=recommended_reason,
     )
 
 

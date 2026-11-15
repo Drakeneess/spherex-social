@@ -43,6 +43,7 @@ export type PostBlinkInfo = {
   frames: {index:number;status:'pending'|'loading'|'ready'|'failed';date:string|null}[];
 };
 export type PostMedia = {id:string;media_type:'image/webp';position:number};
+export type FeedMode = 'for_you'|'following'|'recent';
 export type Post = {
   id: string;
   username: string;
@@ -60,6 +61,7 @@ export type Post = {
   reposted_by_me: boolean;
   bookmarked_by_me: boolean;
   liked_by_me: boolean;
+  recommended_reason?: string|null;
   reposted_by: string | null;
   reposted_at: string | null;
 };
@@ -331,8 +333,9 @@ export const api = {
     write<void>('POST',`/v1/users/me/notifications/${encodeURIComponent(id)}/read`),
   markAllNotificationsRead: () =>
     write<void>('POST','/v1/users/me/notifications/read-all'),
-  feed: (limit = 20, offset = 0, tag?:string) => get<Post[]>(
-    `/v1/feed?limit=${limit}&offset=${offset}${tag?`&tag=${encodeURIComponent(tag)}`:''}`,hasToken()),
+  feed: (limit=20,offset=0,tag?:string,mode:FeedMode='recent',signal?:AbortSignal) => get<Post[]>(
+    `/v1/feed?limit=${limit}&offset=${offset}&mode=${mode}${tag?`&tag=${encodeURIComponent(tag)}`:''}`,
+    hasToken(),signal),
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),
   createPost: (data: {
     caption:string;visibility:Post['visibility'];observation_id:string|null;
