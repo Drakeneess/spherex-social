@@ -27,6 +27,17 @@ export default function OnboardingTour({spec,onClose}:{spec:TourSpec;onClose:(co
   useEffect(()=>{
     const onKey=(event:KeyboardEvent)=>{
       if(event.key==='Escape'){event.preventDefault();onClose(false);}
+      if(event.key==='Tab'&&!spec.soft){
+        const controls=Array.from(tipRef.current?.querySelectorAll<HTMLButtonElement>('button:not([disabled])')??[]);
+        if(controls.length){
+          const first=controls[0],last=controls[controls.length-1];
+          if(event.shiftKey&&(document.activeElement===first||document.activeElement===tipRef.current)){
+            event.preventDefault();last.focus();
+          }else if(!event.shiftKey&&(document.activeElement===last||document.activeElement===tipRef.current)){
+            event.preventDefault();first.focus();
+          }
+        }
+      }
       if(event.key==='ArrowRight'&&!spec.soft){event.preventDefault();setIndex(i=>Math.min(spec.steps.length-1,i+1));}
     };
     window.addEventListener('keydown',onKey);

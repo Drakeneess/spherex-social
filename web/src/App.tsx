@@ -570,7 +570,9 @@ export default function App(){
        <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
           onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden} onHideGuide={hideGuide}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
-    {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{setPublish(false);setFeedVersion(n=>n+1);setToast('Publicación creada en AstroGram');go('home');}}/>}
+    {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{if(user)writeFlag(user.id,'publish');
+      setTour(null);setPublish(false);setFeedVersion(n=>n+1);
+      setToast('Publicación creada en AstroGram');go('home');}}/>}
     {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}
     {onboardingNotice&&user&&<div className="ag-onboard-toast" role="status" aria-live="polite">
       <Check size={17}/> {onboardingNotice}</div>}

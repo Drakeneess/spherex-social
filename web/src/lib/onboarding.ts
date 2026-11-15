@@ -97,7 +97,7 @@ export function publishingSteps(hasRegion:boolean):TourStep[]{
   ];
 }
 export function nudgeStep(key:NudgeKey):TourStep {
-  if(key==='like')return {title:'¡Tu primer «Me encoheta»!',target:'[data-tour="like-button"]',icon:'ship',
+  if(key==='like')return {title:'¡Tu primer «Me encoheta»!',target:'[data-tour="like-button"]:focus',icon:'ship',
     description:'El cohete muestra que te gustó una publicación. Puedes retirarlo pulsando de nuevo.'};
   if(key==='mark')return {title:'¡Primera marca!',target:'[data-tour="explore-canvas"]',icon:'pin',
     description:'Marca una posición en otra época para dibujar su trayectoria. Esto no confirma movimiento astronómico.'};
