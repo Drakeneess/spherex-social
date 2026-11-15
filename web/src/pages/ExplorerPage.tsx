@@ -8,10 +8,7 @@ import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
 import TaurusChart from '../components/TaurusChart';
-import {
-  TAURUS_CENTER, TAURUS_TARGETS, findTaurusTarget, resolveSkyName,
-  type SkyPosition,
-} from '../lib/taurus';
+import { TAURUS_CENTER, type SkyPosition } from '../lib/taurus';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
 const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -27,14 +24,14 @@ type Params = {
 };
 
 export default function ExplorerPage({
-  observationId, initialRa, initialDec, constellation, initialTarget,
+  observationId, initialRa, initialDec, constellation, prefillOnly,
   onPublish, onLogin, onProgress, onGoHome, active,
 }: {
   observationId?: string;
   initialRa?: number;
   initialDec?: number;
   constellation?: string;
-  initialTarget?: string;
+  prefillOnly?: boolean;
   onPublish: (region: ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe}) => void;
   onLogin: () => void;
   onProgress: (status: {trace: SearchTrace | null;loading: boolean;jobId?:string|null;restored?:boolean}) => void;
@@ -47,8 +44,6 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
-  const [skyName,setSkyName] = useState('');
-  const [nameError,setNameError] = useState('');
   const [showTaurus,setShowTaurus] = useState(false);
   const [selectedName,setSelectedName] = useState('Región de Tauro');
   // The explorer uses the fast discovery method by default; TAP remains a backend fallback.
@@ -302,19 +297,18 @@ export default function ExplorerPage({
   }, [watchSearch, observationId, initialRa, initialDec]);
 
   useEffect(() => {
-    if(!active||constellation!=='taurus')return;
+    if(!active)return;
+    if(constellation!=='taurus'){
+      setShowTaurus(false);
+      return;
+    }
     setShowTaurus(true);
-    setSkyName('Tauro');
-    setNameError('');
-    const target=initialTarget?findTaurusTarget(initialTarget):undefined;
-    const point:SkyPosition=target??TAURUS_CENTER;
-    setRa(String(point.ra));
-    setDec(String(point.dec));
-    setSelectedName(target?.name??'Centro aproximado de Tauro');
+    setRa(String(TAURUS_CENTER.ra));
+    setDec(String(TAURUS_CENTER.dec));
+    setSelectedName('Centro aproximado de Tauro');
     setDemo(false);
-    // Opening the atlas only changes form coordinates: the astronomer must
-    // explicitly start a search to avoid unnecessary expensive IRSA jobs.
-  },[active,constellation,initialTarget]);
+    // Birthday unlock: never start a server job until the user presses Search.
+  },[active,constellation]);
 
   useEffect(() => {
     if (!observationId) return;
@@ -343,10 +337,15 @@ export default function ExplorerPage({
     if (!Number.isFinite(initialRa) || !Number.isFinite(initialDec)) return;
     setRa(String(initialRa));
     setDec(String(initialDec));
+    if(prefillOnly){
+      setDemo(false);
+      setNotice('Coordenadas preparadas. Pulsa Buscar cuando quieras consultar SPHEREx.');
+      return;
+    }
     void load({ ra: initialRa, dec: initialDec, size: 6, detector: 2,
       frames: 12, demo: false, catalogMethod: 'sia2' });
 
-  }, [observationId, initialRa, initialDec, load]);
+  }, [observationId, initialRa, initialDec, prefillOnly, load]);
 
   // Advance to the first loaded image even when a later epoch arrives first.
   useEffect(() => {
@@ -388,23 +387,6 @@ export default function ExplorerPage({
     setRa(String(Number(point.ra.toFixed(6))));
     setDec(String(Number(point.dec.toFixed(6))));
     setSelectedName(name);
-    setNameError('');
-  }
-  function locateByName(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();
-    const match=resolveSkyName(skyName);
-    if(!match){
-      setNameError('Por ahora el atlas por nombre incluye Tauro, sus estrellas y M1/M45.');
-      return;
-    }
-    setShowTaurus(true);
-    setNameError('');
-    setDemo(false);
-    if(match.type==='target'){
-      selectTaurusPosition(match.target,match.target.name);
-    }else{
-      selectTaurusPosition(TAURUS_CENTER,'Centro aproximado de Tauro');
-    }
   }
   function searchSelectedRegion(){
     if(loading)return;
@@ -531,24 +513,6 @@ export default function ExplorerPage({
       <aside className="epoch-side">
         <section className="card epoch-search-card">
           <div className="card-h"><span>Buscar en el cielo</span></div>
-          <div className="constellation-lookup">
-            <label htmlFor="constellation-name"><Search size={15}/> Buscar constelación u objeto</label>
-            <form className="constellation-lookup-form" onSubmit={locateByName}>
-              <input id="constellation-name" list="taurus-name-suggestions"
-                value={skyName} autoComplete="off"
-                onChange={event=>{setSkyName(event.target.value);setNameError('');}}
-                placeholder="Tauro, Aldebarán, Pléyades…"/>
-              <datalist id="taurus-name-suggestions">
-                <option value="Tauro"/><option value="Taurus"/>
-                {TAURUS_TARGETS.map(target=><option key={target.id} value={target.name}/>)}
-              </datalist>
-              <button type="submit" className="btn sm" aria-label="Localizar en el mapa">
-                <Search size={16}/> Ver mapa
-              </button>
-            </form>
-            {nameError&&<p className="constellation-lookup-error" role="alert">{nameError}</p>}
-            <small>Localiza primero la región; tú decides cuándo buscar imágenes SPHEREx.</small>
-          </div>
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick" data-tour="explore-presets">
               {presets.map(preset => <button key={preset.name} type="button"

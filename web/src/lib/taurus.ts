@@ -65,20 +65,6 @@ export function findTaurusTarget(text:string):TaurusTarget|undefined{
     target.aliases.some(name=>normalize(name)===term));
 }
 
-export type SkyNameMatch={type:'constellation';id:'taurus'}|
-  {type:'target';id:'taurus';target:TaurusTarget};
-
-/** Exact matches: names of unrelated profiles must still go to profile search. */
-export function resolveSkyName(text:string):SkyNameMatch|null{
-  const term=normalize(text);
-  if(['tauro','taurus','tau','constelacion tauro','constelacion de tauro',
-      'constelacion taurus','constellation taurus'].includes(term)){
-    return {type:'constellation',id:'taurus'};
-  }
-  const target=findTaurusTarget(term);
-  return target?{type:'target',id:'taurus',target}:null;
-}
-
 function clamp(value:number,min:number,max:number){
   return Math.min(max,Math.max(min,value));
 }

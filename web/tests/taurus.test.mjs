@@ -8,20 +8,20 @@ const output=ts.transpileModule(source,{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
 }).outputText;
 const {
-  resolveSkyName,findTaurusTarget,TAURUS_TARGETS,TAURUS_CENTER,
+  findTaurusTarget,TAURUS_TARGETS,TAURUS_CENTER,
   TAURUS_VIEW,TAURUS_FIGURE_LINES,projectTaurus,unprojectTaurus,withinTaurusChart,
   TAURUS_CHART,
 }=await import('data:text/javascript;base64,'+Buffer.from(output).toString('base64'));
 
-test('Taurus and Tauro resolve by name including Spanish accents',()=>{
-  for(const name of ['Tauro','Taurus','Tau','Constelación de Tauro',
-    'CONSTELACION TAURUS','constellation taurus']){
-    assert.deepEqual(resolveSkyName(name),{type:'constellation',id:'taurus'});
-  }
-  assert.equal(resolveSkyName('Aries'),null);
-  assert.equal(resolveSkyName('otro_usuario'),null);
-  assert.equal(resolveSkyName('tauro astronomy'),null);
+test('Taurus names stay off public navigation; DOB is required for the private atlas',()=>{
+  const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
+  const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(app,/resolveSkyName|Buscar personas, Tauro/);
+  assert.doesNotMatch(explorer,/constellation-lookup|locateByName|Buscar constelación u objeto/);
+  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id==='taurus'/);
+  assert.equal(findTaurusTarget('Aldebarán')?.id,'aldebaran');
 });
+
 test('the main Taurus objects have distinct real J2000 positions',()=>{
   assert.equal(TAURUS_TARGETS.length>=10,true);
   const expected=[
@@ -44,7 +44,7 @@ test('the main Taurus objects have distinct real J2000 positions',()=>{
   }
   assert.ok(withinTaurusChart(TAURUS_CENTER));
 });
-test('aliases resolve to selectable targets rather than starting a request',()=>{
+test('saved atlas targets retain their useful aliases',()=>{
   for(const [alias,id] of [
     ['aldebaran','aldebaran'],
     ['Aldebarán','aldebaran'],
@@ -53,11 +53,7 @@ test('aliases resolve to selectable targets rather than starting a request',()=>
     ['m45','m45'],
     ['M1','m1'],
     ['Nebulosa del Cangrejo','m1'],
-  ]){
-    const match=resolveSkyName(alias);
-    assert.ok(match&&match.type==='target',alias);
-    assert.equal(match.target.id,id);
-  }
+  ])assert.equal(findTaurusTarget(alias)?.id,id);
   assert.equal(findTaurusTarget('No existe'),undefined);
 });
 test('chart orientation matches astronomical north up and east left',()=>{
@@ -84,9 +80,9 @@ test('click-to-coordinate is invertible across the sky chart',()=>{
 });
 test('opening Tauro does not trigger an expensive job automatically',()=>{
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
-  const start=explorer.indexOf("if(!active||constellation!=='taurus')return;");
+  const start=explorer.indexOf("if(constellation!=='taurus'){");
   assert.ok(start>=0);
-  const end=explorer.indexOf("},[active,constellation,initialTarget]);",start);
+  const end=explorer.indexOf("},[active,constellation]);",start);
   assert.ok(end>start);
   const effect=explorer.slice(start,end);
   assert.doesNotMatch(effect,/\bload\s*\(/);
