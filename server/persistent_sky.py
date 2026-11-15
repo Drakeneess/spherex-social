@@ -380,7 +380,6 @@ def _archived_catalog(row: SkySearchJob) -> tuple[list[dict], dict, str] | None:
             metadata = {
                 "method": "archive",
                 "fallback_from": "sia2+tap",
-                "archive_date": _iso_utc(previous.updated_at),
                 "catalog_source": previous.source,
                 "_archive_source_job": str(previous.id),
             }
