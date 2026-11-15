@@ -47,7 +47,7 @@ def _client(endpoint: str, access_key: str, secret_key: str, region: str):
         aws_access_key_id=access_key, aws_secret_access_key=secret_key,
         region_name=region,
         config=Config(signature_version="s3v4",
-                      s3={"addressing_style": "path"},
+                      s3={"addressing_style": os.environ.get("SKY_S3_ADDRESSING_STYLE", "virtual")},
                       retries={"max_attempts": 3, "mode": "standard"}),
     )
 

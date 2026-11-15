@@ -468,6 +468,7 @@ SKY_S3_BUCKET
 SKY_S3_REGION
 SKY_S3_ACCESS_KEY
 SKY_S3_SECRET_KEY
+SKY_S3_ADDRESSING_STYLE=virtual
 ```
 
 En desarrollo, si APP_ENV no es production y faltan esas variables, se usan
