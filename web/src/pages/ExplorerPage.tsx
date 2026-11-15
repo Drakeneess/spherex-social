@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
+import { Activity, LoaderCircle, Pause, Play, Radar, Search, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch, type MotionCandidate, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
 import { REALTIME_EVENT, skyJobStreamActive, startRealtime, subscribeRealtime } from '../lib/realtime';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
+import { progressSummary } from '../components/BackgroundSkyDock';
+import ExplorerFold from '../components/ExplorerFold';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
 import CandidateFinder from '../components/CandidateFinder';
@@ -73,6 +75,9 @@ export default function ExplorerPage({
   const [skyState,setSkyState] = useState<PersistentSkyJob|null>(null);
   const [selectedCandidate,setSelectedCandidate] = useState<MotionCandidate|null>(null);
   const [restoring,setRestoring] = useState(false);
+  const [folds,setFolds] = useState({search:true,movement:false,reveal:false,status:false});
+  const toggleFold=(name:keyof typeof folds, open:boolean)=>
+    setFolds(previous=>({...previous,[name]:open}));
 
   const controller = useRef<AbortController | null>(null);
   const activeJobId = useRef<string | null>(null);
@@ -121,6 +126,9 @@ export default function ExplorerPage({
     inFlightFrames.current.clear();
     setRestoring(restored);
     setLoading(true);
+    // A running search deserves immediate visibility; a restored finished
+    // search stays compact until the reader expands its status.
+    setFolds({search:false,movement:false,reveal:false,status:!restored});
     // A recovered job must not masquerade as a new search before its real
     // PostgreSQL state has been read. In particular, no duplicate completion.
     setTrace(restored?null:{
@@ -227,6 +235,7 @@ export default function ExplorerPage({
               const ready = state.frames.filter(item => item.status === 'ready').length;
               if (ready >= 2 && state.status !== 'cancelled') setPlaying(true);
               setLoading(false);
+              setFolds(previous=>({...previous,status:state.status==='failed'}));
               // Remaining image assets can still hydrate from a completed job.
               const rest = state.frames
                 .filter(item => item.status === 'ready' && !loadedFrames.current[item.index])
@@ -265,6 +274,7 @@ export default function ExplorerPage({
         if (request.signal.aborted) return;
         console.warn('[AstroGram] Could not open sky job', cause);
         setError('No pudimos abrir tu búsqueda guardada. Inténtalo de nuevo.');
+        setFolds(previous=>({...previous,status:true}));
         setTrace(previous => previous ? {...previous, phase:'failed',finishedAt:Date.now()} : previous);
         setLoading(false);
       } finally {
@@ -541,8 +551,11 @@ export default function ExplorerPage({
       </section>
 
       <aside className="epoch-side">
-        <section className="card epoch-search-card">
-          <div className="card-h"><span>Buscar en el cielo</span></div>
+        <ExplorerFold title="Buscar en el cielo" icon={Search}
+          summary={`RA ${ra || '—'}° · Dec ${dec || '—'}° · D${detector} · ${epochs} épocas`}
+          badge={loading?'Buscando':undefined}
+          open={folds.search} onToggle={open=>toggleFold('search',open)}
+          className="epoch-search-card">
           <form className="xform epoch-search-form" onSubmit={runSearch}>
             <div className="quick" data-tour="explore-presets">
               {presets.map(preset => <button key={preset.name} type="button"
@@ -580,16 +593,19 @@ export default function ExplorerPage({
                 : 'Buscar'}
             </button>
           </form>
-          <div className="epoch-secondary-actions">
+        </ExplorerFold>
+        <div className="epoch-secondary-actions epoch-quick-actions">
             <button type="button" data-tour="explore-publish" className="btn epoch-publish" onClick={publish}>✦ Publicar este hallazgo</button>
             <button type="button" className="btn epoch-save" disabled={saveBusy} onClick={() => void saveRegion()}>
               <Save size={14}/> {saveBusy ? 'Guardando…' : 'Guardar región'}
             </button>
           </div>
-          {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
-
-        </section>
-        {skyState && !skyState.query.demo && result &&
+        {savedId && <div className="epoch-saved">✓ Región guardada en tu cuenta</div>}
+        {skyState && !skyState.query.demo && result && <ExplorerFold
+          title="Buscar movimiento" icon={Radar} badge="Experimental"
+          summary={`${skyState.frames.filter(frame=>frame.status==='ready'&&frame.raw_available).length} épocas FITS disponibles`}
+          open={folds.movement} onToggle={open=>toggleFold('movement',open)}
+          className="epoch-movement-fold">
           <CandidateFinder jobId={skyState.job_id}
             ready={skyState.status==='complete'||skyState.status==='partial'}
             epochsAvailable={skyState.frames.filter(item=>
@@ -604,24 +620,40 @@ export default function ExplorerPage({
                   block:'center',
                 });
               }
-            }}/>}
-        {result?.source !== 'simulated' && result && <RevealEditor
-          active={active} jobId={activeJobId.current}
+            }}/>
+        </ExplorerFold>}
+        {result?.source !== 'simulated' && result && <ExplorerFold
+          title="Revelado" icon={SlidersHorizontal} badge="FITS"
+          summary={`${revealRecipe.palette==='gray'?'Monocromo':revealRecipe.palette==='cyan'?'Cian':revealRecipe.palette==='violet'?'Violeta':revealRecipe.palette==='ember'?'Ámbar':'Personalizado'} · ${revealRecipe.format==='square'?'1:1':revealRecipe.format==='portrait'?'4:5':'16:9'} · ${revealEnabled?'Al publicar':'Solo vista'}`}
+          open={folds.reveal} onToggle={open=>toggleFold('reveal',open)}
+          className="epoch-reveal-fold">
+          <RevealEditor
+          active={active&&folds.reveal} jobId={activeJobId.current}
           index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
           hasRaw={rawAvailable} searching={loading} recipe={revealRecipe}
           originalImage={frames[revealPreviewIndex]?.image}
           onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
           enabled={revealEnabled} onEnabled={setRevealEnabled}
           onOpen={()=>setPlaying(false)}
-          editableIndices={revealable} onSelectEpoch={index=>{setPlaying(false);setPosition(index)}}/>}
-        <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
-          onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
-        <div className="epoch-science-note">
+          editableIndices={revealable} onSelectEpoch={index=>{setPlaying(false);setPosition(index)}}/>
+        </ExplorerFold>}
+        {trace && <ExplorerFold
+          title="Estado de búsqueda" icon={Activity}
+          summary={progressSummary(trace).label}
+          badge={trace.frames.length
+            ? `${trace.frames.filter(frame=>frame.status==='ready').length}/${trace.frames.length}`
+            : loading?'En curso':undefined}
+          open={folds.status} onToggle={open=>toggleFold('status',open)}
+          busy={loading} className="epoch-status-fold">
+          <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
+            onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
+          <div className="epoch-science-note">
           {result?.source === 'simulated'
             ? 'Demostración con imágenes simuladas: no son observaciones de NASA.'
             : 'Las búsquedas reales consultan observaciones NASA/IPAC IRSA. La vista es preliminar y la calidad puede variar entre imágenes.'}
           {' '}Las marcas son personales y no se guardan automáticamente.
-        </div>
+          </div>
+        </ExplorerFold>}
         {result && <button type="button" className="epoch-compare btn sm"
           disabled={!frames[position - 1]} aria-pressed={compare} onClick={() => setCompare(value => !value)}>
           {compare ? '✓ ' : ''}Superponer época anterior

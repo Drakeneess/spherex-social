@@ -2862,3 +2862,105 @@ body {
 @media(prefers-reduced-motion:reduce){
   .feed-mode-tabs button{transition:none}
 }
+
+
+/* Explorer workspace: compact, independent and accessible folding toolboxes.
+   Hidden panels retain mounted state (FITS jobs, forms and candidate lists). */
+.explorer-fold{
+  min-width:0;overflow:hidden;border-radius:14px;
+  border:1px solid #354363;background:#111b31;
+  box-shadow:0 4px 22px #0000001c;
+}
+.explorer-fold-heading{margin:0;font-size:inherit;font-weight:inherit}
+.explorer-fold-trigger{
+  display:flex;align-items:center;gap:11px;width:100%;min-width:0;
+  min-height:65px;padding:11px 13px;text-align:left;
+  color:#e8efff;background:transparent;
+  transition:background .16s ease;
+}
+.explorer-fold-trigger:hover{background:#202f4b}
+.explorer-fold-trigger:focus-visible{outline:2px solid #8fc4ff;outline-offset:-3px}
+.explorer-fold-icon{
+  display:grid;place-items:center;flex:none;width:37px;height:37px;
+  color:#96bcf5;border:1px solid #526c9a77;border-radius:11px;
+  background:linear-gradient(140deg,#263859,#1a2947);
+}
+.explorer-fold-label{display:grid;gap:4px;min-width:0;flex:1}
+.explorer-fold-label strong{font-size:.82rem;line-height:1.2;font-weight:750}
+.explorer-fold-label small{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#94a9cb;font-size:.68rem;line-height:1.3;
+}
+.explorer-fold-badge{
+  display:block;flex:none;max-width:78px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;
+  padding:5px 7px;border-radius:7px;background:#223452;
+  border:1px solid #3b557e;color:#b6d3fa;
+  font-size:.62rem;font-weight:750;
+}
+.explorer-fold-chevron{
+  flex:none;color:#9cb6db;transition:transform .18s ease;
+}
+.explorer-fold.is-open .explorer-fold-chevron{transform:rotate(180deg)}
+.explorer-fold-content{
+  min-width:0;border-top:1px solid #2d3d59;
+  background:var(--panel);
+}
+.explorer-fold-content[hidden]{display:none!important}
+.explorer-fold-live{
+  height:2px;overflow:hidden;background:#223b5a;
+}
+.explorer-fold-live span{
+  display:block;width:35%;height:100%;background:#7bbfff;
+  animation:explorer-fold-loading 1.6s ease-in-out infinite alternate;
+}
+@keyframes explorer-fold-loading{
+  from{transform:translateX(-100%)}to{transform:translateX(300%)}
+}
+.explorer-fold-content>.card{
+  border:0!important;border-radius:0!important;
+  box-shadow:none!important;background:transparent!important;
+}
+.explorer-fold-content>.sky-candidate-finder>.card-h,
+.explorer-fold-content>.reveal-editor>.card-h{
+  display:none;
+}
+.explorer-fold-content .sky-candidate-intro{padding:14px}
+.explorer-fold-content .reveal-compact{padding:13px}
+.explorer-fold-content .sky-candidate-disclaimer{border-radius:0}
+.explorer-fold-content>.sky-search-progress{
+  padding:13px 13px 12px;margin:0;border:0;border-radius:0;
+  box-shadow:none;background:transparent;
+}
+.explorer-fold-content>.sky-search-progress .sky-search-heading{display:none}
+.explorer-fold-content>.sky-search-progress .sky-search-detail{margin-top:7px}
+.epoch-status-fold .epoch-science-note{
+  padding:0 14px 14px;
+  font-size:.68rem;line-height:1.5;
+}
+.epoch-quick-actions{
+  display:flex;flex-direction:column;gap:8px;padding:0;
+  background:transparent;
+}
+.epoch-quick-actions .btn{margin:0;min-height:38px}
+.epoch-quick-actions .epoch-publish{
+  background:linear-gradient(110deg,#273a5e,#192943);
+  border:1px solid #476a98;color:#d8e9ff;
+}
+.epoch-quick-actions .epoch-publish:hover{border-color:#87b7f9;background:#314c77}
+.epoch-quick-actions .epoch-save{
+  min-height:37px;border:1px solid #30425e;
+  background:#121c32;color:#b4c9e7;
+}
+.epoch-quick-actions .epoch-save:hover{background:#202f4e;border-color:#6c88b2}
+.epoch-side>.epoch-saved{padding:0 10px 3px}
+@media(max-width:520px){
+  .explorer-fold-trigger{min-height:59px;padding:10px 12px;gap:9px}
+  .explorer-fold-icon{width:34px;height:34px}
+  .explorer-fold-label strong{font-size:.79rem}
+  .explorer-fold-label small{font-size:.65rem}
+}
+@media(prefers-reduced-motion:reduce){
+  .explorer-fold-trigger,.explorer-fold-chevron{transition:none}
+  .explorer-fold-live span{animation:none;width:100%}
+}
