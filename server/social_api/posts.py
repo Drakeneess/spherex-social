@@ -109,6 +109,7 @@ class PostOut(BaseModel):
     reposts_count: int = 0
     reposted_by_me: bool = False
     bookmarked_by_me: bool = False
+    liked_by_me: bool = False
     reposted_by: str | None = None
     reposted_at: datetime | None = None
 
@@ -163,6 +164,15 @@ def reposted_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[
     ).all())
 
 
+def liked_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[UUID]:
+    if viewer is None or not post_ids:
+        return set()
+    return set(db.scalars(
+        select(PostLike.post_id)
+        .where(PostLike.user_id == viewer.id, PostLike.post_id.in_(post_ids))
+    ).all())
+
+
 def bookmarked_ids(db: Session, viewer: User | None, post_ids: list[UUID]) -> set[UUID]:
     """One query for all bookmarks in a page; never expose another user's saves."""
     if viewer is None or not post_ids:
@@ -183,7 +193,8 @@ def optional_user(
 
 def serialize(
     post: Post, username: str, counts: dict[UUID, tuple[int, int, int]] | None = None,
-    *, viewer_reposts: set[UUID] | None = None,
+    *, viewer_likes: set[UUID] | None = None,
+    viewer_reposts: set[UUID] | None = None,
     viewer_bookmarks: set[UUID] | None = None,
     reposted_by: str | None = None, reposted_at: datetime | None = None,
     media: list[PostMediaOut] | None = None, hashtags: list[str] | None = None,
@@ -197,6 +208,7 @@ def serialize(
         likes_count=likes, comments_count=comments,
         reposts_count=reposts, reposted_by_me=post.id in (viewer_reposts or set()),
         bookmarked_by_me=post.id in (viewer_bookmarks or set()),
+        liked_by_me=post.id in (viewer_likes or set()),
         reposted_by=reposted_by, reposted_at=reposted_at,
     )
 
@@ -342,6 +354,7 @@ def get_post(
         media=media.get(post.id),hashtags=tags.get(post.id),
         viewer_reposts=reposted_ids(db, viewer, [post.id]),
         viewer_bookmarks=bookmarked_ids(db, viewer, [post.id]),
+        viewer_likes=liked_ids(db, viewer, [post.id]),
     )
 
 
@@ -390,6 +403,7 @@ def update_post(
         media=media.get(post.id),hashtags=tags.get(post.id),
         viewer_reposts=reposted_ids(db, user, [post.id]),
         viewer_bookmarks=bookmarked_ids(db, user, [post.id]),
+        viewer_likes=liked_ids(db, user, [post.id]),
     )
 
 
@@ -450,11 +464,12 @@ def user_posts(
     counts = counts_by_post(db, ids)
     viewer_reposts = reposted_ids(db, viewer, ids)
     viewer_bookmarks = bookmarked_ids(db, viewer, ids)
+    viewer_likes = liked_ids(db, viewer, ids)
     media,tags=post_extras(db,ids)
     return [
         serialize(
             post, author, counts, viewer_reposts=viewer_reposts,
-            viewer_bookmarks=viewer_bookmarks,
+            viewer_bookmarks=viewer_bookmarks, viewer_likes=viewer_likes,
             media=media.get(post.id),hashtags=tags.get(post.id),
             reposted_by=owner.username if is_repost else None,
             reposted_at=activity_at if is_repost else None,
