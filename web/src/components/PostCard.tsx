@@ -201,7 +201,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   }
   async function copyLink(){
     const url = post.observation_id
-      ? `${window.location.origin}/?observation_id=${encodeURIComponent(post.observation_id)}`
+      ? `${window.location.origin}/#/explore?observation_id=${encodeURIComponent(post.observation_id)}&source_post=${encodeURIComponent(post.id)}`
       : `${window.location.origin}/#/u/${encodeURIComponent(post.username)}`;
     setError('');setNotice('');
     try{await navigator.clipboard.writeText(url);playSound('success');setNotice('Enlace copiado.');}
