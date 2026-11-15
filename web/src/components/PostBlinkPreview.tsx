@@ -203,9 +203,9 @@ export default function PostBlinkPreview({
           onClick={() => setPlaying(value => !value)}>
           {playing ? <CirclePause size={25}/> : <CirclePlay size={25}/>}
         </button>}
-        {(error || failed) && <button type="button" className="post-blink-retry"
+        {(error || (failed && job?.status !== 'empty' && job?.status !== 'cancelled')) && <button type="button" className="post-blink-retry"
           onClick={() => { setError(''); setAttempt(value => value + 1); }}>
-          Reintentar
+          {error ? 'Reintentar' : 'Comprobar de nuevo'}
         </button>}
         <button type="button" className="post-blink-open" onClick={onExplore}
           title="Abrir región en el explorador">
