@@ -17,7 +17,7 @@ export function progressSummary(trace: SearchTrace) {
   const label = searching ? 'Buscando observaciones'
     : trace.phase === 'frames' ? 'Preparando imágenes del cielo'
       : trace.phase === 'complete' ? 'Tu búsqueda está lista'
-        : trace.phase === 'partial' ? 'Búsqueda lista con imágenes pendientes'
+        : trace.phase === 'partial' ? 'Búsqueda terminada con imágenes faltantes'
           : trace.phase === 'empty' ? 'No se encontraron observaciones'
             : trace.phase === 'cancelled' ? 'Búsqueda cancelada'
               : 'No se pudo completar la búsqueda';
