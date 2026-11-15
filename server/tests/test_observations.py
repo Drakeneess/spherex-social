@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from social_api.auth import _create_access_token
 from social_api.db import Base, get_db
 from social_api.main import create_app
-from social_api.models import Observation, User
+from social_api.models import AuthSession, Observation, User
 
 
 @pytest.fixture
@@ -32,10 +33,18 @@ def env():
         db.commit()
         db.refresh(alice)
         db.refresh(bob)
-        headers = {
-            user.username: {'Authorization': f'Bearer {_create_access_token(user).access_token}'}
-            for user in (alice, bob)
-        }
+        headers = {}
+        for user in (alice, bob):
+            device = AuthSession(
+                user_id=user.id, secret_hash=uuid4().hex + uuid4().hex,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            )
+            db.add(device)
+            db.flush()
+            headers[user.username] = {
+                'Authorization': f'Bearer {_create_access_token(user, device).access_token}',
+            }
+        db.commit()
     app = create_app()
 
     def test_db():
