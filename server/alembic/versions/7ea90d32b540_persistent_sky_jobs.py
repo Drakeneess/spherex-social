@@ -22,7 +22,7 @@ def upgrade():
         sa.Column('size_arcmin', sa.Float(), nullable=False),
         sa.Column('detector', sa.SmallInteger(), nullable=False),
         sa.Column('max_frames', sa.SmallInteger(), nullable=False),
-        sa.Column('demo', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('demo', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('status', sa.String(length=20), nullable=False, server_default='queued'),
         sa.Column('source', sa.String(length=20), nullable=False, server_default='sia2'),
         sa.Column('total_matches', sa.Integer(), nullable=True),

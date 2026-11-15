@@ -56,12 +56,17 @@ def _factory():
     return get_session_factory()
 
 
+def _iso_utc(value: datetime) -> str:
+    # SQLite tests can return naive UTC timestamps; production is timestamptz.
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
+
+
 def _snapshot(row: SkySearchJob) -> dict:
     frames = row.frame_states or []
     return {
         "job_id": str(row.id), "status": row.status, "source": row.source,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
+        "created_at": _iso_utc(row.created_at),
+        "updated_at": _iso_utc(row.updated_at),
         "query": {
             "ra": row.ra, "dec": row.dec, "size_arcmin": row.size_arcmin,
             "detector": row.detector, "max_frames": row.max_frames,

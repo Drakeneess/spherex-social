@@ -146,7 +146,7 @@ class SkySearchJob(Base):
     size_arcmin: Mapped[float] = mapped_column(Float, nullable=False)
     detector: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     max_frames: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='0')
+    demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default='queued')
     source: Mapped[str] = mapped_column(String(20), nullable=False, server_default='sia2')
     total_matches: Mapped[int | None] = mapped_column(Integer, nullable=True)
