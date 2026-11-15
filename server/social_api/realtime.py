@@ -15,6 +15,8 @@ from typing import Annotated
 import psycopg
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from .db import get_db
 
 from .config import get_settings
 from .models import User
@@ -117,8 +119,12 @@ async def event_listener():
 async def stream_events(
     request: Request,
     viewer: Annotated[User | None, Depends(optional_user)],
+    db: Annotated[Session, Depends(get_db)],
 ):
     user_id = str(viewer.id) if viewer is not None else None
+    # Streaming requests can live for hours. Release the authentication DB
+    # connection immediately rather than pinning a pool slot per subscriber.
+    db.close()
 
     async def stream():
         queue = hub.subscribe()
