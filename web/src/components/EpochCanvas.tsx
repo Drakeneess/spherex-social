@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type KeyboardEvent } from 'react';
-import type { SkyFrame } from '../lib/api';
+import type { SkyFrame, MotionCandidate } from '../lib/api';
 
 export type EpochMark = { index: number; x: number; y: number };
 
@@ -13,6 +13,7 @@ type Props = {
   metaLabel?: string;
   loading: boolean;
   hasSearch: boolean;
+  candidate?: MotionCandidate|null;
 };
 
 function fitted(image: HTMLImageElement, w: number, h: number) {
@@ -23,7 +24,7 @@ function fitted(image: HTMLImageElement, w: number, h: number) {
 }
 
 export default function EpochCanvas({
-  frame, previous, index, total, marks, onMark, metaLabel, loading, hasSearch,
+  frame, previous, index, total, marks, onMark, metaLabel, loading, hasSearch, candidate,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cache = useRef(new Map<string, HTMLImageElement>());
@@ -112,12 +113,42 @@ export default function EpochCanvas({
         });
         ctx.restore();
       }
+      if (candidate?.detections.length) {
+        const ordered = [...candidate.detections].sort((a,b)=>a.mjd-b.mjd);
+        ctx.save();
+        ctx.strokeStyle = '#75e5ec';
+        ctx.fillStyle = '#75e5ec';
+        ctx.lineWidth = Math.max(1.6, w / 350);
+        ctx.setLineDash([5, 6]);
+        ctx.beginPath();
+        ordered.forEach((point,n)=>{
+          const x = box.x + point.x * box.width;
+          const y = box.y + point.y * box.height;
+          if(n===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+        });
+        ctx.stroke();ctx.setLineDash([]);
+        for(const point of ordered){
+          const selected=point.index===index;
+          const x=box.x+point.x*box.width;
+          const y=box.y+point.y*box.height;
+          ctx.globalAlpha=selected?1:0.4;
+          ctx.beginPath();ctx.arc(x,y,selected?11:6,0,2*Math.PI);ctx.stroke();
+          if(selected){
+            ctx.beginPath();ctx.moveTo(x-18,y);ctx.lineTo(x-13,y);
+            ctx.moveTo(x+13,y);ctx.lineTo(x+18,y);
+            ctx.moveTo(x,y-18);ctx.lineTo(x,y-13);
+            ctx.moveTo(x,y+13);ctx.lineTo(x,y+18);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
     };
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
     paint();
     return () => observer.disconnect();
-  }, [frame, previous, index, marks, version]);
+  }, [frame, previous, index, marks, candidate, version]);
 
   function markAt(clientX: number, clientY: number) {
     const canvas = canvasRef.current;
@@ -148,6 +179,9 @@ export default function EpochCanvas({
       role="button" tabIndex={ready ? 0 : -1}
       aria-disabled={!ready}
       aria-label="Marcar posición en esta época; con teclado, Enter marca el centro de la imagen"/>
+    {ready && candidate && <div className="epoch-candidate-label" role="status">
+      {candidate.id} · trayectoria preliminar (sin confirmar)
+    </div>}
     {ready && <div className="epoch-image-label">{label ?? `Época ${index + 1}/${total}`}</div>}
     {frame?.mode === 'simulated' && <div className="epoch-simulation-label">SIMULACIÓN · NO ES UNA IMAGEN NASA</div>}
     {!frame && <div className={`epoch-placeholder ${loading ? 'sky-canvas-waiting' : ''}`}
