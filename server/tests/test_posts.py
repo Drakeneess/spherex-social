@@ -406,3 +406,119 @@ def test_reveal_recipe_is_validated_persisted_and_visible_in_blink(env):
     assert client.patch(f"/v1/posts/{post_id}",headers=headers["alpha"],
                         json={"display_recipe": None}).status_code == 200
     assert client.get(f"/v1/posts/{post_id}").json()["display_recipe"] is None
+
+
+def _photo_url(color=(27, 120, 200)):
+    """Create a tiny real PNG, not a mocked or arbitrary base64 payload."""
+    import base64
+    import io
+    from PIL import Image
+    out=io.BytesIO()
+    Image.new('RGB',(24,16),color).save(out,format='PNG')
+    return 'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode('ascii')
+
+
+def _local_photo_storage(monkeypatch,tmp_path):
+    import sky_storage
+    import post_storage
+    monkeypatch.setenv('APP_ENV','development')
+    for key in ('SKY_S3_ENDPOINT','SKY_S3_BUCKET','SKY_S3_REGION',
+                'SKY_S3_ACCESS_KEY','SKY_S3_SECRET_KEY'):
+        monkeypatch.delenv(key,raising=False)
+    monkeypatch.setattr(sky_storage,'LOCAL_STORE',tmp_path)
+    monkeypatch.setattr(post_storage,'LOCAL_STORE',tmp_path)
+
+
+def test_multi_photo_post_is_persistent_and_private_files_follow_post_permissions(
+    env,monkeypatch,tmp_path,
+):
+    import base64
+    import io
+    from PIL import Image
+    from post_storage import media_key
+    client,engine,_,_,headers=env
+    _local_photo_storage(monkeypatch,tmp_path)
+    created=publish(client,headers['alpha'],'Observé #Saturno #planetAS #saturno',
+                    images=[{'data_url':_photo_url()},{'data_url':_photo_url((150,80,22))}],
+                    link_url='https://science.nasa.gov/solar-system/')
+    assert created.status_code==201,created.text
+    post=created.json()
+    assert post['hashtags']==['planetas','saturno']
+    assert len(post['media'])==2
+    assert post['link_url']=='https://science.nasa.gov/solar-system/'
+    assert client.get('/v1/feed?tag=SATURNO').json()[0]['id']==post['id']
+    assert client.get('/v1/feed?tag=saturno_anillo').json()==[]
+    assert client.get('/v1/users/alpha/posts').json()[0]['media']==post['media']
+    assert client.get(f"/v1/posts/{post['id']}").json()['hashtags']==['planetas','saturno']
+
+    media=post['media'][0]['id']
+    path=f"/v1/posts/{post['id']}/media/{media}"
+    response=client.get(path)
+    assert response.status_code==200,response.text
+    assert response.headers['cache-control']=='private, no-store'
+    data=base64.b64decode(response.json()['data_url'].split(',',1)[1])
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format=='WEBP' and image.size==(24,16)
+        assert image.info.get('exif') is None
+    assert (tmp_path/media_key(UUID(media))).exists()
+    assert client.get(f"/v1/posts/{post['id']}/media/{uuid4()}").status_code==404
+    assert client.get(f"/v1/posts/{uuid4()}/media/{media}").status_code==404
+
+    secret=publish(client,headers['alpha'],'',
+                   images=[{'data_url':_photo_url()}],visibility='private')
+    assert secret.status_code==201,secret.text
+    hidden=secret.json()
+    hidden_url=f"/v1/posts/{hidden['id']}/media/{hidden['media'][0]['id']}"
+    assert client.get(hidden_url).status_code==404
+    assert client.get(hidden_url,headers=headers['beta']).status_code==404
+    assert client.get(hidden_url,headers=headers['alpha']).status_code==200
+    assert all(p['id']!=hidden['id'] for p in client.get('/v1/feed').json())
+
+    assert client.delete(f"/v1/posts/{post['id']}",headers=headers['alpha']).status_code==204
+    assert client.get(path).status_code==404
+    assert not (tmp_path/media_key(UUID(media))).exists()
+
+
+def test_text_only_links_and_hashtag_updates(env):
+    client,_,_,_,headers=env
+    posted=publish(client,headers['alpha'],'El cielo #Astrofotografia')
+    assert posted.status_code==201
+    info=posted.json()
+    assert info['media']==[] and info['link_url'] is None
+    assert info['hashtags']==['astrofotografia']
+    assert [p['id'] for p in client.get('/v1/feed?tag=ASTROFOTOGRAFIA').json()]==[info['id']]
+
+    link=publish(client,headers['alpha'],'',
+                 link_url='https://irsa.ipac.caltech.edu/')
+    assert link.status_code==201,link.text
+    assert link.json()['caption']==''
+    assert link.json()['link_url'].startswith('https:')
+    assert link.json()['media']==[]
+
+    update=client.patch(f"/v1/posts/{info['id']}",headers=headers['alpha'],
+                        json={'caption':'Investigando #galaxias'})
+    assert update.status_code==200,update.text
+    assert update.json()['hashtags']==['galaxias']
+    assert client.get('/v1/feed?tag=astrofotografia').json()==[]
+    assert client.get('/v1/feed?tag=galaxias').json()[0]['id']==info['id']
+
+
+def test_malformed_files_or_links_are_rejected_and_keep_database_clean(
+    env,monkeypatch,tmp_path,
+):
+    client,_,_,_,headers=env
+    _local_photo_storage(monkeypatch,tmp_path)
+    invalid=[
+        {'caption':''},
+        {'caption':'','images':[{'data_url':'data:text/html;base64,PGgxPjwvaDE+'}]},
+        {'caption':'hello','images':[{'data_url':'data:image/png;base64,'+'Z'*150}]},
+        {'caption':'hello','images':[{'data_url':_photo_url()}]*5},
+        {'caption':'hello','link_url':'javascript:alert(1)'},
+        {'caption':'hello','link_url':'https://user:pass@example.com'},
+        {'caption':'hello','link_url':'https://science.nasa.gov/ bad'},
+        {'caption':'hello '+' '.join('#tag'+str(i) for i in range(14))},
+    ]
+    for payload in invalid:
+        response=client.post('/v1/posts',headers=headers['alpha'],json=payload)
+        assert response.status_code in (413,422),(payload.keys(),response.text)
+    assert client.get('/v1/feed').json()==[]

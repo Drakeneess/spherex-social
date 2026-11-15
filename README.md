@@ -512,8 +512,8 @@ se preparan de forma diferida con `IntersectionObserver`.
   `public/unlisted/private`; el trabajo resultante queda registrado mediante
   `posts.sky_job_id`. Las imágenes completas siguen en S3; PostgreSQL guarda
   solo la referencia. El tope global de trabajos en curso se mantiene.
-- Las publicaciones exclusivamente de texto muestran una tarjeta de texto
-  y **no** una imagen astronómica inventada.
+- Las publicaciones exclusivamente de texto muestran el texto directamente,
+  sin una imagen astronómica ni un póster ficticio.
 - El frontend consulta el estado persistente con
   `GET /api/sky/jobs/{job_id}` y lee las dos imágenes privadas
   mediante `GET /api/sky/jobs/{job_id}/frames/{index}`.
@@ -575,3 +575,39 @@ visuales si el servicio remoto falla.
 Los ajustes son **estéticos**, no calibración fotométrica. Una composición
 multibanda RGB físicamente interpretada requiere agrupar recortes compatibles
 de diferentes longitudes de onda y se reserva para una fase posterior.
+
+
+## Compositor social de astronomía
+
+El botón **Publicar** abre un compositor de varios tipos de contenido:
+
+- Texto opcional (hasta 3.000 caracteres), incluso sin imágenes ni observación.
+- Hasta cuatro fotos JPEG, PNG o WebP (imagen fuente hasta 15 MiB en la UI,
+  16 megapíxeles; se escala a 1.920 px y se comprime antes de enviarse).
+  El servidor valida el archivo y vuelve a codificarlo como WebP sin EXIF,
+  con un límite de 3 MiB por imagen. No se aceptan archivos ejecutables,
+  SVG ni HTML como imágenes.
+- Un enlace externo HTTP(S), mostrado como recurso externo clicable sin descargar
+  ni incrustar contenido de terceros en el backend.
+- Hashtags Unicode escritos en el texto; también se pueden añadir desde el
+  formulario. Máximo 12 etiquetas de 2 a 30 caracteres por publicación.
+  El feed admite filtros exactos `GET /v1/feed?tag=astronomía`.
+- Coordenadas y revelado real SPHEREx opcionales desde el explorador,
+  independientes de las imágenes subidas por la comunidad.
+
+La publicación puede contener exclusivamente una foto, exclusivamente un enlace,
+solo texto o cualquier combinación de estos elementos. Las fotos subidas por
+usuarios aparecen identificadas como tal: no se presentan como datos oficiales
+de SPHEREx.
+
+Los medios viven en el bucket S3 privado, en `social/media/v1/`.
+`post_media` almacena referencias, y `post_hashtags` indexa las etiquetas.
+`GET /v1/posts/{post_id}/media/{media_id}` permite recuperar una imagen
+**solo si el post es visible** para la cuenta solicitante; no revela claves S3.
+La migración `7b6d2ef4ab08` añade la columna `posts.link_url` y la tabla
+de hashtags, e indexa también etiquetas presentes en publicaciones existentes.
+
+**Límites actuales:** no se admite subir vídeo ni FITS directamente desde el
+compositor. Los FITS científicos siguen entrando desde el explorador. Para
+producción a gran escala conviene incorporar moderación de archivos, cuotas por
+cuenta y limpieza periódica de objetos huérfanos si falla la eliminación S3.

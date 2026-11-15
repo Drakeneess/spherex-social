@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bell, Bookmark, Check, LogOut, Settings, Users } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
+import PublishModal, {type PublishRegion} from './components/PublishModal';
 import BrandLogo from './components/BrandLogo';
 import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { feedSidebarStickyTop } from './lib/sidebarScroll';
-import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats, type RevealRecipe } from './lib/api';
+import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
+import PostMediaGallery from './components/PostMediaGallery';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
@@ -19,8 +21,7 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type PublishRegion = ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe};
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
@@ -35,6 +36,7 @@ function parseRoute():Route {
   const [path,query] = h.split('?');
   const parts=path.split('/');
   const params=new URLSearchParams(query||'');
+  if(parts[0]==='home')return {page:'home',tag:params.get('tag')||undefined};
   if(parts[0]==='explore')return {page:'explore',observationId:params.get('observation_id')||undefined,
     ra:params.has('ra')?Number(params.get('ra')):undefined,
     dec:params.has('dec')?Number(params.get('dec')):undefined};
@@ -96,61 +98,9 @@ function AuthPage({onSuccess,onExplore}:{onSuccess:(user:Profile)=>void;onExplor
   </div>;
 }
 
-function PublishModal({region,onClose,onDone}:{region:PublishRegion|null;onClose:()=>void;onDone:()=>void}){
-  const [caption,setCaption]=useState(''),[visibility,setVisibility]=useState<Post['visibility']>('public');
-  const [attach,setAttach]=useState(Boolean(region)),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [savedId,setSavedId]=useState<string|null>(null);
-  async function submit(e:FormEvent){
-    e.preventDefault();
-    if(!caption.trim()){setError('Escribe algo acerca de tu observación.');return;}
-    setBusy(true);setError('');
-    try{
-      let observation_id:string|null=null;
-      if(attach&&region){
-        // Keep the created ID across retries if the post request fails.
-        observation_id=savedId??(await api.createObservation({
-          ra_deg:region.ra_deg,dec_deg:region.dec_deg,
-          fov_arcmin:region.fov_arcmin,detector:region.detector,
-        })).id;
-        setSavedId(observation_id);
-      }
-      await api.createPost({caption:caption.trim(),visibility,observation_id,
-        sky_job_id:attach && region?.sky_job_id ? region.sky_job_id : null,
-        display_recipe:attach&&region?.display_recipe?region.display_recipe:null});
-      signalTask('post'); // Only an acknowledged API write completes the mission.
-      onDone();
-    }catch(e){setError(message(e));}finally{setBusy(false);}
-  }
-  return <div className="modal" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-    <div className="mbox" role="dialog" aria-modal="true" aria-labelledby="publish-title">
-      <h2 id="publish-title"><AstroGlyph name="spark" size={19}/> Publicar en AstroGram</h2>
-      {error&&<p className="form-error" role="alert">{error}</p>}
-      <form onSubmit={e=>void submit(e)}>
-        <div className="field"><label htmlFor="caption">¿Qué observaste?</label>
-          <textarea id="caption" data-tour="publish-caption" maxLength={3000} rows={5} required value={caption} onChange={e=>setCaption(e.target.value)}
-            placeholder="Entre dos observaciones parece que este punto cambió de posición…"/></div>
-        <div className="field"><label htmlFor="visibility">Visibilidad</label><select id="visibility" value={visibility} onChange={e=>setVisibility(e.target.value as Post['visibility'])}>
-          <option value="public">Pública — aparece en el feed</option><option value="unlisted">No listada — solo mediante enlace</option><option value="private">Privada — solo tú</option>
-        </select></div>
-        {region&&<label data-tour="publish-region" className="attach-observation"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/>
-          Adjuntar RA {region.ra_deg.toFixed(4)}° · Dec {region.dec_deg.toFixed(4)}° · D{region.detector}</label>}
-        {attach&&region?.display_recipe&&<p className="reveal-publish-confirm">
-          <strong>Revelado listo:</strong> paleta {region.display_recipe.palette},
-          contraste {region.display_recipe.stretch}, formato {region.display_recipe.format}.
-          La publicación conservará la receta visual y los datos FITS permanecerán inalterados.
-        </p>}
-        {!region&&<p className="hint">Puedes publicar solo texto. Para adjuntar coordenadas, abre primero el explorador.</p>}
-        <p className="hint">Las coordenadas guardadas no constituyen un hallazgo astronómico confirmado.</p>
-        <div className="mrow"><button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" data-tour="publish-submit" className="btn p" disabled={busy}>{busy?'Publicando…':'Publicar'}</button></div>
-      </form>
-    </div>
-  </div>;
-}
-
-function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,onHideGuide}:{
+function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,onHideGuide,tag}:{
   user:Profile;onProfile:(u:string)=>void;onExplore:(id:string)=>void;onLogin:()=>void;onPublish:()=>void;
-  tasks:TaskProgress;guideHidden:boolean;onHideGuide:()=>void;
+  tasks:TaskProgress;guideHidden:boolean;onHideGuide:()=>void;tag?:string;
 }){
   const [posts,setPosts]=useState<Post[]>([]);
   const [loading,setLoading]=useState(true);
@@ -185,7 +135,7 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
     setLoading(true);setError('');
     try{
       const nextOffset=reset?0:offset;
-      const data=await api.feed(10,nextOffset);
+      const data=await api.feed(10,nextOffset,tag);
       setPosts(prev=>reset?data:[...prev,...data.filter(p=>!prev.some(o=>o.id===p.id))]);
       setOffset(nextOffset+data.length);setMore(data.length===10);
     }catch(e){setError(message(e));}finally{setLoading(false);}
@@ -193,6 +143,8 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
   useEffect(()=>{void fetchFeed(true);},[]);
   return <div className="wrap feed-layout">
     <main className="feed" aria-label="Feed AstroGram">
+      {tag&&<div className="feed-tag-filter"><span>Publicaciones con <b>#{tag}</b></span>
+        <button type="button" onClick={()=>go('home')}>Mostrar todas</button></div>}
       {posts.map(post=><PostCard key={post.id} post={post} onProfile={onProfile} onExplore={onExplore} onRequireLogin={onLogin} currentUsername={user.username}/>)}
       {posts.length===0&&!loading&&!error&&<div className="card empty">Aún no hay publicaciones públicas. ¡Comparte la primera observación!</div>}
       {error&&<p className="form-error" role="alert">{error}</p>}
@@ -297,10 +249,12 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           aria-label={`Abrir publicación de ${post.username}: ${post.caption.slice(0,80)}`}
           onClick={()=>setSelectedId(post.id)}
           onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedId(post.id);}}}>
-          {post.observation_id
-            ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
-            : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
-                <span>Publicación de texto</span><small>Sin imágenes astronómicas adjuntas</small></div>}
+          {post.media?.length>0
+            ? <PostMediaGallery postId={post.id} media={post.media} compact/>
+            : post.observation_id
+              ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
+              : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
+                  <span>Publicación de texto</span><small>Idea de la comunidad</small></div>}
           <div className="profile-tile-label">
             {post.reposted_by&&<span className="profile-tile-share">Compartido por @{post.reposted_by}</span>}
             <strong>@{post.username}</strong>
@@ -633,8 +587,9 @@ export default function App(){
           onReplayTour={replayTour} onShowGuide={showGuide}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
        route.page==='activity'?<ActivityPage/>:
-       <FeedPage key={feedVersion} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
-          onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden} onHideGuide={hideGuide}/>)}
+       <FeedPage key={`${feedVersion}-${route.tag??''}`} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
+          onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden}
+          onHideGuide={hideGuide} tag={route.tag}/>)}
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{if(user)writeFlag(user.id,'publish');
       setTour(null);setPublish(false);setFeedVersion(n=>n+1);

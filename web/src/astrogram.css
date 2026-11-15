@@ -1599,3 +1599,177 @@ body {
     top:auto;
   }
 }
+
+/* ===============================================================
+   Astronomy publisher: text, user photos, links and tags.
+   Friendly modal, compact cards, no photo poster for text-only posts.
+   =============================================================== */
+.compose-overlay{padding:20px 12px;z-index:95;overflow-y:auto;align-items:center}
+.compose-dialog{
+  width:min(680px,100%);max-height:min(92dvh,920px);
+  display:flex;flex-direction:column;min-width:0;
+  border:1px solid #35436c;border-radius:24px;
+  background:#0e1425;overflow:hidden;
+  box-shadow:0 30px 100px rgba(0,0,0,.64),0 0 80px rgba(90,176,255,.08);
+}
+.compose-header{
+  display:flex;gap:13px;align-items:center;min-height:94px;
+  padding:20px 24px 17px;
+  border-bottom:1px solid var(--line);
+  background:radial-gradient(ellipse at 0 0,rgba(90,176,255,.13),transparent 65%),
+             radial-gradient(ellipse at 100% 0,rgba(255,107,181,.12),transparent 65%);
+}
+.compose-icon{
+  flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:15px;
+  background:linear-gradient(135deg,rgba(90,176,255,.25),rgba(255,107,181,.22));
+  border:1px solid rgba(151,153,255,.3);
+}
+.compose-header h2{font-size:1.23rem;line-height:1.25;letter-spacing:-.02em;font-weight:800}
+.compose-header p{font-size:.78rem;color:var(--muted);margin-top:5px;line-height:1.4}
+.compose-close{display:grid;place-items:center;flex:none;margin-left:auto;
+  border-radius:10px;width:35px;height:35px;color:var(--muted)}
+.compose-close:hover{background:var(--panel2);color:var(--text)}
+.compose-form{display:flex;min-height:0;flex-direction:column;flex:1}
+.compose-main{overflow-y:auto;min-height:0;padding:18px 24px 20px;scrollbar-color:var(--line) transparent}
+.compose-audience{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.compose-audience>span{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;color:#b8c7e8;font-weight:700}
+.compose-audience>span svg{color:var(--c)}
+.compose-visibility{
+  display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:999px;padding:6px 9px;color:#b0c5ee
+}
+.compose-visibility select{
+  border:0;color:var(--text);background:transparent;
+  font-size:.79rem;font-weight:600;max-width:145px;cursor:pointer
+}
+.compose-visibility option{background:var(--panel2);color:var(--text)}
+.compose-main>textarea{
+  display:block;width:100%;min-height:118px;resize:vertical;padding:13px 16px;
+  border-radius:15px;border:1px solid var(--line);
+  outline:0;color:var(--text);background:#171d33;
+  font-size:.92rem;line-height:1.65;
+}
+.compose-main>textarea:focus{border-color:var(--a);box-shadow:0 0 0 2px rgba(90,176,255,.12)}
+.compose-main>textarea::placeholder{color:#7887a9}
+.compose-count{text-align:right;margin:5px 3px 10px;color:var(--muted);font-size:.7rem}
+.compose-drop{
+  border:1px dashed #394a70;border-radius:13px;background:rgba(26,35,61,.58);
+  transition:background .15s,border-color .15s;
+}
+.compose-drop.active{background:rgba(90,176,255,.12);border-color:var(--a)}
+.compose-tools{display:flex;flex-wrap:wrap;gap:6px;padding:10px}
+.compose-tools button{display:inline-flex;align-items:center;gap:8px;
+  min-height:36px;padding:7px 12px;border-radius:10px;
+  color:#d3defa;font-size:.8rem;font-weight:650;
+}
+.compose-tools button:hover:not(:disabled),.compose-tools button.selected{
+  background:rgba(90,176,255,.12);color:#98caff;
+}
+.compose-tools button:disabled{opacity:.45;cursor:not-allowed}
+.compose-tools button svg{color:var(--a)}
+.compose-tools button small{font-size:.68rem;color:var(--muted)}
+.compose-drop>p{display:flex;align-items:center;justify-content:center;gap:7px;
+  border-top:1px solid rgba(42,56,86,.6);padding:10px;color:var(--muted);
+  font-size:.72rem;line-height:1.5;text-align:center}
+.compose-photos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:12px 0}
+.compose-photo{position:relative;aspect-ratio:1;overflow:hidden;border-radius:12px;
+  border:1px solid var(--line);background:#050913}
+.compose-photo img{width:100%;height:100%;object-fit:cover}
+.compose-photo button{position:absolute;right:5px;top:5px;display:grid;place-items:center;
+  border-radius:50%;width:27px;height:27px;background:rgba(5,8,20,.85);color:#fff}
+.compose-photo button:hover{background:#b3385c}
+.compose-optional{display:grid;gap:7px;margin-top:13px}
+.compose-optional label{display:flex;gap:7px;align-items:center;color:#c1cff0;font-size:.8rem;font-weight:650}
+.compose-optional input,.compose-tag-form input{
+  min-width:0;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  padding:10px 12px;border-radius:10px;outline:none;font-size:.86rem;
+}
+.compose-optional input:focus,.compose-tag-form input:focus{border-color:var(--a)}
+.compose-optional small{color:var(--muted);font-size:.7rem}
+.compose-observation{display:flex;align-items:center;gap:12px;margin-top:13px;
+  background:rgba(90,176,255,.08);border:1px solid rgba(90,176,255,.32);
+  border-radius:12px;padding:12px;color:#b8dbff}
+.compose-observation>svg{flex:none}
+.compose-observation>div{display:grid;gap:4px;min-width:0;flex:1}
+.compose-observation b{font-size:.85rem;color:var(--text)}
+.compose-observation small{font-size:.71rem;color:#a1b8de;overflow-wrap:anywhere}
+.compose-observation>button{display:grid;place-items:center;padding:5px;border-radius:8px}
+.compose-observation>button:hover{background:var(--panel2)}
+.compose-tags{margin-top:19px;border-top:1px solid var(--line);padding-top:14px}
+.compose-section-title{display:flex;gap:8px;align-items:center;font-size:.87rem;font-weight:800;margin-bottom:10px}
+.compose-section-title>span{font-size:1.15rem;color:var(--c)}
+.compose-section-title>small{margin-left:auto;font-size:.72rem;font-weight:500;color:var(--muted)}
+.compose-tag-form{display:flex;gap:9px}
+.compose-tag-form button{border:1px solid rgba(90,176,255,.38);
+  border-radius:10px;padding:9px 13px;font-size:.8rem;font-weight:700;
+  background:rgba(90,176,255,.1);color:#a7d2ff}
+.compose-tag-form button:disabled{opacity:.4}
+.compose-tag-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.compose-tag{padding:5px 10px;border-radius:999px;font-size:.72rem;
+  background:var(--panel2);border:1px solid var(--line);color:#9ab7e7}
+.compose-tag:hover{border-color:var(--a)}
+.compose-tag.active{background:rgba(90,176,255,.13);border-color:rgba(90,176,255,.36);color:#b5d8ff}
+.compose-error{margin:0 24px 12px}
+.compose-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:13px;
+  border-top:1px solid var(--line);background:#11172a;padding:14px 24px;
+}
+.compose-footer>small{font-size:.72rem;color:var(--muted);line-height:1.4;max-width:240px}
+.compose-footer>div{display:flex;gap:9px;align-items:center}
+.compose-cancel{border-color:transparent;background:transparent}
+.compose-submit{display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  padding:10px 24px;min-width:140px;color:#071025;font-weight:800}
+.compose-submit:disabled{opacity:.47}
+.post-media-gallery{
+  position:relative;overflow:hidden;aspect-ratio:4/3;
+  background:#040814;display:grid;place-items:center;
+}
+.post-media-gallery img{display:block;width:100%;height:100%;object-fit:contain}
+.post-media-gallery.compact{position:absolute;inset:0;aspect-ratio:1}
+.post-media-gallery.compact img{object-fit:cover}
+.post-media-placeholder{color:var(--muted);display:grid;place-items:center;gap:8px;
+  text-align:center;font-size:.78rem;min-height:110px;padding:16px}
+.post-media-badge{position:absolute;top:12px;left:12px;
+  border:1px solid #ffffff2a;background:#080e22c9;color:#dbe8ff;
+  border-radius:999px;padding:5px 10px;font-size:.68rem}
+.post-media-navigation{position:absolute;inset:0;display:flex;
+  justify-content:space-between;align-items:center;pointer-events:none;padding:10px}
+.post-media-navigation button{pointer-events:auto;display:grid;place-items:center;
+  background:#060a1bc9;color:white;width:36px;height:36px;border-radius:50%}
+.post-media-navigation button:hover{background:#253862}
+.post-media-dots{position:absolute;bottom:10px;left:0;right:0;display:flex;
+  justify-content:center;gap:5px;pointer-events:none}
+.post-media-dots button{pointer-events:auto;border-radius:50%;width:6px;height:6px;
+  background:#a6b0c588;transition:width .14s}
+.post-media-dots button.on{background:white;width:17px;border-radius:10px}
+.post-tag-list{display:flex;flex-wrap:wrap;gap:7px;padding:0 16px 12px}
+.post-tag-list button{font-size:.81rem;color:#85baf9;font-weight:650}
+.post-tag-list button:hover{color:var(--c);text-decoration:underline}
+.post-external-link{margin:0 14px 14px;padding:12px 14px;display:flex;align-items:center;gap:10px;
+  border:1px solid var(--line);border-radius:11px;background:var(--panel2);
+  color:#c4dafa;font-size:.8rem;font-weight:700;min-width:0}
+.post-external-link span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.post-external-link small{margin-left:auto;color:var(--muted);font-weight:400;white-space:nowrap}
+.post-external-link:hover{border-color:var(--a)}
+.feed-tag-filter{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:12px 15px;font-size:.85rem}
+.feed-tag-filter b{color:var(--a)}
+.feed-tag-filter button{color:#a1c8ff;font-size:.78rem}
+@media(max-width:640px){
+  .compose-overlay{padding:8px}
+  .compose-dialog{max-height:96dvh;border-radius:17px}
+  .compose-header{padding:14px;min-height:82px}
+  .compose-header h2{font-size:1.05rem}
+  .compose-header p{font-size:.72rem}
+  .compose-main{padding:14px}
+  .compose-footer{padding:12px 14px}
+  .compose-footer>small{display:none}
+  .compose-footer>div{width:100%}
+  .compose-footer button{flex:1}
+  .compose-photos{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .compose-tools button{padding:6px 8px}
+  .compose-error{margin:0 14px 10px}
+  .post-external-link small{display:none}
+}
+@media(prefers-reduced-motion:reduce){.compose-drop,.post-media-dots button{transition:none}}

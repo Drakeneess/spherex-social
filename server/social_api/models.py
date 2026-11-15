@@ -97,6 +97,7 @@ class Post(Base):
     caption: Mapped[str] = mapped_column(Text, nullable=False)
     # Immutable-at-publication visual recipe; original FITS stay independent.
     display_recipe: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    link_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     visibility: Mapped[str] = mapped_column(String(16), server_default='public', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
@@ -113,6 +114,14 @@ class PostMedia(Base):
     media_type: Mapped[str] = mapped_column(String(40), nullable=False)
     position: Mapped[int] = mapped_column(Integer, server_default='0', nullable=False)
     __table_args__ = (UniqueConstraint('post_id', 'position', name='uq_media_position'),)
+
+
+class PostHashtag(Base):
+    __tablename__ = 'post_hashtags'
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('posts.id', ondelete='CASCADE'), primary_key=True)
+    tag: Mapped[str] = mapped_column(String(30), primary_key=True)
+    __table_args__ = (Index('ix_post_hashtags_tag', 'tag'),)
 
 
 class PostLike(Base):
