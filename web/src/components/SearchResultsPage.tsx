@@ -62,7 +62,7 @@ export default function SearchResultsPage({query,onNavigate}:Props){
       <div>
         <span className="eyebrow"><Search size={14}/> BUSCADOR GLOBAL</span>
         <h1>Resultados para «{query}»</h1>
-        <p>Personas, publicaciones y conversaciones astronómicas de la comunidad.</p>
+        <p>Astroamigos, publicaciones y conversaciones astronómicas de la comunidad.</p>
       </div>
     </div>
     {busy&&<div className="card global-results-state" role="status">
@@ -78,7 +78,7 @@ export default function SearchResultsPage({query,onNavigate}:Props){
     </div>}
     {results&&!empty&&<div className="global-results-grid">
       <section className="global-results-section">
-        <h2><AtSign size={19}/> Personas <span>{results.users.length}</span></h2>
+        <h2><AtSign size={19}/> Astroamigos <span>{results.users.length}</span></h2>
         <div className="global-results-list">
           {results.users.length?results.users.map(person=><button type="button"
             className="global-results-person" key={person.username}
@@ -89,7 +89,7 @@ export default function SearchResultsPage({query,onNavigate}:Props){
             <span><strong>{person.display_name}</strong><small>@{person.username}</small>
               {person.bio&&<em>{person.bio}</em>}</span>
             <ArrowRight size={16}/>
-          </button>):<p className="global-results-none">Sin personas coincidentes</p>}
+          </button>):<p className="global-results-none">Sin astroamigos coincidentes</p>}
         </div>
       </section>
       <section className="global-results-section">
