@@ -88,7 +88,9 @@ export default function ExplorerPage({
   const rawAvailable = revealable.length>0;
   // Live playback can advance faster than the server render debounce.
   // Keep the editorial preview on one stable frame while animation runs.
-  const revealPreviewIndex = playing ? (revealable[0] ?? position) : position;
+  const revealPreviewIndex = playing
+    ? (revealable[0] ?? position)
+    : (revealable.includes(position) ? position : (revealable[0] ?? position));
 
   useEffect(() => {
     onProgress({ trace, loading, jobId:activeJobId.current,restored:restoring });
@@ -588,8 +590,11 @@ export default function ExplorerPage({
           active={active} jobId={activeJobId.current}
           index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
           hasRaw={rawAvailable} searching={loading} recipe={revealRecipe}
+          originalImage={frames[revealPreviewIndex]?.image}
           onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
-          enabled={revealEnabled} onEnabled={setRevealEnabled}/>}
+          enabled={revealEnabled} onEnabled={setRevealEnabled}
+          onOpen={()=>setPlaying(false)}
+          editableIndices={revealable} onSelectEpoch={index=>{setPlaying(false);setPosition(index)}}/>}
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>
         <div className="epoch-science-note">
