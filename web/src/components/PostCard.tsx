@@ -41,7 +41,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   },[initial]);
   async function reload() {
     const next = await api.get<Post>(`/v1/posts/${post.id}`,hasToken());
-    setPost(next);
+    // The detail endpoint has no profile context; keep the repost attribution.
+    setPost({...next,reposted_by:post.reposted_by,reposted_at:post.reposted_at});
   }
   async function handleLike() {
     if(!hasToken()) {onRequireLogin();return;}
