@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronRight, LoaderCircle, Radar, ScanSearch, Telescope } from 'lucide-react';
 import { api, type MotionCandidate, type SkyCandidateSearch } from '../lib/api';
 
@@ -16,22 +16,28 @@ export default function CandidateFinder({
   const [result,setResult]=useState<SkyCandidateSearch|null>(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
+  const inflight=useRef<AbortController|null>(null);
   const canAnalyze=Boolean(jobId && ready && epochsAvailable>=3);
 
   useEffect(()=>{
     setResult(null);setLoading(false);setError('');
+    return()=>{inflight.current?.abort();inflight.current=null;};
   },[jobId]);
 
   async function analyze(){
     if(!canAnalyze||!jobId||loading)return;
+    const controller=new AbortController();
+    inflight.current=controller;
     setLoading(true);setError('');
     try{
-      const response=await api.getSkyCandidates(jobId);
-      setResult(response);
+      const response=await api.getSkyCandidates(jobId,controller.signal);
+      if(!controller.signal.aborted)setResult(response);
     }catch(e){
-      setError(e instanceof Error?e.message:'No se pudo analizar este campo.');
+      if(!controller.signal.aborted){
+        setError(e instanceof Error?e.message:'No se pudo analizar este campo.');
+      }
     }finally{
-      setLoading(false);
+      if(inflight.current===controller){inflight.current=null;setLoading(false);}
     }
   }
 
