@@ -18,7 +18,7 @@ test('Taurus names stay off public navigation; DOB is required for the private a
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
   assert.doesNotMatch(app,/resolveSkyName|Buscar personas, Tauro/);
   assert.doesNotMatch(explorer,/constellation-lookup|locateByName|Buscar constelación u objeto/);
-  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id==='taurus'/);
+  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id===route\.constellation/);
   assert.equal(findTaurusTarget('Aldebarán')?.id,'aldebaran');
 });
 
@@ -80,9 +80,9 @@ test('click-to-coordinate is invertible across the sky chart',()=>{
 });
 test('opening Tauro does not trigger an expensive job automatically',()=>{
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
-  const start=explorer.indexOf("if(constellation!=='taurus'){");
+  const start=explorer.indexOf("if(!atlas){");
   assert.ok(start>=0);
-  const end=explorer.indexOf("},[active,constellation]);",start);
+  const end=explorer.indexOf("},[active,atlas]);",start);
   assert.ok(end>start);
   const effect=explorer.slice(start,end);
   assert.doesNotMatch(effect,/\bload\s*\(/);
