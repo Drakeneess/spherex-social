@@ -8,7 +8,8 @@ import { getGameStreak } from './lib/gameStreak';
 import { feedSidebarStickyTop } from './lib/sidebarScroll';
 import { constellationForBirthday } from './lib/zodiac';
 import { api, hasToken, type Post, type Profile, type UserStats } from './lib/api';
-import PostCard, { Avatar } from './components/PostCard';
+import { startRealtime, subscribeRealtime, REALTIME_EVENT } from './lib/realtime';
+import PostCard, { Avatar, updateAvatarCache } from './components/PostCard';
 import ProfileEditor from './components/ProfileEditor';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
@@ -149,6 +150,22 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
     }catch(e){setError(message(e));}finally{setLoading(false);}
   }
   useEffect(()=>{void fetchFeed(true);},[]);
+  useEffect(()=>{
+    let timer:number|undefined;
+    let active=true;
+    const unsubscribe=subscribeRealtime(change=>{
+      if(!['resync','feed','interaction','comments','profile_posts'].includes(change.kind))return;
+      window.clearTimeout(timer);
+      timer=window.setTimeout(()=>{
+        const limit=Math.min(50,Math.max(10,offset));
+        void api.feed(limit,0,tag).then(data=>{
+          if(!active)return;
+          setPosts(data);setOffset(data.length);setMore(data.length===limit);
+        }).catch(()=>{/* Preserve the last successful feed while offline. */});
+      },300);
+    });
+    return()=>{active=false;window.clearTimeout(timer);unsubscribe();};
+  },[offset,tag]);
   return <div className="wrap feed-layout">
     <main className="feed" aria-label="Feed AstroGram">
       {tag&&<div className="feed-tag-filter"><span>Publicaciones con <b>#{tag}</b></span>
@@ -385,22 +402,29 @@ export default function App(){
     const refresh=()=>{
       void api.unreadNotifications()
         .then(result=>{if(active)setUnreadCount(result.unread);})
-        .catch(()=>{/* Offline checks never interrupt navigation. */});
+        .catch(()=>{/* Transient connectivity does not interrupt navigation. */});
     };
+    const stop=startRealtime(change=>{
+      window.dispatchEvent(new CustomEvent(REALTIME_EVENT,{detail:change}));
+      if(change.kind==='notifications'||change.kind==='resync')refresh();
+      if(change.kind==='profile'&&change.username){
+        void api.user(change.username).then(profile=>{
+          if(active)updateAvatarCache(profile.username,profile);
+        }).catch(()=>{});
+        if(change.username===user.username){
+          void api.me().then(profile=>{if(active)setUser(profile);}).catch(()=>{});
+        }
+      }
+    });
     refresh();
-    const interval=window.setInterval(()=>{
-      if(document.visibilityState==='visible')refresh();
-    },30000);
     const whenFocused=()=>{if(document.visibilityState==='visible')refresh();};
     window.addEventListener('focus',whenFocused);
-    document.addEventListener('visibilitychange',whenFocused);
     return()=>{
       active=false;
-      window.clearInterval(interval);
+      stop();
       window.removeEventListener('focus',whenFocused);
-      document.removeEventListener('visibilitychange',whenFocused);
     };
-  },[user?.id]);
+  },[user?.id,user?.username]);
   // Notifications belong to a job, not to its repeatedly hydrated trace.
   // Resuming an already finished job is not a new completion event.
   useEffect(()=>{setDockDismissed(false);},[backgroundStatus?.jobId]);
