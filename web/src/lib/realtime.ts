@@ -14,6 +14,9 @@ export type RealtimeChange = {
   job_id?: string;
 };
 
+const jobConnections=new Set<string>();
+export const skyJobStreamActive=(jobId:string)=>jobConnections.has(jobId);
+
 const kinds = new Set<RealtimeChange['kind']>([
   'resync','feed','interaction','comments','profile','profile_stats',
   'profile_posts','bookmarks','notifications','sky_job',
@@ -76,6 +79,7 @@ export function startRealtime(onChange:(change:RealtimeChange)=>void, authentica
         });
         if(!response.ok || !response.body)throw new Error('Realtime transport unavailable');
         connected=true;
+        if(jobId)jobConnections.add(jobId);
         backoff=1500;
         const reader=response.body.getReader();
         const decoder=new TextDecoder();
@@ -104,6 +108,7 @@ export function startRealtime(onChange:(change:RealtimeChange)=>void, authentica
         // REST refresh on focus / fallback; no error modal for a transient stream.
       }finally{
         connected=false;
+        if(jobId)jobConnections.delete(jobId);
         active=null;
       }
       if(stopped)break;
@@ -123,6 +128,7 @@ export function startRealtime(onChange:(change:RealtimeChange)=>void, authentica
 
   return ()=>{
     stopped=true;
+    if(jobId)jobConnections.delete(jobId);
     active?.abort();
     if(retryTimer!==null)clearTimeout(retryTimer);
     finishRetry?.();
