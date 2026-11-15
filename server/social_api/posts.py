@@ -18,7 +18,9 @@ from .auth import bearer, current_user
 from .db import get_db
 from .models import Bookmark, Comment, Observation, Post, PostHashtag, PostMedia, PostLike, PostRepost, SkySearchJob, User
 from .post_content import extract_hashtags, validate_link
-from post_storage import decode_image, put_post_image, get_post_image, delete_post_image
+from post_storage import (
+    MAX_POST_BYTES, decode_image, put_post_image, get_post_image, delete_post_image,
+)
 
 router = APIRouter(prefix='/v1', tags=['posts'])
 Visibility = Literal['public', 'unlisted', 'private']
@@ -259,6 +261,8 @@ def create_post(
     recipe = validate_reveal(db, checked_job, body.display_recipe)
     # Decode and validate every image before writing anything to the database.
     decoded = [decode_image(image.data_url) for image in body.images]
+    if sum(image.stored_size for image in decoded) > MAX_POST_BYTES:
+        raise HTTPException(status_code=413, detail='Máximo 3 MiB por publicación, incluyendo miniaturas')
     post = Post(
         author_id=user.id, caption=body.caption, link_url=body.link_url,
         visibility=body.visibility, observation_id=body.observation_id,
@@ -293,6 +297,7 @@ def create_post(
 def read_post_media(
     post_id: UUID, media_id: UUID,
     db: Annotated[Session, Depends(get_db)],
+    size: Literal['full','thumbnail'] = Query('full'),
     viewer: Annotated[User | None, Depends(optional_user)],
 ):
     """A post's visibility governs its photos, even with the media UUID known."""
@@ -304,7 +309,7 @@ def read_post_media(
     if media is None or media.post_id != post.id:
         raise HTTPException(status_code=404,detail='Media not found')
     try:
-        raw = get_post_image(media.storage_key)
+        raw = get_post_image(media.storage_key, variant=size)
     except Exception:
         raise HTTPException(status_code=503,detail='Imagen temporalmente no disponible')
     return Response(
