@@ -386,3 +386,25 @@ html,body,#root,.astrogram-shell{min-inline-size:0}
   .astrogram-shell .navbar .nav,
   .reveal-studio-dialog,.compose-dialog{scroll-behavior:auto}
 }
+
+
+/* The interactive SVG must remain legible at 320–620px: horizontal pan beats
+ * shrinking 900 SVG units into unreadable five-pixel star labels. */
+.taurus-map-swipe-hint{display:none}
+@media(max-width:620px){
+  .taurus-atlas-map{
+    overflow-x:auto;overscroll-behavior-x:contain;
+    touch-action:pan-x pan-y;
+    scrollbar-width:thin;scrollbar-color:#516c9a transparent;
+  }
+  .taurus-atlas-map:focus-visible{
+    outline:2px solid #90c3ff;outline-offset:-2px;
+  }
+  .taurus-chart-svg{
+    display:block;width:max(100%,540px);max-width:none;height:auto;
+  }
+  .taurus-map-swipe-hint{
+    display:block;color:#a6bee2;font-size:.72rem;
+    line-height:1.4;padding:0 2px 9px;
+  }
+}
