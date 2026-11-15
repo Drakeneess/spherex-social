@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Camera, Check, ExternalLink, ImagePlus, Link2, Save, Trash2, UploadCloud } from 'lucide-react';
+import { CalendarDays, Camera, Check, ExternalLink, ImagePlus, Link2,
+  Palette, Save, Trash2, UploadCloud } from 'lucide-react';
 import { api, type Profile } from '../lib/api';
 import { Avatar, updateAvatarCache } from './PostCard';
 import { signalTask } from '../lib/onboarding';
+import { DEFAULT_COVER, fallbackAvatarColors, PROFILE_PRESETS,
+  safeHexColor, themeGradient } from '../lib/profileTheme';
 
 type Kind='avatar'|'cover';
 const LIMIT=3*1024*1024;
@@ -41,6 +44,13 @@ export default function ProfileEditor({user,onUpdate}:{
   const [name,setName]=useState(user.display_name);
   const [bio,setBio]=useState(user.bio??'');
   const [website,setWebsite]=useState(user.website??'');
+  const defaults=fallbackAvatarColors(user.username);
+  const [avatarStart,setAvatarStart]=useState(safeHexColor(user.avatar_color_start,defaults.start));
+  const [avatarEnd,setAvatarEnd]=useState(safeHexColor(user.avatar_color_end,defaults.end));
+  const [coverStart,setCoverStart]=useState(safeHexColor(user.cover_color_start,DEFAULT_COVER.start));
+  const [coverEnd,setCoverEnd]=useState(safeHexColor(user.cover_color_end,DEFAULT_COVER.end));
+  const [birthDate,setBirthDate]=useState(user.birth_date??'');
+  const [showBirthday,setShowBirthday]=useState(user.show_birthday??false);
   const [busy,setBusy]=useState<Kind|'details'|null>(null);
   const [preview,setPreview]=useState<{kind:Kind;url:string}|null>(null);
   const [error,setError]=useState('');
@@ -48,10 +58,21 @@ export default function ProfileEditor({user,onUpdate}:{
   const avatarInput=useRef<HTMLInputElement>(null);
   const coverInput=useRef<HTMLInputElement>(null);
   useEffect(()=>{
+    const avatar=fallbackAvatarColors(user.username);
     setName(user.display_name);setBio(user.bio??'');setWebsite(user.website??'');
+    setAvatarStart(safeHexColor(user.avatar_color_start,avatar.start));
+    setAvatarEnd(safeHexColor(user.avatar_color_end,avatar.end));
+    setCoverStart(safeHexColor(user.cover_color_start,DEFAULT_COVER.start));
+    setCoverEnd(safeHexColor(user.cover_color_end,DEFAULT_COVER.end));
+    setBirthDate(user.birth_date??'');setShowBirthday(user.show_birthday??false);
   },[user.id]);
   const changed=name.trim()!==user.display_name||
-    bio.trim()!==(user.bio??'')||website.trim()!==(user.website??'');
+    bio.trim()!==(user.bio??'')||website.trim()!==(user.website??'')||
+    avatarStart!==safeHexColor(user.avatar_color_start,defaults.start)||
+    avatarEnd!==safeHexColor(user.avatar_color_end,defaults.end)||
+    coverStart!==safeHexColor(user.cover_color_start,DEFAULT_COVER.start)||
+    coverEnd!==safeHexColor(user.cover_color_end,DEFAULT_COVER.end)||
+    birthDate!==(user.birth_date??'')||showBirthday!==(user.show_birthday??false);
 
   async function upload(kind:Kind,event:ChangeEvent<HTMLInputElement>){
     const file=event.target.files?.[0];
@@ -63,7 +84,7 @@ export default function ProfileEditor({user,onUpdate}:{
       setPreview({kind,url});
       const updated=await api.uploadProfileMedia(kind,url);
       onUpdate(updated);
-      if(kind==='avatar')updateAvatarCache(user.username,updated.avatar_version);
+      if(kind==='avatar')updateAvatarCache(user.username,updated);
       setSuccess(kind==='avatar'?'Foto de perfil actualizada.':'Portada actualizada.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo guardar la imagen.');}
     finally{setPreview(null);setBusy(null);}
@@ -74,7 +95,7 @@ export default function ProfileEditor({user,onUpdate}:{
     try{
       const updated=await api.deleteProfileMedia(kind);
       onUpdate(updated);
-      if(kind==='avatar')updateAvatarCache(user.username,null);
+      if(kind==='avatar')updateAvatarCache(user.username,updated);
       setSuccess(kind==='avatar'?'Foto de perfil eliminada.':'Portada eliminada.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo eliminar la imagen.');}
     finally{setBusy(null);}
@@ -87,10 +108,14 @@ export default function ProfileEditor({user,onUpdate}:{
     try{
       const updated=await api.patchMe({
         display_name:name.trim(),bio:bio.trim()||null,website:website.trim()||null,
+        avatar_color_start:avatarStart,avatar_color_end:avatarEnd,
+        cover_color_start:coverStart,cover_color_end:coverEnd,
+        birth_date:birthDate||null,show_birthday:birthDate?showBirthday:false,
       });
       onUpdate(updated);
+      updateAvatarCache(user.username,updated);
       if(updated.bio?.trim())signalTask('bio');
-      setSuccess('Cambios guardados. Tu perfil público está actualizado.');
+      setSuccess('Cambios guardados en tu perfil.');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo actualizar el perfil.');}
     finally{setBusy(null);}
   }
@@ -106,7 +131,8 @@ export default function ProfileEditor({user,onUpdate}:{
     <div className="profile-editor-cover">
       {coverPreview
         ? <img src={coverPreview} alt="Vista previa de la portada"/>
-        : <div className="profile-cover-placeholder" aria-hidden="true"><span>✦</span></div>}
+        : <div className="profile-cover-placeholder" aria-hidden="true"
+            style={{background:themeGradient({start:coverStart,end:coverEnd})}}><span>✦</span></div>}
       <div className="profile-cover-tools">
         <button type="button" disabled={!!busy} onClick={()=>coverInput.current?.click()}>
           <ImagePlus size={17}/> {busy==='cover'?'Guardando…':user.cover_version?'Cambiar portada':'Añadir portada'}
@@ -123,7 +149,8 @@ export default function ProfileEditor({user,onUpdate}:{
       <div className="profile-editor-avatar">
         {preview?.kind==='avatar'
           ? <img src={preview.url} alt="Vista previa de la nueva foto"/>
-          : <Avatar name={user.username} size={92} version={user.avatar_version}/>}
+          : <Avatar name={user.username} size={92} version={user.avatar_version}
+            colorStart={avatarStart} colorEnd={avatarEnd}/>}
         <button type="button" disabled={!!busy} title="Cambiar foto de perfil"
           aria-label="Cambiar foto de perfil" onClick={()=>avatarInput.current?.click()}>
           <Camera size={17}/>
@@ -148,6 +175,68 @@ export default function ProfileEditor({user,onUpdate}:{
       para el avatar y 350 KiB para la portada; sin metadatos EXIF.
     </p>
     <form className="profile-editor-fields" onSubmit={event=>void save(event)}>
+      <section className="profile-editor-theme" aria-labelledby="palette-title">
+        <div className="profile-editor-section-heading">
+          <h3 id="palette-title"><Palette size={19}/> Colores del perfil</h3>
+          <p>Crea tu propio degradado. Verás los cambios antes de guardarlos.</p>
+        </div>
+        <div className="profile-editor-theme-row">
+          <div className="profile-theme-row-head">
+            <div className="profile-theme-preview avatar-example" aria-hidden="true"
+              style={{background:themeGradient({start:avatarStart,end:avatarEnd})}}>
+              {user.username.slice(0,2).toUpperCase()}
+            </div>
+            <div><strong>Fondo del avatar</strong>
+              <small>Se verá cuando no utilices fotografía.</small></div>
+          </div>
+          <div className="profile-theme-picker-row">
+            <label>Color inicial
+              <input type="color" aria-label="Color inicial del avatar"
+                disabled={!!busy} value={avatarStart}
+                onChange={event=>{setAvatarStart(event.target.value);setSuccess('');}}/>
+            </label>
+            <label>Color final
+              <input type="color" aria-label="Color final del avatar"
+                disabled={!!busy} value={avatarEnd}
+                onChange={event=>{setAvatarEnd(event.target.value);setSuccess('');}}/>
+            </label>
+          </div>
+          <div className="profile-theme-presets" aria-label="Combinaciones de colores para el avatar">
+            {PROFILE_PRESETS.map(preset=><button type="button" key={preset.name}
+              disabled={!!busy} title={preset.name} aria-label={`Aplicar ${preset.name} al avatar`}
+              aria-pressed={avatarStart===preset.colors.start&&avatarEnd===preset.colors.end}
+              style={{background:themeGradient(preset.colors)}}
+              onClick={()=>{setAvatarStart(preset.colors.start);setAvatarEnd(preset.colors.end);setSuccess('');}}/>)}
+          </div>
+        </div>
+        <div className="profile-editor-theme-row">
+          <div className="profile-theme-row-head">
+            <div className="profile-theme-preview cover-example" aria-hidden="true"
+              style={{background:themeGradient({start:coverStart,end:coverEnd})}}>✦</div>
+            <div><strong>Fondo de portada</strong>
+              <small>Se verá cuando no tengas una imagen de portada.</small></div>
+          </div>
+          <div className="profile-theme-picker-row">
+            <label>Color inicial
+              <input type="color" aria-label="Color inicial de la portada"
+                disabled={!!busy} value={coverStart}
+                onChange={event=>{setCoverStart(event.target.value);setSuccess('');}}/>
+            </label>
+            <label>Color final
+              <input type="color" aria-label="Color final de la portada"
+                disabled={!!busy} value={coverEnd}
+                onChange={event=>{setCoverEnd(event.target.value);setSuccess('');}}/>
+            </label>
+          </div>
+          <div className="profile-theme-presets" aria-label="Combinaciones de colores para la portada">
+            {PROFILE_PRESETS.map(preset=><button type="button" key={preset.name}
+              disabled={!!busy} title={preset.name} aria-label={`Aplicar ${preset.name} a la portada`}
+              aria-pressed={coverStart===preset.colors.start&&coverEnd===preset.colors.end}
+              style={{background:themeGradient(preset.colors)}}
+              onClick={()=>{setCoverStart(preset.colors.start);setCoverEnd(preset.colors.end);setSuccess('');}}/>)}
+          </div>
+        </div>
+      </section>
       <div className="profile-editor-fields-heading">
         <h3>Información pública</h3>
         <span>@{user.username}</span>
@@ -173,6 +262,29 @@ export default function ProfileEditor({user,onUpdate}:{
           placeholder="https://tu-sitio.example"/>
         <small>Opcional · únicamente enlaces HTTP o HTTPS.</small>
       </div>
+      <section className="profile-editor-birthday" aria-labelledby="birthday-title">
+        <div className="profile-editor-section-heading">
+          <h3 id="birthday-title"><CalendarDays size={19}/> Fecha de nacimiento</h3>
+          <p>El año y la fecha completa siempre son privados. Tú decides si mostrar
+            únicamente el día y mes de tu cumpleaños.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="birthday-date">Tu fecha de nacimiento</label>
+          <input id="birthday-date" type="date" value={birthDate}
+            min="1900-01-01" max={new Date().toISOString().slice(0,10)}
+            disabled={!!busy}
+            onChange={event=>{
+              setBirthDate(event.target.value);
+              if(!event.target.value)setShowBirthday(false);
+              setSuccess('');
+            }}/>
+        </div>
+        <label className="profile-birthday-opt-in">
+          <input type="checkbox" checked={showBirthday} disabled={!!busy||!birthDate}
+            onChange={event=>{setShowBirthday(event.target.checked);setSuccess('');}}/>
+          <span>Mostrar mi cumpleaños (solo día y mes) en mi perfil público</span>
+        </label>
+      </section>
       {error&&<p role="alert" className="form-error">{error}</p>}
       {success&&<p role="status" className="success-note"><Check size={17}/>{success}</p>}
       <div className="profile-editor-footer">
