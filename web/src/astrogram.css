@@ -753,27 +753,6 @@ html,body,#root{min-width:0;max-width:100%}
 }
 .epoch-secondary-actions .epoch-save:hover {border-color: var(--line);}
 .epoch-saved {font-size: .65rem; color: var(--muted); padding: 0 16px 10px; overflow-wrap: anywhere;}
-.epoch-tech {padding: 0 16px 14px;}
-.epoch-tech summary{
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: .72rem;
-}
-.epoch-tech pre {
-  background: var(--panel2);
-  border-radius: 9px;
-  color: #b5c9ee;
-  padding: 10px;
-  font-size: .67rem;
-  max-height: 220px;
-  overflow: auto;
-  margin-top: 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
 .epoch-science-note {
   font-size: .7rem;
   color: var(--muted);
@@ -800,229 +779,131 @@ html,body,#root{min-width:0;max-width:100%}
 }
 
 
-/* Search observability: measured browser-side progress, never fake percentages. */
-.irsa-progress {
-  padding: 14px 15px 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  min-width: 0;
+
+/* Human-first sky search: real counters, indeterminate catalog phase, no API traces. */
+.sky-search-progress {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(126, 166, 240, .27);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(102, 110, 240, .17), transparent 64%),
+    linear-gradient(143deg, rgba(18, 25, 49, .98), rgba(11, 17, 32, .98));
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .18);
+  padding: 18px 17px 14px;
   color: var(--text);
 }
-.irsa-progress-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
+.sky-search-progress::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20px; right: 20px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(174, 209, 255, .75), transparent);
+  pointer-events: none;
 }
-.irsa-progress-heading strong { display: block; font-size: .84rem; }
-.irsa-progress-phase {
-  display: block;
-  color: #9db4e6;
-  font-size: .73rem;
-  margin-top: 3px;
+.sky-search-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.sky-search-symbol {
+  display:grid; place-items:center; flex:0 0 43px; width:43px;height:43px;
+  color:#b6ccff; border-radius:14px;
+  background: linear-gradient(145deg, rgba(78, 108, 181, .27), rgba(113, 72, 190, .17));
+  border:1px solid rgba(164, 195, 255, .19);
 }
-.irsa-progress-elapsed {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  font-size: .78rem;
-  font-variant-numeric: tabular-nums;
-  color: #b7c9ec;
+.sky-search-progress:not(.is-active) .sky-search-symbol { color:#9fe2c0; }
+.sky-search-heading-copy { display:flex; flex-direction:column; gap:5px; min-width:0; flex:1; }
+.sky-search-heading-copy strong { font-size:.88rem;line-height:1.3;letter-spacing:.01em; }
+.sky-search-heading-copy > span { font-size:.7rem;line-height:1.45;color:#a8badb; }
+.sky-search-time { display:flex;align-items:center;gap:4px;flex:none;color:#a6b6d5;font-size:.68rem;font-variant-numeric:tabular-nums; }
+.sky-search-track,.sky-background-track {
+  position:relative;height:9px;border-radius:999px;overflow:hidden;
+  background:rgba(72, 89, 133, .35);
+  border:1px solid rgba(157, 172, 225, .12);
 }
-.irsa-progress-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  list-style: none;
-  padding: 16px 0 10px;
-  margin: 0;
+.sky-search-track { margin-top:18px; }
+.sky-search-track > span,.sky-background-track > span {
+  display:block;height:100%;border-radius:inherit;
+  background:linear-gradient(90deg,#5cb7ff,#a189ff,#f587d1);
+  box-shadow:0 0 14px rgba(136, 156, 255, .38);
+  transition:width .35s ease;
 }
-.irsa-progress-steps li {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
+.sky-search-track.is-indeterminate > span,
+.sky-background-track.indeterminate > span {
+  width:35%;animation:sky-flow 1.65s ease-in-out infinite;
 }
-.irsa-progress-steps li > svg { flex: 0 0 auto; margin-top: 1px; color: #90a1c8; }
-.irsa-progress-steps li > div { flex: 1; min-width: 0; }
-.irsa-progress-steps b { display: block; font-size: .78rem; line-height: 1.35; }
-.irsa-progress-steps p {
-  font-size: .71rem;
-  line-height: 1.5;
-  color: var(--muted);
-  margin: 3px 0 0;
-  overflow-wrap: anywhere;
+@keyframes sky-flow {
+  0%{transform:translateX(-105%)}
+  100%{transform:translateX(390%)}
 }
-.irsa-progress-meter {
-  height: 7px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: #202a48;
-  margin-top: 11px;
-}
-.irsa-progress-meter > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg,var(--a),var(--b),var(--c));
-  transition: width .2s ease;
-}
-.irsa-progress-explain {
-  display: block;
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: .66rem;
-  line-height: 1.45;
-}
-.irsa-frame-details {
-  border-top: 1px solid var(--line);
-  margin-top: 4px;
-  padding-top: 10px;
-}
-.irsa-frame-details summary {
-  cursor: pointer;
-  color: #bbcdf5;
-  font-size: .75rem;
-  font-weight: 600;
-}
-.irsa-frame-list {
-  display: grid;
-  gap: 1px;
-  margin-top: 12px;
-  max-height: 230px;
-  overflow-y: auto;
-}
-.irsa-frame-entry {
-  display: grid;
-  grid-template-columns: minmax(65px,1fr) minmax(92px,1fr) auto;
-  gap: 7px;
-  align-items: baseline;
-  padding: 6px 0;
-  border-bottom: 1px solid #ffffff0d;
-  font-size: .7rem;
-  color: var(--muted);
-}
-.irsa-frame-entry > span:last-of-type { font-variant-numeric: tabular-nums; }
-.irsa-frame-ready { color: #8fe8ad; }
-.irsa-frame-loading { color: #a4baff; }
-.irsa-frame-failed { color: #ff9aa7; }
-.irsa-frame-error {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #ffb3bd;
-  font-size: .68rem;
-  overflow-wrap: anywhere;
-}
-.irsa-cancel {
-  width: 100%;
-  justify-content: center;
-  margin-top: 14px;
-  border-color: #cb6c8199;
-  color: #ffb5c0;
-}
-.irsa-progress-disclaimer {
-  color: var(--muted);
-  font-size: .65rem;
-  line-height: 1.5;
-  margin: 14px 0 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .irsa-progress-meter > span { transition: none; }
-}
+.sky-search-detail {font-size:.8rem;color:#d0def5;margin-top:12px;line-height:1.45;}
+.sky-search-subtle {font-size:.72rem;color:#a6b6d7;line-height:1.5;margin-top:8px;}
+.sky-search-actions {display:flex;align-items:center;gap:9px;margin-top:14px;flex-wrap:wrap;}
+.sky-search-actions:empty { display:none; }
+.sky-search-actions .btn {display:inline-flex;align-items:center;gap:7px;justify-content:center;}
+.sky-search-actions .sky-search-quiet {background:transparent;color:#aebdda;border-color:rgba(145,168,210,.26);}
+.sky-search-credibility {font-size:.67rem;line-height:1.5;color:#8497bc;padding-top:12px;margin-top:14px;border-top:1px solid rgba(145,168,210,.13);}
+.sky-search-orbit {animation:sky-orbit 6s linear infinite; transform-origin:center;}
+@keyframes sky-orbit {to{transform:rotate(360deg)}}
 
+/* Search continues in the same React instance while any app route is visible. */
+.sky-background-dock {
+  position:fixed;right:24px;bottom:22px;z-index:50;
+  width:min(415px, calc(100vw - 36px));
+  border-radius:19px;
+  background:linear-gradient(138deg,rgba(19,29,56,.97),rgba(12,17,36,.98));
+  border:1px solid rgba(127,163,238,.42);
+  box-shadow:0 24px 70px rgba(0,0,0,.48),0 0 28px rgba(75,111,202,.13);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  padding:15px 16px 13px;min-width:0;
+}
+.sky-background-main{display:flex;align-items:flex-start;gap:11px;min-width:0;}
+.sky-background-icon{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:12px;
+  color:#aed0ff;background:rgba(108,133,211,.19);}
+.sky-background-copy{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0;}
+.sky-background-copy strong{font-size:.84rem;line-height:1.35;}
+.sky-background-copy span{color:#aabbdc;font-size:.7rem;line-height:1.45;}
+.sky-background-dismiss{display:grid;place-items:center;flex:none;color:#9daecc;border-radius:8px;
+  width:25px;height:25px;font-size:1.3rem;line-height:1;}
+.sky-background-dismiss:hover{background:rgba(255,255,255,.1);color:#fff;}
+.sky-background-track{height:7px;margin:14px 0 11px;}
+.sky-background-return{display:flex;align-items:center;justify-content:center;gap:8px;
+  border:1px solid rgba(133,170,238,.24);border-radius:11px;
+  color:#e5ecff;background:rgba(108,119,197,.18);padding:9px 12px;
+  width:100%;font-size:.76rem;font-weight:700;}
+.sky-background-return:hover{border-color:rgba(176,200,253,.5);background:rgba(120,128,212,.3);}
+.sky-background-return svg:last-child{margin-left:auto;}
 
-/* IRSA submission failures: explicit retry, never automatic duplicate POSTs. */
-.irsa-retry-actions {
-  padding-top: 13px;
-  margin-top: 12px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* A small orbital loading scene, without pretending to know catalog percentage. */
+.sky-canvas-waiting{flex-direction:column;gap:9px;
+  background:radial-gradient(ellipse at 50% 43%,rgba(31,53,106,.38),transparent 62%),
+    radial-gradient(circle at 28% 25%,rgba(170,195,250,.6) 0 1px,transparent 2px),
+    radial-gradient(circle at 72% 68%,rgba(170,195,250,.6) 0 1px,transparent 2px),
+    radial-gradient(circle at 83% 19%,rgba(170,195,250,.3) 0 1px,transparent 2px),
+    #040711;
 }
-.irsa-retry-actions p {
-  font-size: .71rem;
-  line-height: 1.5;
-  color: var(--muted);
+.sky-canvas-waiting strong{margin-top:13px;font-size:clamp(.95rem,2vw,1.25rem);color:#e3edff;letter-spacing:.015em;}
+.sky-canvas-waiting>span{color:#a5b8db;font-size:clamp(.69rem,1.5vw,.82rem);line-height:1.45;}
+.sky-canvas-waiting>small{color:#7d92bf;font-size:.69rem;line-height:1.45;}
+.sky-canvas-orbit{position:relative;display:grid;place-items:center;width:98px;height:98px;
+  border:1px solid rgba(112,143,233,.27);border-radius:50%;
+  box-shadow:0 0 0 14px rgba(77,108,205,.05),inset 0 0 28px rgba(85,110,196,.12);
+  animation:sky-orbit 8s linear infinite;
 }
-.irsa-retry-actions button {
-  width: 100%;
-  white-space: normal;
-  min-height: 36px;
-}
+.sky-canvas-orbit::before{content:'';position:absolute;inset:15px;transform:rotate(35deg);
+  border:1px solid rgba(163,157,244,.43);border-radius:50%;}
+.sky-canvas-core{width:29px;height:29px;border-radius:50%;background:radial-gradient(circle at 28% 26%,#fff,#75c7ff 35%,#7468e8 100%);
+  box-shadow:0 0 21px rgba(106,161,249,.54);}
+.sky-canvas-satellite{position:absolute;width:8px;height:8px;border-radius:50%;background:#ffb9e0;
+  box-shadow:0 0 13px #c185ff;top:7px;right:17px;}
 
-/* Performance diagnostics: nested, compact breakdown in the explorer sidebar. */
-.irsa-timing-details {
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
+@media(max-width:560px){
+  .sky-background-dock{right:12px;bottom:12px;width:calc(100vw - 24px);}
+  .sky-search-heading{align-items:flex-start;}
+  .sky-search-time{font-size:.63rem;}
+  .sky-search-actions .btn{flex:1;}
+  .sky-canvas-orbit{width:74px;height:74px;}
 }
-.irsa-timing-details summary {
-  cursor: pointer;
-  color: #bdd0fa;
-  font-size: .75rem;
-  font-weight: 700;
+@media(prefers-reduced-motion:reduce){
+  .sky-search-track > span,.sky-background-track > span{transition:none;}
+  .sky-search-track.is-indeterminate > span,.sky-background-track.indeterminate > span,
+  .sky-search-orbit,.sky-canvas-orbit{animation:none;}
+  .sky-search-track.is-indeterminate > span,.sky-background-track.indeterminate > span{width:100%;opacity:.5;}
 }
-.irsa-timing-grid {
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
-  gap: 8px 12px;
-  margin: 12px 0 3px;
-  font-size: .69rem;
-}
-.irsa-timing-grid dt {color: var(--muted);}
-.irsa-timing-grid dd {margin: 0; color: #d9e5ff; font-variant-numeric: tabular-nums;}
-.irsa-timing-pair {display: contents;}
-.irsa-phase-events {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 10px;
-  font-size: .65rem;
-  color: #aebde0;
-}
-.irsa-frame-server {
-  grid-column: 1 / -1;
-  font-size: .65rem;
-  line-height: 1.5;
-  color: #a6c9ed;
-  overflow-wrap: anywhere;
-}
-.irsa-diagnostic-copy {
-  width: 100%;
-  margin-top: 12px;
-  justify-content: center;
-}
-
-
-/* Experimental read-only SIA2-vs-TAP benchmark shown after an IRSA search. */
-.sia-compare-card {
-  margin-top: 14px;
-  padding: 17px;
-  border: 1px solid var(--line);
-  border-radius: 17px;
-  background: rgba(22, 30, 56, .78);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.sia-compare-card strong { font-size: .83rem; }
-.sia-compare-card > button { width: 100%; justify-content: center; }
-.sia-compare-note { font-size: .7rem; color: #adbbdb; line-height: 1.5; overflow-wrap: anywhere; }
-.sia-compare-error { font-size: .7rem; color: #ffa4af; line-height: 1.5; overflow-wrap: anywhere; }
-.sia-compare-result { padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
-.sia-compare-metrics {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 10px;
-  row-gap: 9px;
-  font-size: .68rem;
-}
-.sia-compare-metrics dt { color: #adbbdb; }
-.sia-compare-metrics dd { margin: 0; color: #e3edff; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; max-width: 185px; }
-.sia-compare-caveats summary { cursor: pointer; font-size: .69rem; color: #bad0f9; }
-.sia-compare-caveats p { font-size: .66rem; color: #98a7c7; line-height: 1.5; margin-top: 8px; }

@@ -150,10 +150,19 @@ export default function EpochCanvas({
       aria-label="Marcar posición en esta época; con teclado, Enter marca el centro de la imagen"/>
     {ready && <div className="epoch-image-label">{label ?? `Época ${index + 1}/${total}`}</div>}
     {frame?.mode === 'simulated' && <div className="epoch-simulation-label">SIMULACIÓN · NO ES UNA IMAGEN NASA</div>}
-    {!frame && <div className="epoch-placeholder" role="status">
-      {loading ? 'Buscando o cargando imágenes…' :
+    {!frame && <div className={`epoch-placeholder ${loading ? 'sky-canvas-waiting' : ''}`}
+      role="status">
+      {loading ? <>
+        <div className="sky-canvas-orbit" aria-hidden="true">
+          <span className="sky-canvas-core"/>
+          <span className="sky-canvas-satellite"/>
+        </div>
+        <strong>Preparando tu ventana al universo</strong>
+        <span>Estamos buscando las mejores vistas de esta región.</span>
+        <small>Puedes visitar Inicio: la búsqueda seguirá aquí.</small>
+      </> :
         hasSearch && total === 0 ? 'No hay observaciones disponibles para esta región.' :
-        hasSearch ? 'No se pudo cargar esta época. Elige otra con la barra.' :
+        hasSearch ? 'Esta imagen no está disponible. Puedes elegir otra época.' :
         <>Elige coordenadas y pulsa <strong>Buscar</strong></>}
     </div>}
     {ready && <div className="epoch-mark-guide">Haz clic para marcar un objeto · marcas locales</div>}
