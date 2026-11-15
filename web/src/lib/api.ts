@@ -7,17 +7,36 @@ export type Profile = {
   created_at: string;
   email?: string;
 };
+export type RevealRecipe = {
+  version: 1;
+  palette: 'gray'|'cyan'|'violet'|'ember'|'custom';
+  stretch: 'linear'|'asinh'|'log';
+  black: number;
+  white: number;
+  gamma: number;
+  highlight: string;
+  shadow: string;
+  format: 'square'|'portrait'|'wide';
+  sampling: 'smooth'|'pixels';
+};
+export const DEFAULT_REVEAL: RevealRecipe = {
+  version:1,palette:'cyan',stretch:'asinh',black:2,white:99.5,
+  gamma:1,highlight:'#62cfff',shadow:'#080d28',
+  format:'square',sampling:'smooth',
+};
 export type PostBlinkInfo = {
   job_id: string;
   status: PersistentSkyJob['status'];
   detector: number;
   source: 'sia2'|'simulated';
+  display_recipe: RevealRecipe|null;
   frames: {index:number;status:'pending'|'loading'|'ready'|'failed';date:string|null}[];
 };
 export type Post = {
   id: string;
   username: string;
   caption: string;
+  display_recipe: RevealRecipe|null;
   observation_id: string | null;
   visibility: 'public' | 'unlisted' | 'private';
   created_at: string;
@@ -65,7 +84,7 @@ export type PersistentSkyJob = {
   total_matches: number|null;
   result: SkySearch|null;
   discovery: {method:string;elapsed_ms?:number;attempts?:number;query_status?:string}|null;
-  frames: {index:number;status:'pending'|'loading'|'ready'|'failed';error?:string}[];
+  frames: {index:number;status:'pending'|'loading'|'ready'|'failed';raw_available?:boolean;error?:string}[];
   error: string|null;
 };
 export type TapTiming = {
@@ -195,7 +214,7 @@ export const api = {
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),
   createPost: (data: {
     caption:string;visibility:Post['visibility'];observation_id:string|null;
-    sky_job_id?:string|null;
+    sky_job_id?:string|null;display_recipe?:RevealRecipe|null;
   }) => write<Post>('POST','/v1/posts',data),
   preparePostBlink: (postId:string,signal?:AbortSignal) =>
     request<PostBlinkInfo>(`/v1/posts/${encodeURIComponent(postId)}/blink`,
@@ -255,6 +274,10 @@ export const api = {
     get<PersistentSkyJob>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,false,signal),
   getPersistentSkyFrame: (jobId:string,index:number,signal?:AbortSignal) =>
     get<SkyFrame>(`/api/sky/jobs/${encodeURIComponent(jobId)}/frames/${index}`,false,signal),
+  revealSkyFrame: (jobId:string,index:number,recipe:RevealRecipe,signal?:AbortSignal) =>
+    request<{image:string;recipe:RevealRecipe;derived:boolean}>(
+      `/api/sky/jobs/${encodeURIComponent(jobId)}/frames/${index}/reveal`,
+      {method:'POST',body:JSON.stringify(recipe),cache:'no-store'},false,signal),
   cancelPersistentSkyJob: (jobId:string) =>
     request<void>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,{method:'DELETE'}),
   compareSia2: (searchId:string,signal?:AbortSignal) =>

@@ -78,6 +78,7 @@ def _snapshot(row: SkySearchJob) -> dict:
         "discovery": row.discovery_data,
         "frames": [
             {"index": item["index"], "status": item["status"],
+             "raw_available": bool((item.get("metadata") or {}).get("raw_available")),
              **({"error": "Imagen no disponible"} if item["status"] == "failed" else {})}
             for item in frames
         ],

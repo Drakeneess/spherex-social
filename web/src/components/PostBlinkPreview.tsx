@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, CirclePause, CirclePlay, LoaderCircle, Telescope } from 'lucide-react';
-import { api, type PersistentSkyJob, type SkyFrame } from '../lib/api';
+import { api, type PersistentSkyJob, type SkyFrame, type RevealRecipe } from '../lib/api';
 
 type ReadyFrame = { index: number; date: string | null };
 const DONE = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -44,6 +44,8 @@ export default function PostBlinkPreview({
     typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
   const [attempt, setAttempt] = useState(0);
+  const [revealFallback,setRevealFallback] = useState(false);
+  const linkedRecipe = useRef<RevealRecipe|null>(null);
 
   useEffect(() => {
     const node = root.current;
@@ -79,6 +81,19 @@ export default function PostBlinkPreview({
         if (imagesRef.current[choice.index]) return;
         const frame = await api.getPersistentSkyFrame(state.job_id, choice.index, signal);
         if (signal.aborted) return;
+        const recipe = linkedRecipe.current;
+        if (recipe) {
+          try {
+            const styled = await api.revealSkyFrame(state.job_id, choice.index, recipe, signal);
+            frame.image = styled.image;
+          } catch (error) {
+            // Legacy jobs may have only 8-bit PNGs. Preserve the original
+            // scientifically labeled preview rather than inventing pixels.
+            if (signal.aborted) return;
+            setRevealFallback(true);
+          }
+        }
+        if (signal.aborted) return;
         imagesRef.current[choice.index] = frame;
         setImages({...imagesRef.current});
       }));
@@ -91,6 +106,8 @@ export default function PostBlinkPreview({
         // single stored background job; all subsequent visits reuse that job.
         const linked = await api.preparePostBlink(postId, signal);
         if (signal.aborted) return;
+        linkedRecipe.current = linked.display_recipe;
+        setRevealFallback(false);
         while (!signal.aborted) {
           try {
             const state = await api.getPersistentSkyJob(linked.job_id, signal);
@@ -162,6 +179,9 @@ export default function PostBlinkPreview({
         <span>{picture ? `Época ${shown.index + 1} de ${job?.result?.count ?? '?'} · ${readableDate(selectedDate)}`
           : 'Vista preliminar · sin movimiento simulado'}</span>
         {canBlink && <small>Alternando dos observaciones reales</small>}
+        {linkedRecipe.current && <small>{revealFallback
+          ? 'Vista original (revelado no disponible)'
+          : 'Falso color · revelado artístico sobre datos reales'}</small>}
       </div>
       <div className="post-blink-controls">
         {canBlink && <button type="button" className="post-blink-control"
