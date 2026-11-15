@@ -95,7 +95,8 @@ export default function GlobalSearch({currentQuery,mobileOpen,onMobileOpenChange
       for(const post of result.posts.slice(0,4)){
         items.push({key:'post-'+post.id,type:'post',title:'@'+post.username,
           subtitle:post.caption.trim().slice(0,120)||'Publicación astronómica',
-          path:'post/'+encodeURIComponent(post.id)});
+          path:'post/'+encodeURIComponent(post.id)+
+            '?from=search&q='+encodeURIComponent(term)});
       }
     }
     return items;
