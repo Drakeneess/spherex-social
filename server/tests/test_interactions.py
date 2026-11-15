@@ -205,6 +205,78 @@ def test_combined_app_has_new_routes():
         '/v1/posts/{post_id}/like', '/v1/posts/{post_id}/bookmark',
         '/v1/posts/{post_id}/comments', '/v1/posts/{post_id}/comments/{comment_id}',
         '/v1/users/{username}/follow', '/v1/users/{username}/stats',
-        '/v1/users/me/bookmarks',
+        '/v1/users/me/bookmarks', '/v1/posts/{post_id}/repost',
     ):
         assert endpoint in paths
+
+def test_public_reposts_appear_on_profile_with_original_attribution(env):
+    client, headers = env
+    original = new_post(client, headers, 'public', 'Real SPHEREx observation')
+    url = f'/v1/posts/{original}/repost'
+    assert client.post(url).status_code == 401
+    assert client.post(url, headers=headers['alpha']).status_code == 400
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert client.post(url, headers=headers['beta']).status_code == 204
+
+    # No duplicate posts in the public feed: only the original receives interactions.
+    feed = client.get('/v1/feed').json()
+    assert [post['id'] for post in feed] == [original]
+    assert feed[0]['reposts_count'] == 1 and feed[0]['reposted_by_me'] is False
+    assert client.get('/v1/feed', headers=headers['beta']).json()[0]['reposted_by_me'] is True
+
+    shared = client.get('/v1/users/beta/posts', headers=headers['beta']).json()
+    assert len(shared) == 1
+    assert shared[0]['id'] == original
+    assert shared[0]['username'] == 'alpha'
+    assert shared[0]['reposted_by'] == 'beta'
+    assert shared[0]['reposted_at'] is not None
+    assert shared[0]['reposted_by_me'] is True
+    assert client.get('/v1/users/beta/posts').json()[0]['reposted_by_me'] is False
+    assert client.get('/v1/users/alpha/posts').json()[0]['reposted_by'] is None
+
+    assert client.post(f'/v1/posts/{original}/like', headers=headers['beta']).status_code == 204
+    assert client.post(f'/v1/posts/{original}/comments', headers=headers['beta'],
+                       json={'body': 'Interesting'}).status_code == 201
+    shared = client.get('/v1/users/beta/posts').json()[0]
+    assert shared['likes_count'] == 1 and shared['comments_count'] == 1
+
+    assert client.delete(url, headers=headers['beta']).status_code == 204
+    assert client.delete(url, headers=headers['beta']).status_code == 204
+    assert client.get('/v1/users/beta/posts').json() == []
+    assert client.get(f'/v1/posts/{original}').json()['reposts_count'] == 0
+
+
+def test_repost_privacy_and_deletion(env):
+    client, headers = env
+    public = new_post(client, headers, 'public', 'Public')
+    unlisted = new_post(client, headers, 'unlisted', 'Unlisted')
+    private = new_post(client, headers, 'private', 'Private')
+    for post_id in (unlisted, private, str(uuid.uuid4())):
+        assert client.post(f'/v1/posts/{post_id}/repost', headers=headers['beta']).status_code == 404
+
+    url = f'/v1/posts/{public}/repost'
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert [p['id'] for p in client.get('/v1/users/beta/posts').json()] == [public]
+    assert client.patch(f'/v1/posts/{public}', headers=headers['alpha'],
+                        json={'visibility': 'private'}).status_code == 200
+    assert client.get('/v1/users/beta/posts').json() == []
+    assert client.delete(url, headers=headers['beta']).status_code == 204
+    assert client.patch(f'/v1/posts/{public}', headers=headers['alpha'],
+                        json={'visibility': 'public'}).status_code == 200
+    assert client.get('/v1/users/beta/posts').json() == []
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert client.delete(f'/v1/posts/{public}', headers=headers['alpha']).status_code == 204
+    assert client.get('/v1/users/beta/posts').json() == []
+
+
+def test_repost_profile_pagination_combines_authored_and_shared(env):
+    client, headers = env
+    authored = new_post(client, headers, 'public', 'Alpha post')
+    mine = client.post('/v1/posts', headers=headers['beta'],
+                       json={'caption': 'Beta post'}).json()['id']
+    assert client.post(f'/v1/posts/{authored}/repost', headers=headers['beta']).status_code == 204
+    posts = client.get('/v1/users/beta/posts', headers=headers['beta']).json()
+    assert {p['id'] for p in posts} == {authored, mine}
+    assert sum(1 for p in posts if p['reposted_by']) == 1
+    assert len(client.get('/v1/users/beta/posts?limit=1').json()) == 1
+    assert len(client.get('/v1/users/beta/posts?limit=1&offset=1').json()) == 1

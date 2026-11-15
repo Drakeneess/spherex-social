@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from .auth import current_user
 from .db import get_db
-from .models import Bookmark, Comment, Follow, Post, PostLike, User
-from .posts import PostOut, counts_by_post, optional_user, serialize
+from .models import Bookmark, Comment, Follow, Post, PostLike, PostRepost, User
+from .posts import PostOut, counts_by_post, optional_user, reposted_ids, serialize
 
 router = APIRouter(prefix='/v1', tags=['interactions'])
 
@@ -88,6 +88,37 @@ def unlike_post(
     return Response(status_code=204)
 
 
+@router.post('/posts/{post_id}/repost', status_code=status.HTTP_204_NO_CONTENT)
+def repost_post(
+    post_id: UUID,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    post = db.get(Post, post_id)
+    # Profiles are public. Never expose unlisted or private posts via reposts.
+    if post is None or post.visibility != 'public':
+        raise HTTPException(status_code=404, detail='Post not found')
+    if post.author_id == user.id:
+        raise HTTPException(status_code=400, detail='Tu publicación ya aparece en tu perfil')
+    add_once(
+        db, PostRepost(post_id=post_id, user_id=user.id), PostRepost,
+        (user.id, post_id),
+        lambda: (target := db.get(Post, post_id)) is not None and target.visibility == 'public',
+    )
+    return Response(status_code=204)
+
+
+@router.delete('/posts/{post_id}/repost', status_code=status.HTTP_204_NO_CONTENT)
+def remove_repost(
+    post_id: UUID,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    # The repost remains removable even after its original becomes private.
+    remove_if_present(db, PostRepost, (user.id, post_id))
+    return Response(status_code=204)
+
+
 @router.post('/posts/{post_id}/bookmark', status_code=status.HTTP_204_NO_CONTENT)
 def save_post(
     post_id: UUID,
@@ -132,7 +163,9 @@ def my_bookmarks(
         .limit(limit).offset(offset)
     ).all()
     counts = counts_by_post(db, [post.id for post, _ in rows])
-    return [serialize(post, username, counts) for post, username in rows]
+    viewer_reposts = reposted_ids(db, user, [post.id for post, _ in rows])
+    return [serialize(post, username, counts, viewer_reposts=viewer_reposts)
+            for post, username in rows]
 
 
 class CommentCreate(BaseModel):
