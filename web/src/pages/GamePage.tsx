@@ -3,6 +3,7 @@ import { Flag, Lightbulb, Trophy } from 'lucide-react';
 import AstroGlyph from '../components/AstroGlyph';
 import { recordGameCompleted } from '../lib/gameStreak';
 import { signalTask, signalNudge } from '../lib/onboarding';
+import { playSound } from '../lib/sounds';
 
 const names=['WISE 0855','Estrella de Barnard','Luhman 16','Cometa en tránsito','Candidato móvil'];
 function random(seed:number){let s=seed;return ()=>{s=(Math.imul(s,1664525)+1013904223)|0;return(s>>>0)/4294967296;};}
@@ -28,13 +29,14 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
   const [done,setDone]=useState(false),[hint,setHint]=useState(false),[feedback,setFeedback]=useState('');
   const answer={x:256+(round%3)*10,y:166+(round%4)*12};
   function next(){
-    if(round===4){recordGameCompleted();setRound(5);return;}
+    if(round===4){recordGameCompleted();playSound('success');setRound(5);return;}
     setRound(r=>r+1);setDone(false);setHint(false);setFeedback('');
   }
   function guess(x:number,y:number){
     if(done)return;
     const correct=Math.hypot(answer.x-x,answer.y-y)<26;
     const points=correct?(hint?50:100):0;
+    playSound(correct?'game-win':'game-miss');
     if(correct){setScore(s=>s+points);setFound(n=>n+1);}
     signalTask('game');signalNudge('game');
     setDone(true);setFeedback(correct?`¡Encontraste el objeto! +${points} puntos.`:'Esta vez no lo encontraste.');
@@ -55,7 +57,7 @@ export default function GamePage({onExplore}:{onExplore:()=>void}){
       <div className={`gres ${done?'good':''}`}>{done?feedback:'¿Qué punto de luz se movió? Toca la imagen derecha.'}</div>
       <div className="xctrl">{done?<button className="btn p sm" onClick={next}>{round===4?'Ver resultado':'Siguiente cielo'}</button>:<>
         <button className="btn sm" disabled={hint} onClick={()=>setHint(true)}><Lightbulb size={15}/> Pista (−50 puntos)</button>
-        <button className="btn sm" onClick={()=>{signalTask('game');signalNudge('game');setDone(true);setFeedback('El punto se desplazó hacia arriba y a la derecha.')}}><Flag size={15}/> Me rindo</button>
+        <button className="btn sm" data-sound="none" onClick={()=>{playSound('game-miss');signalTask('game');signalNudge('game');setDone(true);setFeedback('El punto se desplazó hacia arriba y a la derecha.')}}><Flag size={15}/> Me rindo</button>
       </>}</div>
     </>}
   </div></main>;
