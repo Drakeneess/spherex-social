@@ -408,3 +408,18 @@ html,body,#root,.astrogram-shell{min-inline-size:0}
     line-height:1.4;padding:0 2px 9px;
   }
 }
+
+
+/* Saved and single-post pages share the feed's post interactions; keep their
+ * navigation, saved images and message fields inside narrow columns. */
+@media(max-width:680px){
+  .saved-page h1{flex-wrap:wrap;overflow-wrap:anywhere}
+  .saved-page .post-card{min-width:0;max-width:100%}
+  .notification-post-page{min-width:0}
+  .notification-post-heading{
+    flex-wrap:wrap;align-items:flex-start;gap:9px;
+  }
+  .notification-post-heading h1{overflow-wrap:anywhere}
+  .post-repost-label{overflow-wrap:anywhere}
+  .post-tag-list{flex-wrap:wrap;max-width:100%}
+}
