@@ -37,3 +37,10 @@ def test_subscriber_overflow_becomes_full_resync():
     assert subscriber.get_nowait() == {"kind": "resync"}
     hub.unsubscribe(subscriber)
     assert not hub.subscribers
+
+
+def test_sky_job_signal_requires_explicit_job_subscription():
+    event = {'kind': 'sky_job', 'job_id': 'job-a'}
+    assert visible_event(event, None) is None
+    assert visible_event(event, 'alice', 'job-b') is None
+    assert visible_event(event, None, 'job-a') == event
