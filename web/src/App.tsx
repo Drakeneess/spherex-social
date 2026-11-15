@@ -389,7 +389,24 @@ export default function App(){
   const [tourRevision,setTourRevision]=useState(0);
   const [onboardingNotice,setOnboardingNotice]=useState('');
   const [celebrate,setCelebrate]=useState(false);
-  useEffect(()=>{setDockDismissed(false)},[backgroundStatus?.trace?.startedAt]);
+  // Notifications belong to a job, not to its repeatedly hydrated trace.
+  // Resuming an already finished job is not a new completion event.
+  useEffect(()=>{setDockDismissed(false);},[backgroundStatus?.jobId]);
+  useEffect(()=>{
+    const status=backgroundStatus;
+    const phase=status?.trace?.phase;
+    if(!phase)return;
+    const finished=['complete','partial','empty','failed','cancelled'].includes(phase);
+    if(!finished)return;
+    if(status?.restored || route.page==='explore'){
+      setDockDismissed(true);
+      return;
+    }
+    // Show a genuine background completion briefly, never indefinitely.
+    const timer=window.setTimeout(()=>setDockDismissed(true),6500);
+    return()=>window.clearTimeout(timer);
+  },[backgroundStatus?.jobId,backgroundStatus?.trace?.phase,
+      backgroundStatus?.restored,route.page]);
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
   // Previous route state must never leave the auth page panned horizontally.
   useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
@@ -598,7 +615,11 @@ export default function App(){
       </span>)}</div>}
     {tour&&user&&<OnboardingTour key={tour.key} spec={tour} onClose={closeTour}/>}
     {!explorerVisible && !dockDismissed && backgroundStatus?.trace &&
-      <BackgroundSkyDock status={backgroundStatus} onOpen={()=>go('explore')}
-        onDismiss={()=>setDockDismissed(true)}/>}
+      (!backgroundStatus.restored ||
+        (backgroundStatus.loading &&
+          ['catalog','frames'].includes(backgroundStatus.trace.phase))) &&
+      <BackgroundSkyDock status={backgroundStatus} onOpen={()=>{
+          setDockDismissed(true);go('explore');
+        }} onDismiss={()=>setDockDismissed(true)}/>}
   </div>;
 }
