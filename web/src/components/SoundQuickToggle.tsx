@@ -15,8 +15,8 @@ export default function SoundQuickToggle({className=''}:{className?:string}) {
   const audible=settings.enabled&&settings.volume>0;
   const label=audible?'Silenciar sonidos':'Activar sonidos';
   function toggle(){
-    const next=updateSoundSettings({enabled:!settings.enabled,
-      volume:settings.volume===0&&!settings.enabled?45:settings.volume});
+    const next=updateSoundSettings({enabled:!audible,
+      volume:settings.volume===0?45:settings.volume});
     setSettings(next);
     if(next.enabled)playSound('toggle');
   }
