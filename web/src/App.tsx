@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bookmark, Check, LogOut, Settings, Users } from 'lucide-react';
+import { Bookmark, Check, LogOut, Settings, Users, X } from 'lucide-react';
 import AstroGlyph from './components/AstroGlyph';
 import PublishModal, {type PublishRegion} from './components/PublishModal';
 import BrandLogo from './components/BrandLogo';
@@ -229,15 +229,37 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
   const [person,setPerson]=useState<Profile|null>(null),[stats,setStats]=useState<UserStats|null>(null);
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [selectedId,setSelectedId]=useState<string|null>(null);
+  const dialogRef=useRef<HTMLDivElement|null>(null);
   const mine=current?.username===username;
   const selectedPost=posts.find(post=>post.id===selectedId);
   useEffect(()=>{
     if(!selectedId)return;
+    const previousFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
     const oldOverflow=document.body.style.overflow;
     document.body.style.overflow='hidden';
-    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')setSelectedId(null);};
-    document.addEventListener('keydown',escape);
-    return ()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',escape);};
+    dialogRef.current?.querySelector<HTMLButtonElement>('.profile-post-dialog-top button')?.focus({preventScroll:true});
+    const keyboard=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){
+        event.preventDefault();setSelectedId(null);return;
+      }
+      if(event.key!=='Tab'||!dialogRef.current)return;
+      const available=Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      )).filter(element=>element.getClientRects().length>0);
+      if(!available.length)return;
+      const first=available[0],last=available[available.length-1];
+      if(event.shiftKey&&(document.activeElement===first||!dialogRef.current.contains(document.activeElement))){
+        event.preventDefault();last.focus();
+      }else if(!event.shiftKey&&(document.activeElement===last||!dialogRef.current.contains(document.activeElement))){
+        event.preventDefault();first.focus();
+      }
+    };
+    document.addEventListener('keydown',keyboard);
+    return()=>{
+      document.body.style.overflow=oldOverflow;
+      document.removeEventListener('keydown',keyboard);
+      previousFocus?.focus({preventScroll:true});
+    };
   },[selectedId]);
   useEffect(()=>{
     let active=true;setPerson(null);setError('');setSelectedId(null);
@@ -331,10 +353,10 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     </>}
     {selectedPost&&<div className="modal profile-post-modal" role="presentation"
       onMouseDown={event=>{if(event.target===event.currentTarget)setSelectedId(null);}}>
-      <div className="profile-post-dialog" role="dialog" aria-modal="true" aria-label="Publicación completa">
+      <div ref={dialogRef} className="profile-post-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-post-title">
         <div className="profile-post-dialog-top">
-          <span><AstroGlyph name="galaxy" size={18}/> Publicación de @{selectedPost.username}</span>
-          <button type="button" onClick={()=>setSelectedId(null)} aria-label="Cerrar publicación">✕</button>
+          <span id="profile-post-title"><AstroGlyph name="galaxy" size={18}/> Publicación de @{selectedPost.username}</span>
+          <button type="button" onClick={()=>setSelectedId(null)} aria-label="Cerrar publicación"><X size={20}/></button>
         </div>
         <PostCard key={selectedPost.id} post={selectedPost}
           onProfile={name=>{setSelectedId(null);go(`u/${encodeURIComponent(name)}`);}}

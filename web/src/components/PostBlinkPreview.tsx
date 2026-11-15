@@ -150,8 +150,22 @@ export default function PostBlinkPreview({
   const failed = terminal && !picture;
   const selectedDate = shown?.date ?? null;
   const readyCount = job?.frames.filter(frame => frame.status === 'ready').length ?? 0;
+  const unavailable = Boolean(error || failed);
+  const unavailableTitle = job?.status === 'empty'
+    ? 'Sin imágenes en esta región'
+    : job?.status === 'cancelled'
+      ? 'La búsqueda fue cancelada'
+      : 'La vista aún no está disponible';
+  const unavailableDescription = job?.status === 'empty'
+    ? 'No se encontraron épocas para generar una vista. La observación sigue guardada.'
+    : 'La observación sigue guardada. Puedes consultarla en el explorador.';
 
-  return <div ref={root} className={`post-blink-preview ${linkedRecipe.current?`format-${linkedRecipe.current.format}`:''}`} aria-label="Parpadeo astronómico de la publicación">
+  return <div ref={root} className={[
+    'post-blink-preview',
+    picture ? 'has-picture' : 'is-placeholder',
+    unavailable ? 'is-unavailable' : '',
+    linkedRecipe.current ? `format-${linkedRecipe.current.format}` : '',
+  ].filter(Boolean).join(' ')} aria-label="Parpadeo astronómico de la publicación">
     {picture && <img className={`post-blink-photo ${linkedRecipe.current&&!revealFallback?'is-revealed':''}`} src={picture.image}
       alt={`Fotograma astronómico real, época ${shown.index + 1}, ${readableDate(selectedDate)}`}
       decoding="async" />}
@@ -159,8 +173,8 @@ export default function PostBlinkPreview({
       {error || failed
         ? <>
           <Telescope size={28} aria-hidden="true"/>
-          <strong>La vista aún no está disponible</strong>
-          <span>La observación permanece guardada. Puedes abrirla en el explorador.</span>
+          <strong>{unavailableTitle}</strong>
+          <span>{unavailableDescription}</span>
         </>
         : <>
           <LoaderCircle size={27} className="spin" aria-hidden="true"/>
@@ -175,9 +189,9 @@ export default function PostBlinkPreview({
     </div>
     <div className="post-blink-bottom">
       <div className="post-blink-description" aria-live="off">
-        <strong>{canBlink ? 'Parpadeo entre épocas' : picture ? 'Observación disponible' : 'Vista astronómica'}</strong>
+        <strong>{canBlink ? 'Parpadeo entre épocas' : picture ? 'Observación disponible' : unavailable ? 'Observación guardada' : 'Vista astronómica'}</strong>
         <span>{picture ? `Época ${shown.index + 1} de ${job?.result?.count ?? '?'} · ${readableDate(selectedDate)}`
-          : 'Vista preliminar · sin movimiento simulado'}</span>
+          : unavailable ? 'Sin vista previa · sin datos simulados' : 'Vista preliminar · sin movimiento simulado'}</span>
         {canBlink && <small>Alternando dos observaciones reales</small>}
         {linkedRecipe.current && <small>{revealFallback
           ? 'Vista original (revelado no disponible)'
@@ -189,9 +203,9 @@ export default function PostBlinkPreview({
           onClick={() => setPlaying(value => !value)}>
           {playing ? <CirclePause size={25}/> : <CirclePlay size={25}/>}
         </button>}
-        {(error || failed) && <button type="button" className="post-blink-retry"
+        {(error || (failed && job?.status !== 'empty' && job?.status !== 'cancelled')) && <button type="button" className="post-blink-retry"
           onClick={() => { setError(''); setAttempt(value => value + 1); }}>
-          Reintentar
+          {error ? 'Reintentar' : 'Comprobar de nuevo'}
         </button>}
         <button type="button" className="post-blink-open" onClick={onExplore}
           title="Abrir región en el explorador">
