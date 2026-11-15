@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { LoaderCircle, Pause, Play, Search, Save, Trash2 } from 'lucide-react';
 import { api, hasToken, type ObservationParams, type PersistentSkyJob, type SkyFrame, type SkySearch, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
 import { formatDec, formatRa } from '../lib/coordinates';
+import { REALTIME_EVENT, skyJobStreamActive, startRealtime, subscribeRealtime } from '../lib/realtime';
 import EpochCanvas, { type EpochMark } from '../components/EpochCanvas';
 import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
@@ -156,6 +157,16 @@ export default function ExplorerPage({
         }).finally(() => { inFlightFrames.current.delete(index); });
     };
 
+    // One scoped stream per active job. Never expose IDs for unrelated jobs.
+    const stopJobStream=startRealtime(change=>{
+      if(change.kind==='sky_job'||change.kind==='resync'){
+        window.dispatchEvent(new CustomEvent(REALTIME_EVENT,{
+          detail:{kind:'sky_job',job_id:jobId},
+        }));
+      }
+    },hasToken(),jobId);
+    request.signal.addEventListener('abort',stopJobStream,{once:true});
+
     const run = async () => {
       let networkFailures = 0;
       let lastSnapshot: PersistentSkyJob | null = null;
@@ -218,18 +229,24 @@ export default function ExplorerPage({
               await Promise.allSettled(rest.map(hydrateFrame));
               return;
             }
-            await new Promise<void>(resolve => {
-              const timer = window.setTimeout(() => {
-                request.signal.removeEventListener('abort', onAbort);
-                resolve();
-              }, 2200);
-              const onAbort = () => {
+            await new Promise<void>(resolve=>{
+              let settled=false;
+              let unsubscribe=()=>{};
+              let timer:number;
+              const finish=()=>{
+                if(settled)return;
+                settled=true;
                 window.clearTimeout(timer);
-                request.signal.removeEventListener('abort', onAbort);
+                request.signal.removeEventListener('abort',finish);
+                unsubscribe();
                 resolve();
               };
-              request.signal.addEventListener('abort', onAbort, {once:true});
-              if (request.signal.aborted) onAbort();
+              unsubscribe=subscribeRealtime(change=>{
+                if(change.kind==='sky_job'&&change.job_id===jobId)finish();
+              });
+              timer=window.setTimeout(finish,skyJobStreamActive(jobId)?15000:2200);
+              request.signal.addEventListener('abort',finish,{once:true});
+              if(request.signal.aborted)finish();
             });
           } catch (cause) {
             if (request.signal.aborted) return;
@@ -252,7 +269,10 @@ export default function ExplorerPage({
         }
       }
     };
-    void run();
+    void run().finally(()=>{
+      stopJobStream();
+      request.signal.removeEventListener('abort',stopJobStream);
+    });
   }, []);
 
   const load = useCallback((params: Params) => {
