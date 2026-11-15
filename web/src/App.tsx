@@ -10,6 +10,8 @@ import { api, hasToken, type Post, type Profile, type UserStats } from './lib/ap
 import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
+import NotificationsPage from './components/NotificationsPage';
+import PostDetailPage from './components/PostDetailPage';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
@@ -21,7 +23,7 @@ import { TASKS, TASK_EVENT, NUDGE_EVENT, explorerSteps, gameSteps, isTaskKey,
   storageKey, welcomeSteps, writeFlag,
   type TaskProgress, type TourSpec, type NudgeKey } from './lib/onboarding';
 
-type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string};
+type Route = {page: 'home'|'explore'|'game'|'profile'|'settings'|'saved'|'activity'|'post'; username?:string; observationId?:string; ra?:number; dec?:number; tag?:string; postId?:string; comments?:boolean};
 const quick = [
   {name:'WISE 0855',ra:133.795129,dec:-7.245147,desc:'Enana marrón cercana'},
   {name:'Estrella de Barnard',ra:269.4521,dec:4.6934,desc:'Gran movimiento propio'},
@@ -41,6 +43,7 @@ function parseRoute():Route {
     ra:params.has('ra')?Number(params.get('ra')):undefined,
     dec:params.has('dec')?Number(params.get('dec')):undefined};
   if(parts[0]==='u'&&parts[1])return {page:'profile',username:parts[1]};
+  if(parts[0]==='post'&&parts[1])return {page:'post',postId:parts[1],comments:params.get('comments')==='1'};
   if(parts[0]==='settings'||parts[0]==='game'||parts[0]==='saved'||parts[0]==='activity')return {page:parts[0]};
   return {page:'home'};
 }
@@ -336,17 +339,10 @@ function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
   </main>;
 }
 
-function ActivityPage(){
-  return <main className="wrap narrow"><div className="card">
-    <div className="card-h"><span><Bell size={17}/> Actividad</span></div>
-    <div className="sec"><h3>Próximamente</h3><p>El diseño original incluye solicitudes de amistad, pero el backend actual utiliza seguidores. Las notificaciones y solicitudes privadas necesitan nuevos endpoints; no mostraremos solicitudes simuladas como si fueran reales.</p>
-      <button className="btn sm" onClick={()=>go('home')}>Volver al feed</button></div></div>
-  </main>;
-}
-
 export default function App(){
   const [route,setRoute]=useState<Route>(parseRoute);
   const [user,setUser]=useState<Profile|null>(null);
+  const [unreadCount,setUnreadCount]=useState(0);
   const [checking,setChecking]=useState(true);
   const [publish,setPublish]=useState(false);
   const [feedVersion,setFeedVersion]=useState(0);
@@ -367,6 +363,28 @@ export default function App(){
   const [tourRevision,setTourRevision]=useState(0);
   const [onboardingNotice,setOnboardingNotice]=useState('');
   const [celebrate,setCelebrate]=useState(false);
+  useEffect(()=>{
+    if(!user){setUnreadCount(0);return;}
+    let active=true;
+    const refresh=()=>{
+      void api.unreadNotifications()
+        .then(result=>{if(active)setUnreadCount(result.unread);})
+        .catch(()=>{/* Offline checks never interrupt navigation. */});
+    };
+    refresh();
+    const interval=window.setInterval(()=>{
+      if(document.visibilityState==='visible')refresh();
+    },30000);
+    const whenFocused=()=>{if(document.visibilityState==='visible')refresh();};
+    window.addEventListener('focus',whenFocused);
+    document.addEventListener('visibilitychange',whenFocused);
+    return()=>{
+      active=false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus',whenFocused);
+      document.removeEventListener('visibilitychange',whenFocused);
+    };
+  },[user?.id]);
   // Notifications belong to a job, not to its repeatedly hydrated trace.
   // Resuming an already finished job is not a new completion event.
   useEffect(()=>{setDockDismissed(false);},[backgroundStatus?.jobId]);
@@ -396,7 +414,7 @@ export default function App(){
     return()=>window.removeEventListener('storage',otherTabLogout);
   },[]);
   // Previous route state must never leave the auth page panned horizontally.
-  useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
+  useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,route.postId,user?.id]);
   useEffect(()=>{
     let active=true;
     api.restoreSession()
@@ -555,8 +573,12 @@ export default function App(){
         <button data-tour="nav-game" className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
           <AstroGlyph name="target" size={19}/><span className="t">Juego</span></button>
         {user&&<>
-          <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')} title="Solicitudes (pendiente de backend)">
-            <AstroGlyph name="bell" size={19}/><span className="t">Solicitudes</span></button>
+          <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')}
+            title="Notificaciones" aria-label={`Notificaciones${unreadCount?`, ${unreadCount} sin leer`:''}`}>
+            <AstroGlyph name="bell" size={19}/><span className="t">Notificaciones</span>
+            {unreadCount>0&&<span className="notifications-nav-badge" aria-hidden="true">
+              {unreadCount>99?'99+':unreadCount}</span>}
+          </button>
           <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
             <Avatar name={user.username} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
@@ -586,7 +608,10 @@ export default function App(){
        route.page==='settings'&&user?<SettingsPage user={user} onUpdate={setUser} onLogout={logout}
           onReplayTour={replayTour} onShowGuide={showGuide}/>:
        route.page==='saved'&&user?<SavedPage onExplore={openObservation} onProfile={navigateProfile} onLogin={loginRequired} currentUsername={user.username}/>:
-       route.page==='activity'?<ActivityPage/>:
+       route.page==='activity'&&user?<NotificationsPage onCountChanged={setUnreadCount}/>:
+       route.page==='post'&&route.postId?<PostDetailPage postId={route.postId}
+         showComments={Boolean(route.comments)} currentUsername={user?.username}
+         onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}/>:
        <FeedPage key={`${feedVersion}-${route.tag??''}`} user={user!} onProfile={navigateProfile} onExplore={openObservation} onLogin={loginRequired}
           onPublish={()=>openPublish()} tasks={missions} guideHidden={guideHidden}
           onHideGuide={hideGuide} tag={route.tag}/>)}

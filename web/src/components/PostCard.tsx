@@ -21,10 +21,11 @@ export function Avatar({name,size=36}:{name:string;size?:number}) {
   return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.34),
     background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>{name.slice(0,2).toUpperCase()}</span>;
 }
-export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,onBookmarkChange,currentUsername}: {
+export default function PostCard({post:initial,onProfile,onExplore,onRequireLogin,onRepostChange,onBookmarkChange,currentUsername,initialCommentsOpen=false}: {
   post:Post;onProfile:(name:string)=>void;onExplore:(id:string)=>void;onRequireLogin:()=>void;
   onRepostChange?:()=>void;onBookmarkChange?:(postId:string,bookmarked:boolean)=>void;
   currentUsername?:string;
+  initialCommentsOpen?:boolean;
 }) {
   const [post,setPost] = useState(initial);
   const [region,setRegion] = useState<Observation|null>(null);
@@ -42,6 +43,15 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     if (initial.observation_id) api.observation(initial.observation_id).then(r=>{if(active)setRegion(r)}).catch(()=>{});
     return ()=>{active=false};
   },[initial]);
+  useEffect(()=>{
+    if(!initialCommentsOpen)return;
+    let active=true;
+    setCommentsOpen(true);
+    api.comments(initial.id)
+      .then(items=>{if(active)setComments(items);})
+      .catch(e=>{if(active)setError(e instanceof Error?e.message:'No se pudieron cargar los comentarios');});
+    return()=>{active=false;};
+  },[initialCommentsOpen,initial.id]);
   async function reload() {
     const next = await api.get<Post>(`/v1/posts/${post.id}`,hasToken());
     // The detail endpoint has no profile context; keep the repost attribution.
