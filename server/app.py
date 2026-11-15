@@ -386,13 +386,19 @@ def render_real(session: Session, record: dict) -> dict:
                     flags_fraction = float(np.count_nonzero(flags) / flags.size)
             times["metadatos"] = elapsed_ms(checkpoint)
 
+            # Preserve the unnormalized source cutout and floating-point
+            # reprojected pixels. The browser only sees derived renders.
             step = "png"
             checkpoint = time.monotonic()
+            raw_fits = io.BytesIO()
+            hdus.writeto(raw_fits, output_verify="silentfix")
             image = png_data_url(normalize_preview(reproj))
             times["png"] = elapsed_ms(checkpoint)
             times["total"] = elapsed_ms(started)
             return {
                 "image": image,
+                "science_fits": raw_fits.getvalue(),
+                "science_pixels": np.asarray(reproj, dtype=np.float32),
                 "wavelength_um": wavelength_um,
                 "bandwidth_um": bandwidth_um,
                 "pixel_flags_nonzero_fraction": flags_fraction,
