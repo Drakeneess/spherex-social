@@ -105,6 +105,21 @@ class PostLike(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class PostRepost(Base):
+    """A profile reshares the original public post, preserving its interactions."""
+    __tablename__ = 'post_reposts'
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True,
+    )
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('posts.id', ondelete='CASCADE'), primary_key=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    __table_args__ = (Index('ix_post_reposts_post_id', 'post_id'),)
+
+
 class Bookmark(Base):
     __tablename__ = 'bookmarks'
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
