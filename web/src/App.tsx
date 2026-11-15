@@ -420,9 +420,10 @@ export default function App(){
   const [onboardingNotice,setOnboardingNotice]=useState('');
   const [celebrate,setCelebrate]=useState(false);
   useEffect(()=>{
-    if(!user){setUnreadCount(0);return;}
+    if(!user)setUnreadCount(0);
     let active=true;
     const refresh=()=>{
+      if(!user)return;
       void api.unreadNotifications()
         .then(result=>{if(active)setUnreadCount(result.unread);})
         .catch(()=>{/* Transient connectivity does not interrupt navigation. */});
@@ -434,11 +435,11 @@ export default function App(){
         void api.user(change.username).then(profile=>{
           if(active)updateAvatarCache(profile.username,profile);
         }).catch(()=>{});
-        if(change.username===user.username){
+        if(user && change.username===user.username){
           void api.me().then(profile=>{if(active)setUser(profile);}).catch(()=>{});
         }
       }
-    });
+    },Boolean(user));
     refresh();
     const whenFocused=()=>{if(document.visibilityState==='visible')refresh();};
     window.addEventListener('focus',whenFocused);
