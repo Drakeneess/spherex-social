@@ -4,6 +4,7 @@ import { Check, ExternalLink, Globe2, ImagePlus, Link2, LockKeyhole,
 import { api, type ObservationParams, type Post, type RevealRecipe } from '../lib/api';
 import { extractPostHashtags, validHashtag } from '../lib/postComposer';
 import { signalTask } from '../lib/onboarding';
+import { playSound } from '../lib/sounds';
 import AstroGlyph from './AstroGlyph';
 
 export type PublishRegion = ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe};
@@ -120,7 +121,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
   }
   async function submit(event:FormEvent){
     event.preventDefault();
-    if(!hasContent){setError('Añade texto, imágenes, un enlace o una observación.');return;}
+    if(!hasContent){setError('Añade texto, imágenes, un enlace o una observación.');playSound('error');return;}
     if(processing)return;
     setBusy(true);setError('');
     try{
@@ -142,7 +143,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
       });
       signalTask('post');
       onDone();
-    }catch(e){setError(e instanceof Error?e.message:'No se pudo publicar');}
+    }catch(e){playSound('error');setError(e instanceof Error?e.message:'No se pudo publicar');}
     finally{setBusy(false);}
   }
 
