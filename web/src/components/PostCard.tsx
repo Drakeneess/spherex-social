@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink } from 'lucide-react';
+import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink, Sparkles } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import { subscribeRealtime } from '../lib/realtime';
@@ -130,7 +130,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
         void api.get<Post>('/v1/posts/'+encodeURIComponent(initial.id),hasToken())
           .then(next=>{
             if(!active)return;
-            setPost(previous=>({...next,reposted_by:previous.reposted_by,reposted_at:previous.reposted_at}));
+            setPost(previous=>({...next,reposted_by:previous.reposted_by,reposted_at:previous.reposted_at,
+              recommended_reason:previous.recommended_reason}));
             setLiked(next.liked_by_me);
           }).catch(()=>{/* The feed or parent route handles deleted posts. */});
         if(commentsOpen && (change.kind==='comments'||change.kind==='resync')){
@@ -143,7 +144,8 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   async function reload() {
     const next = await api.get<Post>(`/v1/posts/${post.id}`,hasToken());
     // The detail endpoint has no profile context; keep the repost attribution.
-    setPost({...next,reposted_by:post.reposted_by,reposted_at:post.reposted_at});
+    setPost({...next,reposted_by:post.reposted_by,reposted_at:post.reposted_at,
+      recommended_reason:post.recommended_reason});
     setLiked(next.liked_by_me);
   }
   async function handleLike() {
@@ -202,6 +204,9 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     catch{setError('No se pudo copiar el enlace.');}
   }
   return <article className="card post-card">
+    {post.recommended_reason&&<div className="post-recommendation-reason">
+      <Sparkles size={14} aria-hidden="true"/>{post.recommended_reason}
+    </div>}
     {post.reposted_by && <div className="post-repost-label"><Repeat2 size={15} aria-hidden="true"/>
       <button type="button" onClick={()=>onProfile(post.reposted_by!)}>@{post.reposted_by}</button>
       <span>compartió esta publicación{post.reposted_at?' · '+ago(post.reposted_at):''}</span>
