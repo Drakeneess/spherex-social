@@ -5,6 +5,7 @@ import { formatRa, formatDec } from './lib/coordinates';
 import { getGameStreak } from './lib/gameStreak';
 import { api, hasToken, type ObservationParams, type Post, type Profile, type UserStats } from './lib/api';
 import PostCard, { Avatar } from './components/PostCard';
+import PostBlinkPreview from './components/PostBlinkPreview';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import GamePage from './pages/GamePage';
@@ -204,9 +205,19 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish}:{
 function ProfilePage({username,current,onExplore,onLogin}:{username:string;current:Profile|null;onExplore:(id:string)=>void;onLogin:()=>void}){
   const [person,setPerson]=useState<Profile|null>(null),[stats,setStats]=useState<UserStats|null>(null);
   const [posts,setPosts]=useState<Post[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [selectedId,setSelectedId]=useState<string|null>(null);
   const mine=current?.username===username;
+  const selectedPost=posts.find(post=>post.id===selectedId);
   useEffect(()=>{
-    let active=true;setPerson(null);setError('');
+    if(!selectedId)return;
+    const oldOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')setSelectedId(null);};
+    document.addEventListener('keydown',escape);
+    return ()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',escape);};
+  },[selectedId]);
+  useEffect(()=>{
+    let active=true;setPerson(null);setError('');setSelectedId(null);
     Promise.all([api.user(username),api.stats(username),api.userPosts(username)]).then(([p,s,items])=>{
       if(active){setPerson(p);setStats(s);setPosts(items);}
     }).catch(e=>{if(active)setError(message(e))});
@@ -236,10 +247,38 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div>
       <div className="profile-observation-heading card-h"><span>Observaciones y compartidos</span><span className="chip">{posts.length}</span></div>
-      <div className="profile-posts">{posts.map(p=><PostCard key={p.id} post={p} onProfile={u=>go(`u/${encodeURIComponent(u)}`)}
-        onExplore={onExplore} onRequireLogin={onLogin} currentUsername={current?.username}
-        onRepostChange={()=>void refreshPosts()}/>)}{posts.length===0&&<div className="card empty">Sin publicaciones visibles.</div>}</div>
+      <div className="profile-posts">
+        {posts.map(post=><div key={post.id} className="profile-tile" role="button" tabIndex={0}
+          aria-label={`Abrir publicación de ${post.username}: ${post.caption.slice(0,80)}`}
+          onClick={()=>setSelectedId(post.id)}
+          onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedId(post.id);}}}>
+          {post.observation_id
+            ? <PostBlinkPreview postId={post.id} onExplore={()=>setSelectedId(post.id)}/>
+            : <div className="profile-text-tile"><AstroGlyph name="galaxy" size={34}/>
+                <span>Publicación de texto</span><small>Sin imágenes astronómicas adjuntas</small></div>}
+          <div className="profile-tile-label">
+            {post.reposted_by&&<span className="profile-tile-share">Compartido por @{post.reposted_by}</span>}
+            <strong>@{post.username}</strong>
+            <span>{post.caption}</span>
+          </div>
+        </div>)}
+        {posts.length===0&&<div className="empty">Sin publicaciones visibles.</div>}
+      </div>
     </>}
+    {selectedPost&&<div className="modal profile-post-modal" role="presentation"
+      onMouseDown={event=>{if(event.target===event.currentTarget)setSelectedId(null);}}>
+      <div className="profile-post-dialog" role="dialog" aria-modal="true" aria-label="Publicación completa">
+        <div className="profile-post-dialog-top">
+          <span><AstroGlyph name="galaxy" size={18}/> Publicación de @{selectedPost.username}</span>
+          <button type="button" onClick={()=>setSelectedId(null)} aria-label="Cerrar publicación">✕</button>
+        </div>
+        <PostCard key={selectedPost.id} post={selectedPost}
+          onProfile={name=>{setSelectedId(null);go(`u/${encodeURIComponent(name)}`);}}
+          onExplore={id=>{setSelectedId(null);onExplore(id);}}
+          onRequireLogin={onLogin} currentUsername={current?.username}
+          onRepostChange={()=>void refreshPosts()}/>
+      </div>
+    </div>}
   </main>;
 }
 

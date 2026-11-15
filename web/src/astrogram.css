@@ -1302,3 +1302,67 @@ body {
   .post-actions button .ag-glyph{transition:none}
 }
 
+
+/* FINAL2 profile gallery: genuine SPHEREx thumbnails, full interactions in dialog. */
+.profile-posts {
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:10px;padding:14px;align-items:start;
+}
+.profile-tile {
+  position:relative;aspect-ratio:1/1;min-width:0;
+  border:1px solid var(--line);border-radius:12px;
+  background:#04060d;overflow:hidden;cursor:pointer;
+  transition:border-color .15s,transform .15s;
+}
+.profile-tile:hover{border-color:var(--a);transform:translateY(-2px)}
+.profile-tile:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.profile-tile .post-blink-preview{aspect-ratio:1/1;min-height:0;height:100%;width:100%}
+.profile-tile .post-blink-bottom,.profile-tile .post-blink-epoch-indicators{display:none}
+.profile-tile .post-blink-top{padding:8px;background:linear-gradient(to bottom,rgba(3,7,18,.6),transparent)}
+.profile-tile .post-blink-chip{font-size:.59rem;padding:4px 6px}
+.profile-tile .post-blink-top>.post-blink-chip+span{display:none}
+.profile-tile .post-blink-placeholder{padding:10px;gap:5px}
+.profile-tile .post-blink-placeholder strong{font-size:.74rem}
+.profile-tile .post-blink-placeholder span{font-size:.62rem}
+.profile-tile .post-blink-placeholder svg{width:23px;height:23px}
+.profile-text-tile {
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  background:radial-gradient(ellipse at 50% 45%,#202d58,#060914 75%);
+  color:#a9c3ee;text-align:center;padding:18px;
+}
+.profile-text-tile span{font-size:.85rem;font-weight:700}
+.profile-text-tile small{font-size:.69rem;color:var(--muted)}
+.profile-tile-label{
+  position:absolute;left:0;right:0;bottom:0;
+  display:flex;flex-direction:column;gap:2px;
+  padding:25px 10px 9px;
+  background:linear-gradient(0deg,rgba(3,5,14,.94),rgba(3,5,14,.5) 68%,transparent);
+  color:var(--text);text-align:left;pointer-events:none;
+}
+.profile-tile-label strong{font-size:.75rem;line-height:1.3}
+.profile-tile-label > span:not(.profile-tile-share){
+  font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.profile-tile-share{font-size:.62rem;color:#a9c7ff}
+.profile-post-modal{z-index:80}
+.profile-post-dialog{
+  display:flex;flex-direction:column;
+  width:min(530px,calc(100vw - 28px));
+  max-height:90dvh;overflow-y:auto;
+  border-radius:18px;background:var(--panel);
+  border:1px solid var(--line);
+  box-shadow:0 20px 80px rgba(0,0,0,.65);
+}
+.profile-post-dialog-top{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--line);font-size:.84rem;font-weight:700;
+  position:sticky;top:0;background:var(--panel);z-index:4;
+}
+.profile-post-dialog-top span{display:flex;align-items:center;gap:7px;min-width:0}
+.profile-post-dialog-top button{border-radius:8px;padding:4px 9px;color:var(--muted);font-size:1.15rem}
+.profile-post-dialog-top button:hover{background:var(--panel2);color:var(--text)}
+.profile-post-dialog>.post-card{border:0;border-radius:0}
+@media(max-width:700px){.profile-posts{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}
+@media(max-width:420px){.profile-posts{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:8px}}
+@media(prefers-reduced-motion:reduce){.profile-tile{transition:none}.profile-tile:hover{transform:none}}
