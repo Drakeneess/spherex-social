@@ -7,6 +7,13 @@ export type Profile = {
   created_at: string;
   email?: string;
 };
+export type PostBlinkInfo = {
+  job_id: string;
+  status: PersistentSkyJob['status'];
+  detector: number;
+  source: 'sia2'|'simulated';
+  frames: {index:number;status:'pending'|'loading'|'ready'|'failed';date:string|null}[];
+};
 export type Post = {
   id: string;
   username: string;
@@ -181,8 +188,13 @@ export const api = {
   unfollow: (username: string) => write<void>('DELETE',`/v1/users/${encodeURIComponent(username)}/follow`),
   feed: (limit = 20, offset = 0) => get<Post[]>(`/v1/feed?limit=${limit}&offset=${offset}`),
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),
-  createPost: (data: {caption:string;visibility:Post['visibility'];observation_id:string|null}) =>
-    write<Post>('POST','/v1/posts',data),
+  createPost: (data: {
+    caption:string;visibility:Post['visibility'];observation_id:string|null;
+    sky_job_id?:string|null;
+  }) => write<Post>('POST','/v1/posts',data),
+  preparePostBlink: (postId:string,signal?:AbortSignal) =>
+    request<PostBlinkInfo>(`/v1/posts/${encodeURIComponent(postId)}/blink`,
+      {method:'POST'},hasToken(),signal),
   like: (id:string) => write<void>('POST',`/v1/posts/${id}/like`),
   unlike: (id:string) => write<void>('DELETE',`/v1/posts/${id}/like`),
   bookmark: (id:string) => write<void>('POST',`/v1/posts/${id}/bookmark`),

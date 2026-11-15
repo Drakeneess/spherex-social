@@ -24,7 +24,7 @@ export default function ExplorerPage({
   observationId?: string;
   initialRa?: number;
   initialDec?: number;
-  onPublish: (region: ObservationParams) => void;
+  onPublish: (region: ObservationParams & {sky_job_id?:string}) => void;
   onLogin: () => void;
   onProgress: (status: {trace: SearchTrace | null;loading: boolean}) => void;
   onGoHome: () => void;
@@ -389,6 +389,7 @@ export default function ExplorerPage({
       dec_deg: activeParams.dec,
       fov_arcmin: activeParams.size,
       detector: activeParams.detector,
+      ...(activeParams.demo ? {} : {sky_job_id: activeJobId.current ?? undefined}),
     });
   }
 

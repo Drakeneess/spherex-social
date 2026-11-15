@@ -907,3 +907,89 @@ html,body,#root{min-width:0;max-width:100%}
   .sky-search-orbit,.sky-canvas-orbit{animation:none;}
   .sky-search-track.is-indeterminate > span,.sky-background-track.indeterminate > span{width:100%;opacity:.5;}
 }
+
+/* Scientific feed blink: the images are actual persisted SPHEREx quicklooks,
+   never the computer-generated moving-star illustration. */
+.post-blink-preview {
+  position: relative; width: 100%; aspect-ratio: 1 / 1; min-height: 260px;
+  isolation: isolate; overflow: hidden;
+  background: radial-gradient(circle at 50% 44%, #152144, #050916 75%);
+  color: #eaf1ff;
+}
+.post-blink-photo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; image-rendering: pixelated; background: #03050b;
+}
+.post-blink-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 11px; padding: 22px;
+  text-align: center; color: #9db1d7;
+  background: radial-gradient(ellipse at 50% 44%, rgba(45,72,139,.32), transparent 64%);
+}
+.post-blink-placeholder svg {color: #9ac7fb;}
+.post-blink-placeholder strong {font-size: clamp(.86rem,2vw,1.1rem);color:#d8e6ff;}
+.post-blink-placeholder span {font-size:.76rem;max-width:260px;line-height:1.5;}
+.post-blink-top {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 7px; padding: 13px 14px 25px;
+  background: linear-gradient(180deg,rgba(3,7,18,.86),transparent);
+  pointer-events: none;
+}
+.post-blink-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%; font-size: .65rem; font-weight: 700;
+  letter-spacing: .025em; border: 1px solid rgba(190,211,255,.18);
+  border-radius: 999px; padding: 6px 9px;
+  background: rgba(11,18,35,.75); color: #d7e8ff;
+  backdrop-filter: blur(12px);
+}
+.post-blink-dot {width:6px;height:6px;border-radius:50%;background:#7ddbbd;box-shadow:0 0 8px #6bcaa2;}
+.post-blink-bottom {
+  position: absolute; left: 0; bottom: 0; right: 0; z-index: 1;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 10px; padding: 54px 14px 19px;
+  background: linear-gradient(0deg,rgba(2,5,13,.95),rgba(4,8,18,.62) 49%,transparent);
+}
+.post-blink-description {display:flex;flex-direction:column;gap:5px;min-width:0;}
+.post-blink-description strong {font-size:.82rem;letter-spacing:.005em;}
+.post-blink-description > span {font-size:.71rem;color:#bfd1ec;line-height:1.45;}
+.post-blink-description > small {font-size:.63rem;color:#849ec8;line-height:1.35;}
+.post-blink-controls {display:flex;align-items:center;gap:7px;flex:none;}
+.post-blink-control,.post-blink-open,.post-blink-retry {
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(162,189,238,.27);color:#e8f1ff;
+  background:rgba(23,38,72,.72);border-radius:10px;
+  min-width:35px;min-height:35px;padding:7px;
+  backdrop-filter:blur(10px);
+}
+.post-blink-control:hover,.post-blink-open:hover,.post-blink-retry:hover {
+  border-color:rgba(189,216,255,.75);background:rgba(53,76,127,.84);
+}
+.post-blink-open span,.post-blink-retry {font-size:.7rem;font-weight:700;}
+.post-blink-epoch-indicators {
+  position:absolute;bottom:9px;left:50%;transform:translateX(-50%);
+  display:flex;gap:5px;z-index:2;pointer-events:none;
+}
+.post-blink-epoch-indicators span {height:3px;width:19px;border-radius:5px;background:rgba(179,191,219,.38);}
+.post-blink-epoch-indicators span.active {background:#a7d7ff;box-shadow:0 0 8px #73b3ff;}
+.post-text-poster {
+  min-height:220px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:11px;padding:25px;text-align:center;
+  background:radial-gradient(ellipse at 50% 45%,#1b2c52,#080c19 72%);
+  color:#a9bfe5;
+}
+.post-text-poster svg{color:#95bafb;}
+.post-text-poster strong{font-size:.91rem;color:#e3edff;}
+.post-text-poster span{font-size:.73rem;line-height:1.5;}
+.sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+@media(max-width:520px) {
+  .post-blink-top{padding:10px 10px 22px;}
+  .post-blink-bottom{padding:46px 10px 17px;}
+  .post-blink-open span{display:none;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .post-blink-preview * {scroll-behavior:auto;}
+}

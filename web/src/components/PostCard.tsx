@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bookmark, Heart, MessageCircle, Orbit, Rocket } from 'lucide-react';
+import { Bookmark, Heart, MessageCircle, Orbit, Rocket, Telescope } from 'lucide-react';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
-import { SkyPreview } from './SkyPreview';
+import PostBlinkPreview from './PostBlinkPreview';
 
 const ago = (date:string) => {
   const value = new Date(date).getTime();
@@ -79,9 +79,19 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       </div>
       <span className="time">{ago(post.created_at)}</span>
     </div>
-    <SkyPreview seed={post.observation_id ?? post.id} moving
-      label={region ? `Vista ilustrativa · detector ${region.detector ?? '–'} · ${region.fov_arcmin}′` : 'Ilustración sintética · sin observación'}
-      onClick={post.observation_id ? () => onExplore(post.observation_id!) : undefined}/>
+    {post.observation_id
+      ? region
+        ? <PostBlinkPreview postId={post.id}
+            onExplore={() => onExplore(region.id)}/>
+        : <div className="post-text-poster" role="status">
+            <Telescope size={30} aria-hidden="true"/>
+            <strong>Abriendo observación…</strong>
+          </div>
+      : <div className="post-text-poster">
+          <Orbit size={35} aria-hidden="true"/>
+          <strong>Una idea para explorar</strong>
+          <span>Publicación de texto · sin imágenes astronómicas adjuntas</span>
+        </div>}
     <div className="post-actions">
       <button title="Me gusta" aria-label="Me gusta" className={liked?'on':''} disabled={busy} onClick={()=>void handleLike()}>
         <Rocket size={20} fill={liked?'currentColor':'none'}/> <span>{post.likes_count}</span></button>

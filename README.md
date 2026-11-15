@@ -483,3 +483,41 @@ posea el enlace/ID puede consultar los datos astronómicos públicos y
 cancelar ese trabajo; no guardar datos privados o secretos de cuenta allí.
 Guardar datos sin vencimiento implica costes crecientes de almacenamiento:
 vigilar el uso de PostgreSQL y S3. No se borran búsquedas automáticamente.
+
+
+## Parpadeo de épocas reales en publicaciones
+
+Las tarjetas de Inicio, Perfil y Guardados ya no utilizan estrellas sintéticas
+para simular desplazamientos. Si una publicación tiene una región astronómica
+asociada, `PostBlinkPreview` ofrece un **blink real** entre dos fotogramas
+PNG procesados a partir de SPHEREx, con fechas UTC, detector, pausa/reproducción
+y acceso al explorador. Se cambia de época con corte directo, sin interpolación
+ni movimiento generado artificialmente; la vista es preliminar y no constituye
+prueba de movimiento propio. Respeta la preferencia de movimiento reducido y
+detiene el parpadeo fuera de la pantalla o cuando la pestaña está oculta.
+
+El sistema usa las imágenes guardadas en el bucket privado y solo descarga los
+**dos fotogramas elegidos** por tarjeta. Las tarjetas cercanas al área visible
+se preparan de forma diferida con `IntersectionObserver`.
+
+- La publicación hecha desde una exploración real incluye `sky_job_id`.
+  El servidor valida que su región y detector coincidan con el catálogo
+  procesado y que al menos una imagen esté lista. No se admite un job demo.
+- Las publicaciones anteriores conservan `observation_id` y se asocian a
+  un trabajo SIA2 existente que tenga idénticas coordenadas, tamaño y detector,
+  o, si no existe, se inicia una **única búsqueda persistente de dos épocas**
+  mediante `POST /v1/posts/{post_id}/blink`.
+- El endpoint es idempotente por publicación y respeta la visibilidad
+  `public/unlisted/private`; el trabajo resultante queda registrado mediante
+  `posts.sky_job_id`. Las imágenes completas siguen en S3; PostgreSQL guarda
+  solo la referencia. El tope global de trabajos en curso se mantiene.
+- Las publicaciones exclusivamente de texto muestran una tarjeta de texto
+  y **no** una imagen astronómica inventada.
+- El frontend consulta el estado persistente con
+  `GET /api/sky/jobs/{job_id}` y lee las dos imágenes privadas
+  mediante `GET /api/sky/jobs/{job_id}/frames/{index}`.
+  Si los datos aún no existen, explica que se están preparando.
+
+Se añade la migración `b60ce72df9af` (columna `posts.sky_job_id` con
+clave foránea y índice). No se reemplazan las imágenes reales por efectos
+visuales si el servicio remoto falla.
