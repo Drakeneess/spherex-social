@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
+import BrandLogo from './BrandLogo';
 import type { TourSpec, TourStep } from '../lib/onboarding';
 
 type Coordinates={top:number;left:number;above:boolean;anchorX:number}|null;
@@ -101,7 +102,9 @@ export default function OnboardingTour({spec,onClose}:{spec:TourSpec;onClose:(co
       {spec.steps.length>1&&<div className="ag-tour__segments" aria-label={`Paso ${index+1} de ${spec.steps.length}`}>
         {spec.steps.map((_,i)=><span key={i} className={i<=index?'on':''}/>)}
       </div>}
-      {!spot&&<div className="ag-tour__icon"><AstroGlyph name={safeIcon(step.icon)} size={44}/></div>}
+      {!spot&&<div className="ag-tour__icon">
+        {step.icon==='planet'?<BrandLogo size={54}/>:<AstroGlyph name={safeIcon(step.icon)} size={44}/>}
+      </div>}
       <h3>{step.title}</h3>
       <p>{step.description}</p>
       <div className="ag-tour__footer">
