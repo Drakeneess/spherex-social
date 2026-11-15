@@ -2568,3 +2568,18 @@ body {
 @media(prefers-reduced-motion:reduce){
   .reveal-studio-overlay *, .reveal-editor *{scroll-behavior:auto!important}
 }
+
+/* Move between archived FITS epochs without closing the editing workspace. */
+.reveal-studio-epoch-picker{
+  display:inline-flex;align-items:center;gap:7px;
+  color:#9fb4d5;font-size:.73rem;font-weight:650;
+}
+.reveal-studio-epoch-picker select{
+  min-height:36px;min-width:82px;padding:6px 8px;border:1px solid #536888;
+  border-radius:9px;background:#1a2946;color:#e5efff;font-size:.74rem;
+}
+@media(max-width:520px){
+  .reveal-studio-epoch-picker{gap:5px}
+  .reveal-studio-epoch-picker>span{display:none}
+  .reveal-studio-epoch-picker select{min-width:67px;padding:6px}
+}
