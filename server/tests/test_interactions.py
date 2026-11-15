@@ -480,44 +480,28 @@ def test_notification_visibility_changes_hide_private_replies_and_deleted_posts(
 
 
 def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
-    """Boot the exact ASGI entrypoint in a clean process, like Railway does.
+    """Test the exact ASGI entrypoint used by Railway, not only social_api.main.
 
-    Other tests create multiple FastAPI instances and may modify import state.
-    A fresh interpreter is the right boundary for validating uvicorn app:app.
+    Modern FastAPI can keep nested routers as _IncludedRouter placeholders in
+    app.routes, so use the expanded OpenAPI schema and real ASGI requests.
     """
-    import subprocess
-    import sys
+    from app import app as deployed_app
+    from social_api.main import app as standalone_app
 
-    check = """
-from app import app as deployed
-from social_api.main import app as standalone
-from fastapi.testclient import TestClient
-
-expected = {
-    ('GET', '/v1/users/me/notifications'),
-    ('GET', '/v1/users/me/notifications/count'),
-    ('POST', '/v1/users/me/notifications/read-all'),
-    ('POST', '/v1/users/me/notifications/{notification_id}/read'),
-}
-for name, app in (('railway', deployed), ('standalone', standalone)):
-    routes = {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, 'methods', ())
+    expected = {
+        '/v1/users/me/notifications': 'get',
+        '/v1/users/me/notifications/count': 'get',
+        '/v1/users/me/notifications/read-all': 'post',
+        '/v1/users/me/notifications/{notification_id}/read': 'post',
     }
-    if not expected.issubset(routes):
-        from social_api.notifications import router as source_router
-        print('DEBUG ENTRYPOINT:', name,
-              'all routes:', [(r.path, list(getattr(r,'methods',[]))) for r in app.routes],
-              'notification router:', [(r.path,list(getattr(r,'methods',[]))) for r in source_router.routes],
-              flush=True)
-    assert expected.issubset(routes), f'Missing notification routes: {expected-routes}'
-# An unauthenticated request must reach the router and return 401,
-# not the 404 that was returned in the deployed application.
-assert TestClient(deployed).get('/v1/users/me/notifications').status_code == 401
-"""
-    result = subprocess.run(
-        [sys.executable, '-c', check], capture_output=True, text=True,
-        timeout=60, check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    for entrypoint in (deployed_app, standalone_app):
+        paths = entrypoint.openapi()['paths']
+        for path, method in expected.items():
+            assert path in paths, f'Missing notification path: {path}'
+            assert method in paths[path], f'Missing {method.upper()} method: {path}'
+
+    # A request without a token must reach the notification endpoint and
+    # respond 401 (not the 404 that triggered this regression).
+    with TestClient(deployed_app, raise_server_exceptions=True) as client:
+        assert client.get('/v1/users/me/notifications').status_code == 401
+        assert client.get('/v1/users/me/notifications/count').status_code == 401
