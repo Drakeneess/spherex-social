@@ -11,7 +11,7 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 import jwt
 from argon2 import PasswordHasher
@@ -26,6 +26,10 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .models import AuthSession, User
+from .post_content import validate_link
+from profile_storage import (
+    decode_profile_image, put_profile_image, get_profile_image, delete_profile_image,
+)
 
 router = APIRouter(prefix='/v1', tags=['authentication'])
 bearer = HTTPBearer(auto_error=False, scheme_name='BearerAuth')
@@ -75,6 +79,9 @@ class PublicProfile(BaseModel):
     username: str
     display_name: str
     bio: str | None
+    website: str | None
+    avatar_version: uuid.UUID | None
+    cover_version: uuid.UUID | None
     created_at: datetime
 
 
@@ -86,6 +93,12 @@ class ProfilePatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     bio: str | None = Field(default=None, max_length=500)
+    website: str | None = Field(default=None, max_length=300)
+
+    @field_validator('website')
+    @classmethod
+    def clean_website(cls, value: str | None) -> str | None:
+        return validate_link(value)
 
     @field_validator('display_name')
     @classmethod
@@ -312,3 +325,76 @@ def get_public_profile(username: str, db: Annotated[Session, Depends(get_db)]):
     if user is None:
         raise HTTPException(status_code=404, detail='User not found')
     return user
+
+
+class ProfileImageUpload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    data_url: str = Field(min_length=32, max_length=4_300_000)
+
+
+@router.post('/users/me/media/{kind}', response_model=PrivateProfile, tags=['profiles'])
+def upload_profile_image(
+    kind: Literal['avatar','cover'],
+    body: ProfileImageUpload,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Only the authenticated owner can replace their public profile images."""
+    data = decode_profile_image(body.data_url, kind)
+    previous = getattr(user, f'{kind}_version')
+    version = uuid.uuid4()
+    put_profile_image(user.id, version, kind, data)
+    try:
+        setattr(user, f'{kind}_version', version)
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        try: delete_profile_image(user.id, version, kind)
+        except Exception: pass
+        raise
+    if previous is not None:
+        try: delete_profile_image(user.id, previous, kind)
+        except Exception: pass  # Cleanup failures must not undo the new profile.
+    return user
+
+
+@router.delete('/users/me/media/{kind}', response_model=PrivateProfile, tags=['profiles'])
+def remove_profile_image(
+    kind: Literal['avatar','cover'],
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    previous = getattr(user, f'{kind}_version')
+    setattr(user, f'{kind}_version', None)
+    db.commit()
+    db.refresh(user)
+    if previous is not None:
+        try: delete_profile_image(user.id, previous, kind)
+        except Exception: pass
+    return user
+
+
+@router.get('/users/{username}/media/{kind}', tags=['profiles'])
+def public_profile_image(
+    username: str,
+    kind: Literal['avatar','cover'],
+    db: Annotated[Session, Depends(get_db)],
+):
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise HTTPException(status_code=404, detail='Perfil no encontrado')
+    version = getattr(user, f'{kind}_version')
+    if version is None:
+        raise HTTPException(status_code=404, detail='Imagen no configurada')
+    try:
+        raw = get_profile_image(user.id, version, kind)
+    except Exception:
+        raise HTTPException(status_code=503, detail='Imagen temporalmente no disponible')
+    return Response(
+        content=raw, media_type='image/webp',
+        headers={
+            'Cache-Control':'public, max-age=86400, immutable',
+            'X-Content-Type-Options':'nosniff',
+        },
+    )
