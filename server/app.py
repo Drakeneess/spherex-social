@@ -41,11 +41,13 @@ from sia2_compare import Sia2ComparisonError, query_sia2, compare_with_tap
 logger = logging.getLogger("astrogram.irsa")
 
 from persistent_sky import start_dispatcher  # noqa: E402
+from social_api.realtime import event_listener  # noqa: E402
 
 @asynccontextmanager
 async def app_lifespan(_application: FastAPI):
-    start_dispatcher()
-    yield
+    async with event_listener():
+        start_dispatcher()
+        yield
 
 app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.7.0",
               lifespan=app_lifespan)
@@ -57,6 +59,7 @@ from social_api.posts import router as posts_router
 from social_api.interactions import router as interactions_router
 from social_api.notifications import router as notifications_router
 from social_api.observations import router as observations_router
+from social_api.realtime import router as realtime_router
 from social_api.config import get_settings as get_social_settings
 from fastapi.middleware.cors import CORSMiddleware
 app.include_router(social_router)
@@ -65,6 +68,7 @@ app.include_router(posts_router)
 app.include_router(interactions_router)
 app.include_router(notifications_router)
 app.include_router(observations_router)
+app.include_router(realtime_router)
 if get_social_settings().cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=get_social_settings().cors_origins,
                        allow_credentials=False, allow_methods=['GET', 'POST', 'PATCH', 'DELETE'], allow_headers=['Authorization', 'Content-Type'])

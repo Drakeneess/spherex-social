@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink } from 'lucide-react';
 import AstroGlyph from './AstroGlyph';
 import { signalTask, signalNudge } from '../lib/onboarding';
+import { subscribeRealtime } from '../lib/realtime';
 import { formatRa, formatDec } from '../lib/coordinates';
 import { api, hasToken, type Comment, type Observation, type Post, type Profile } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
@@ -94,7 +95,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
 }) {
   const [post,setPost] = useState(initial);
   const [region,setRegion] = useState<Observation|null>(null);
-  const [liked,setLiked] = useState(false);
+  const [liked,setLiked] = useState(initial.liked_by_me);
    const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [notice,setNotice] = useState('');
@@ -103,6 +104,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
   const [draft,setDraft] = useState('');
   useEffect(()=>{
     setPost(initial);
+    setLiked(initial.liked_by_me);
     let active = true;
     setRegion(null);
     if (initial.observation_id) api.observation(initial.observation_id).then(r=>{if(active)setRegion(r)}).catch(()=>{});
@@ -117,10 +119,32 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
       .catch(e=>{if(active)setError(e instanceof Error?e.message:'No se pudieron cargar los comentarios');});
     return()=>{active=false;};
   },[initialCommentsOpen,initial.id]);
+  useEffect(()=>{
+    let active=true;
+    let timeout:number|undefined;
+    const unsubscribe=subscribeRealtime(change=>{
+      if(!['resync','feed','interaction','comments','bookmarks','profile_posts'].includes(change.kind))return;
+      if(change.post_id && change.post_id!==initial.id)return;
+      window.clearTimeout(timeout);
+      timeout=window.setTimeout(()=>{
+        void api.get<Post>('/v1/posts/'+encodeURIComponent(initial.id),hasToken())
+          .then(next=>{
+            if(!active)return;
+            setPost(previous=>({...next,reposted_by:previous.reposted_by,reposted_at:previous.reposted_at}));
+            setLiked(next.liked_by_me);
+          }).catch(()=>{/* The feed or parent route handles deleted posts. */});
+        if(commentsOpen && (change.kind==='comments'||change.kind==='resync')){
+          void api.comments(initial.id).then(items=>{if(active)setComments(items);}).catch(()=>{});
+        }
+      },250);
+    });
+    return()=>{active=false;window.clearTimeout(timeout);unsubscribe();};
+  },[initial.id,commentsOpen]);
   async function reload() {
     const next = await api.get<Post>(`/v1/posts/${post.id}`,hasToken());
     // The detail endpoint has no profile context; keep the repost attribution.
     setPost({...next,reposted_by:post.reposted_by,reposted_at:post.reposted_at});
+    setLiked(next.liked_by_me);
   }
   async function handleLike() {
     if(!hasToken()) {onRequireLogin();return;}

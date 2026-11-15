@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Post, PostHashtag, User
 from .post_content import normalize_tag
-from .posts import PostOut, bookmarked_ids, counts_by_post, optional_user, reposted_ids, post_extras, serialize
+from .posts import PostOut, bookmarked_ids, counts_by_post, optional_user, reposted_ids, liked_ids, post_extras, serialize
 
 router = APIRouter(prefix='/v1', tags=['social'])
 
@@ -46,10 +46,11 @@ def feed(
     ids = [post.id for post, _ in rows]
     viewer_reposts = reposted_ids(db, viewer, ids)
     viewer_bookmarks = bookmarked_ids(db, viewer, ids)
+    viewer_likes = liked_ids(db, viewer, ids)
     media,tags=post_extras(db,ids)
     return [
         serialize(post, username, counts, viewer_reposts=viewer_reposts,
-                  viewer_bookmarks=viewer_bookmarks,
+                  viewer_bookmarks=viewer_bookmarks, viewer_likes=viewer_likes,
                   media=media.get(post.id),hashtags=tags.get(post.id))
         for post, username in rows
     ]
