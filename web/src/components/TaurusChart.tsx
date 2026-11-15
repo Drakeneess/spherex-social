@@ -4,7 +4,7 @@ import { formatDec, formatRa } from '../lib/coordinates';
 import {
   TAURUS_CHART, TAURUS_FIGURE_LINES, TAURUS_TARGETS, TAURUS_VIEW,
   projectTaurus, unprojectTaurus, withinTaurusChart,
-  type SkyPosition, type TaurusTarget,
+  type SkyPosition,
 } from '../lib/taurus';
 
 /** Reference J2000 star chart, NOT a composite/mosaic of SPHEREx observations. */
