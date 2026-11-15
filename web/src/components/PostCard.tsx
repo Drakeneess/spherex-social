@@ -123,7 +123,7 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     let active=true;
     let timeout:number|undefined;
     const unsubscribe=subscribeRealtime(change=>{
-      if(!['resync','feed','interaction','comments','bookmarks'].includes(change.kind))return;
+      if(!['resync','feed','interaction','comments','bookmarks','profile_posts'].includes(change.kind))return;
       if(change.post_id && change.post_id!==initial.id)return;
       window.clearTimeout(timeout);
       timeout=window.setTimeout(()=>{
