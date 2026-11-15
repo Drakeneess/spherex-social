@@ -42,7 +42,7 @@ export function subscribeRealtime(handler:(change:RealtimeChange)=>void):()=>voi
   return ()=>window.removeEventListener(REALTIME_EVENT,listener);
 }
 
-export function startRealtime(onChange:(change:RealtimeChange)=>void):()=>void {
+export function startRealtime(onChange:(change:RealtimeChange)=>void, authenticated=false):()=>void {
   let stopped=false;
   let connected=false;
   let active:AbortController|null=null;
@@ -66,7 +66,7 @@ export function startRealtime(onChange:(change:RealtimeChange)=>void):()=>void {
       active=new AbortController();
       try{
         // A fresh short-lived JWT also survives reconnects after 30 minutes.
-        const token=await realtimeToken();
+        const token=authenticated ? await realtimeToken() : null;
         if(stopped)return;
         const response=await fetch(realtimeBase+'/v1/events',{
           method:'GET',credentials:'same-origin',cache:'no-store',
