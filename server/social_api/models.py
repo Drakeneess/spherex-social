@@ -29,6 +29,21 @@ class User(Base):
     __table_args__ = (CheckConstraint("length(username) >= 3", name='ck_users_username_length'),)
 
 
+class AuthSession(Base):
+    """Revocable per-device login session; only SHA-256 of secret is stored."""
+    __tablename__ = "auth_sessions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False,
+    )
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Follow(Base):
     __tablename__ = 'follows'
     follower_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)

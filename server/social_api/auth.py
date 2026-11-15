@@ -1,11 +1,14 @@
 """Authentication and profile endpoints for the SPHEREx social platform.
 
-Access tokens are short-lived, signed JWTs; no passwords or token secrets are
-stored in responses. A dedicated revocation/refresh flow is a later sprint.
+Access JWTs remain short-lived. An HttpOnly, revocable device session in
+PostgreSQL transparently renews them, so a 30-minute token expiry does not log
+users out. Only a hash of the opaque cookie secret is stored at rest.
 """
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -13,16 +16,16 @@ from typing import Annotated
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .models import User
+from .models import AuthSession, User
 
 router = APIRouter(prefix='/v1', tags=['authentication'])
 bearer = HTTPBearer(auto_error=False, scheme_name='BearerAuth')
@@ -31,6 +34,9 @@ password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 unknown_account_hash = password_hasher.hash('not-an-account-password')
 USERNAME_PATTERN = re.compile(r'^[a-z][a-z0-9_]{2,31}$')
 RESERVED_USERNAMES = {'me', 'admin', 'api', 'support', 'auth'}
+REFRESH_COOKIE = "astrogram_refresh"
+REFRESH_SECONDS = 90 * 24 * 60 * 60
+REFRESH_COOKIE_PATH = "/v1/auth"
 
 
 class RegistrationRequest(BaseModel):
@@ -132,6 +138,28 @@ def _create_access_token(user: User) -> AccessToken:
     return AccessToken(access_token=token, expires_in=ttl)
 
 
+def _refresh_hash(secret: str) -> str:
+    return hashlib.sha256(secret.encode("ascii")).hexdigest()
+
+
+def _set_refresh_cookie(response: Response, secret: str) -> None:
+    response.set_cookie(
+        REFRESH_COOKIE, secret, max_age=REFRESH_SECONDS,
+        path=REFRESH_COOKIE_PATH, httponly=True,
+        secure=get_settings().app_env == "production", samesite="lax",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        REFRESH_COOKIE, path=REFRESH_COOKIE_PATH,
+        secure=get_settings().app_env == "production", httponly=True,
+        samesite="lax",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
 def current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Annotated[Session, Depends(get_db)],
@@ -181,7 +209,8 @@ def register(body: RegistrationRequest, db: Annotated[Session, Depends(get_db)])
 
 
 @router.post('/auth/login', response_model=AccessToken)
-def login(body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
+def login(body: LoginRequest, response: Response,
+          db: Annotated[Session, Depends(get_db)]):
     email = _normalize_email(str(body.email))
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     hash_to_verify = user.password_hash if user else unknown_account_hash
@@ -191,7 +220,61 @@ def login(body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
         valid = False
     if user is None or not valid:
         raise _unauthorized()
+    secret = secrets.token_urlsafe(32)
+    db.add(AuthSession(
+        user_id=user.id,
+        secret_hash=_refresh_hash(secret),
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=REFRESH_SECONDS),
+    ))
+    db.commit()
+    _set_refresh_cookie(response, secret)
     return _create_access_token(user)
+
+
+@router.post('/auth/refresh', response_model=AccessToken)
+def refresh_access(request: Request, response: Response,
+                   db: Annotated[Session, Depends(get_db)]):
+    """Renew a short JWT from a revocable, 90-day rolling HttpOnly cookie."""
+    secret = request.cookies.get(REFRESH_COOKIE, "")
+    if not secret or len(secret) > 128 or not secret.isascii():
+        raise _unauthorized()
+    session = db.scalar(select(AuthSession).where(
+        AuthSession.secret_hash == _refresh_hash(secret),
+    ))
+    now = datetime.now(timezone.utc)
+    if session is None:
+        raise _unauthorized()
+    expiry = session.expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if expiry <= now:
+        db.delete(session)
+        db.commit()
+        raise _unauthorized()
+    user = db.get(User, session.user_id)
+    if user is None:
+        db.delete(session)
+        db.commit()
+        raise _unauthorized()
+    session.last_used_at = now
+    session.expires_at = now + timedelta(seconds=REFRESH_SECONDS)
+    db.commit()
+    _set_refresh_cookie(response, secret)
+    return _create_access_token(user)
+
+
+@router.post('/auth/logout', status_code=204)
+def revoke_session(request: Request, response: Response,
+                   db: Annotated[Session, Depends(get_db)]):
+    """Invalidate just this device, without affecting other logged-in devices."""
+    secret = request.cookies.get(REFRESH_COOKIE, "")
+    if secret and len(secret) <= 128 and secret.isascii():
+        db.execute(delete(AuthSession).where(
+            AuthSession.secret_hash == _refresh_hash(secret),
+        ))
+        db.commit()
+    _clear_refresh_cookie(response)
+    return None
 
 
 @router.get('/users/me', response_model=PrivateProfile, tags=['profiles'])
