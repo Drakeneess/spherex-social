@@ -3,7 +3,7 @@ import { SlidersHorizontal, LoaderCircle, RotateCcw } from 'lucide-react';
 import { api, DEFAULT_REVEAL, type RevealRecipe } from '../lib/api';
 
 type Props = {
-  active:boolean;jobId:string|null;index:number;rawAvailable:boolean;hasRaw:boolean;
+  active:boolean;jobId:string|null;index:number;rawAvailable:boolean;hasRaw:boolean;searching:boolean;
   recipe:RevealRecipe;onChange:(recipe:RevealRecipe)=>void;
   enabled:boolean;onEnabled:(value:boolean)=>void;
 };
@@ -15,7 +15,7 @@ const renderFormats:Record<RevealRecipe['format'],string> = {
   square:'Cuadrado 1:1',portrait:'Vertical 4:5',wide:'Panorámico 16:9',
 };
 
-export default function RevealEditor({active,jobId,index,rawAvailable,hasRaw,recipe,onChange,enabled,onEnabled}:Props){
+export default function RevealEditor({active,jobId,index,rawAvailable,hasRaw,searching,recipe,onChange,enabled,onEnabled}:Props){
   const [image,setImage]=useState('');
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
@@ -48,8 +48,9 @@ export default function RevealEditor({active,jobId,index,rawAvailable,hasRaw,rec
   return <section className="card reveal-editor" aria-label="Estudio de revelado astronómico">
     <div className="card-h"><span><SlidersHorizontal size={17}/> Revelado</span><span className="chip">FITS · no destructivo</span></div>
     {!hasRaw?<div className="reveal-no-data">
-      Los PNG anteriores no conservan los valores originales. Realiza una búsqueda nueva
-      para editar color, contraste y formato desde los datos FITS.
+      {searching
+        ? 'Recibiendo y archivando los datos FITS. El revelado se habilitará al cargar una época.'
+        : 'Los PNG anteriores no conservan los valores originales. Realiza una búsqueda nueva para editar color, contraste y formato desde los datos FITS.'}
     </div>:<>
       <label className="reveal-toggle"><input type="checkbox" checked={enabled}
         onChange={event=>onEnabled(event.target.checked)}/> Aplicar este revelado al publicar</label>

@@ -151,7 +151,7 @@ export default function PostBlinkPreview({
   const selectedDate = shown?.date ?? null;
   const readyCount = job?.frames.filter(frame => frame.status === 'ready').length ?? 0;
 
-  return <div ref={root} className="post-blink-preview" aria-label="Parpadeo astronómico de la publicación">
+  return <div ref={root} className={`post-blink-preview ${linkedRecipe.current?`format-${linkedRecipe.current.format}`:''}`} aria-label="Parpadeo astronómico de la publicación">
     {picture && <img className={`post-blink-photo ${linkedRecipe.current&&!revealFallback?'is-revealed':''}`} src={picture.image}
       alt={`Fotograma astronómico real, época ${shown.index + 1}, ${readableDate(selectedDate)}`}
       decoding="async" />}

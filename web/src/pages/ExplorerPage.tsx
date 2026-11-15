@@ -75,6 +75,9 @@ export default function ExplorerPage({
   const revealable = available.filter(index =>
     skyState?.frames.some(frame=>frame.index===index&&frame.raw_available));
   const rawAvailable = revealable.length>0;
+  // Live playback can advance faster than the server render debounce.
+  // Keep the editorial preview on one stable frame while animation runs.
+  const revealPreviewIndex = playing ? (revealable[0] ?? position) : position;
 
   useEffect(() => {
     onProgress({ trace, loading });
@@ -500,8 +503,9 @@ export default function ExplorerPage({
         </section>
         {result?.source !== 'simulated' && result && <RevealEditor
           active={active} jobId={activeJobId.current}
-          index={position} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===position)?.raw_available)}
-          hasRaw={rawAvailable} recipe={revealRecipe} onChange={setRevealRecipe}
+          index={revealPreviewIndex} rawAvailable={Boolean(skyState?.frames.find(f=>f.index===revealPreviewIndex)?.raw_available)}
+          hasRaw={rawAvailable} searching={loading} recipe={revealRecipe}
+          onChange={recipe=>{setPlaying(false);setRevealRecipe(recipe)}}
           enabled={revealEnabled} onEnabled={setRevealEnabled}/>}
         <SearchProgress trace={trace} loading={loading} onCancel={cancelSearch}
           onRetry={retrySearch} onHome={onGoHome} retrySeconds={retrySeconds}/>

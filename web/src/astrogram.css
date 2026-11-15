@@ -1451,3 +1451,7 @@ body {
 }
 .post-blink-photo.is-revealed{image-rendering:auto}
 @media(prefers-reduced-motion:reduce){.reveal-stage *{animation:none!important}}
+/* Preserve the image composition chosen by the author in the public feed. */
+.post-blink-preview.format-portrait{aspect-ratio:4/5}
+.post-blink-preview.format-wide{aspect-ratio:16/9}
+.profile-tile .post-blink-preview{aspect-ratio:1/1}
