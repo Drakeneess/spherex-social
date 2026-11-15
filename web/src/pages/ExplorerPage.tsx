@@ -369,12 +369,20 @@ export default function ExplorerPage({
 
   function addMark(x: number, y: number) {
     if (!current) return;
-    setMarks(previous => [
-      ...previous.filter(mark => mark.index !== position),
-      { index: position, x, y },
-    ].sort((left, right) => left.index - right.index));
-    setNotice(`Época ${position + 1}: posición marcada. ${marks.some(mark => mark.index === position) ? 'Marca reemplazada.' : 'Marca registrada.'}`);
-    signalTask('mark');signalNudge('mark');
+    const replacing=marks.some(mark=>mark.index===position);
+    const nextMarks=[
+      ...marks.filter(mark=>mark.index!==position),
+      {index:position,x,y},
+    ].sort((left,right)=>left.index-right.index);
+    setMarks(nextMarks);
+    if(nextMarks.length>=2){
+      // Two distinct epochs are necessary for the visual trajectory mission.
+      signalTask('mark');
+      setNotice(`${nextMarks.length} épocas marcadas. La línea punteada une las posiciones que seleccionaste; no confirma movimiento.`);
+    }else{
+      setNotice(`Época ${position+1}: ${replacing?'marca actualizada':'posición marcada'}. Cambia de época y marca el mismo objeto para trazar su trayectoria.`);
+      if(!replacing)signalNudge('mark');
+    }
   }
 
   async function saveRegion() {
@@ -448,11 +456,13 @@ export default function ExplorerPage({
         <div className="epoch-player-foot">
           <span>{result ? `${loadedCount}/${result.count} épocas cargadas` : 'Sin búsqueda activa'}</span>
           <span>{result?.source === 'simulated' ? 'Imágenes simuladas · demostración' : 'NASA/IPAC · vista preliminar'}</span>
+          {marks.length>0&&<span aria-live="polite">
+            {marks.length===1?'1 época marcada · marca otra para trazar':`${marks.length} épocas marcadas · trayectoria visual`}
+          </span>}
         </div>
-        <div className="epoch-help">Las estrellas se quedan quietas; lo que se mueve es el hallazgo.
-          Toca la imagen para <strong>marcar</strong> su posición en cada época.
-          {result?.source !== 'simulated' && result &&
-            ' Para comparar movimiento real, verifica la calidad y calibración de cada imagen.'}
+        <div className="epoch-help">Marca manualmente la posición del mismo objeto en dos épocas para dibujar
+          una <strong>trayectoria punteada</strong>. Esta herramienta no detecta ni confirma movimiento por sí sola.
+          Las marcas son temporales y todavía no se incluyen al publicar.
         </div>
       </section>
 
