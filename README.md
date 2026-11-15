@@ -13,7 +13,8 @@ Proyecto para **NASA Space Apps Challenge 2026**. Producto: red social de observ
 - ✅ Interacciones v1: likes, comentarios (incluidas respuestas), seguidores, guardados y contadores por publicación.
 - ✅ Regiones SPHEREx persistentes: guardar parámetros, búsqueda radial, mis observaciones, enlace compartible y posts vinculados.
 - ✅ **Frontend AstroGram en React + Vite** basado en `INT.html`: registro/login, feed, perfiles, publicaciones, seguidores, guardados, ajustes, explorador y juego educativo sintético.
-- ⏳ FITS persistentes, subida a S3, notificaciones, solicitudes de amistad, cambio de contraseña, verificación de correo, rate limiting persistente y workers de astronomía: **no implementados**.
+- ✅ Trabajos astronómicos persistentes, PNG en S3 y archivo privado de recortes FITS + píxeles flotantes para revelado no destructivo.
+- ⏳ Notificaciones, solicitudes de amistad, cambio de contraseña, verificación de correo y rate limiting distribuido: **no implementados**.
 - ✅ API conectada a `Drakeneess/spherex-social` en Railway; `/v1/ready` verificado contra PostgreSQL.
 
 **Nota científica:** la visualización DR1/QR3 es orientativa; el detector no equivale a banda monocromática, así que todavía no permite afirmar detecciones científicas por diferencia. El modo simulado está rotulado.
@@ -521,3 +522,56 @@ se preparan de forma diferida con `IntersectionObserver`.
 Se añade la migración `b60ce72df9af` (columna `posts.sky_job_id` con
 clave foránea y índice). No se reemplazan las imágenes reales por efectos
 visuales si el servicio remoto falla.
+
+
+## Revelado FITS no destructivo (AstroGram)
+
+- Las **búsquedas reales nuevas** conservan en el mismo bucket privado una copia FITS del recorte
+  recibido de IRSA (reserializada sin cambiar sus valores de píxel) y una matriz `float32`
+  reproyectada, además del PNG de vista rápida. Archivos máximos admitidos: 32 MiB para FITS
+  y 3 MiB para la matriz comprimida. Si un producto supera esos límites, la vista rápida
+  sigue disponible, pero su revelado se deshabilita.
+- El explorador incorpora el panel **Revelado** cuando se ha archivado al menos una época.
+  Permite elegir paleta monocroma o de falso color, sombras y luces personalizadas,
+  curvas lineal/asinh/log, percentiles de negro/blanco, gamma, interpolación
+  (bilineal / vecino más próximo) y salida cuadrada, 4:5 o 16:9.
+- Las opciones de formato **añaden márgenes**; no recortan coordenadas ni modifican
+  el FITS. El escalado suave **no inventa resolución**. Las curvas de contraste se
+  calculan **por época**, por lo que un parpadeo con revelado no sirve para afirmar
+  variabilidad física o movimiento sin comprobación adicional.
+- `POST /api/sky/jobs/{job_id}/frames/{index}/reveal` recibe una receta validada
+  con versión y parámetros acotados. Devuelve exclusivamente una imagen PNG RGB
+  derivada, sin claves S3, datos FITS ni valores numéricos científicos.
+- Al publicar con revelado, `POST /v1/posts` incluye `display_recipe` y
+  `sky_job_id`, validados contra el campo astronómico original y la existencia
+  de datos editables. La receta queda guardada en `posts.display_recipe`; la
+  miniatura de Inicio reproduce el mismo revelado sin sobrescribir los originales.
+- Las búsquedas y publicaciones **anteriores a esta versión** conservan sus PNG.
+  No se afirma disponer de datos FITS que nunca fueron archivados: para revelarlas
+  es necesario ejecutar una búsqueda real nueva.
+- El modo demo nunca se confunde con datos NASA ni admite archivo científico editable.
+- Seguridad: objetos FITS/NPZ privados, sin URL firmadas de descarga pública,
+  identificadores UUID difíciles de adivinar y recetas estrictamente validadas.
+  Antes de escalar a tráfico masivo, incorporar rate limiting distribuido,
+  caché de renderizados y cuotas de almacenamiento.
+
+### API de ejemplo
+
+```json
+{
+  "version": 1,
+  "palette": "violet",
+  "stretch": "asinh",
+  "black": 2,
+  "white": 99.5,
+  "gamma": 1,
+  "highlight": "#62cfff",
+  "shadow": "#080d28",
+  "format": "portrait",
+  "sampling": "smooth"
+}
+```
+
+Los ajustes son **estéticos**, no calibración fotométrica. Una composición
+multibanda RGB físicamente interpretada requiere agrupar recortes compatibles
+de diferentes longitudes de onda y se reserva para una fase posterior.

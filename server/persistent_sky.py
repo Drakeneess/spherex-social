@@ -329,8 +329,14 @@ def _produce_frame(job_id: uuid.UUID, row: SkySearchJob, records: list[dict], in
     if raw_fits is not None and raw_pixels is not None:
         # Store the scientific source before declaring the frame complete.
         # This is an immutable job/index namespace, never a user's filename.
-        put_science(job_id, index, raw_fits, raw_pixels)
-        raw_available = True
+        try:
+            put_science(job_id, index, raw_fits, raw_pixels)
+        except ValueError:
+            # A source exceeding the bounded science archive must not make
+            # the ordinary astronomical PNG disappear.
+            logger.warning("FITS source could not be archived: unsupported size or format")
+        else:
+            raw_available = True
     put_preview(job_id, index, image)
     return {
         **rendered, "raw_available": raw_available, "index": index,

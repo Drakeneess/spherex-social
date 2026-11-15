@@ -214,3 +214,23 @@ def test_job_validation_rejects_invalid_payloads(harness):
                    {"size_arcmin": 0}, {"job_id": "not-a-uuid"}):
         data = payload(**change)
         assert client.post("/api/sky/jobs", json=data).status_code == 422
+
+
+def test_oversized_science_archive_does_not_erase_existing_preview(harness, monkeypatch):
+    client, _, _, saved = harness
+    data = payload()
+    def render(_session, _record):
+        import numpy as np
+        return {"image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "mode": "real", "science_fits": b"SIMPLE  " + b"0" * 20,
+                "science_pixels": np.ones((4, 4), dtype=np.float32)}
+    monkeypatch.setattr(explorer, "render_real", render)
+    def too_large(*_args):
+        raise ValueError("Oversized source")
+    monkeypatch.setattr(sky, "put_science", too_large)
+    assert client.post("/api/sky/jobs", json=data).status_code == 202
+    sky._run(uuid.UUID(data["job_id"]))
+    result = client.get(f"/api/sky/jobs/{data['job_id']}").json()
+    assert result["status"] == "complete"
+    assert all(frame["raw_available"] is False for frame in result["frames"])
+    assert len(saved) == 2
