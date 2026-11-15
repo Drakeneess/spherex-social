@@ -16,6 +16,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
 from urllib.error import HTTPError as UrlHTTPError, URLError as UrlURLError
@@ -39,7 +40,15 @@ from sia2_compare import Sia2ComparisonError, query_sia2, compare_with_tap
 
 logger = logging.getLogger("astrogram.irsa")
 
-app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.6.0")
+from persistent_sky import start_dispatcher  # noqa: E402
+
+@asynccontextmanager
+async def app_lifespan(_application: FastAPI):
+    start_dispatcher()
+    yield
+
+app = FastAPI(title="SPHEREx Social + Time Explorer", version="0.7.0",
+              lifespan=app_lifespan)
 
 # Social REST routes intentionally expose reads only until login/roles are implemented.
 from social_api.api import router as social_router
@@ -930,6 +939,5 @@ def frame(search_id: str, index: int):
 
 # Durable sky searches: PostgreSQL metadata + private S3 PNGs. Keep the
 # short-lived legacy /api/search session endpoints for existing consumers.
-from persistent_sky import router as persistent_sky_router, start_dispatcher  # noqa: E402
+from persistent_sky import router as persistent_sky_router  # noqa: E402
 app.include_router(persistent_sky_router)
-app.add_event_handler("startup", start_dispatcher)
