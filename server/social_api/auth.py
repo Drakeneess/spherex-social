@@ -121,12 +121,13 @@ def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def _create_access_token(user: User) -> AccessToken:
+def _create_access_token(user: User, session: AuthSession) -> AccessToken:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     ttl = settings.jwt_access_minutes * 60
     claims = {
         'sub': str(user.id),
+        'sid': str(session.id),
         'iss': settings.jwt_issuer,
         'aud': settings.jwt_audience,
         'iat': now,
@@ -174,11 +175,20 @@ def current_user(
             algorithms=['HS256'],
             issuer=settings.jwt_issuer,
             audience=settings.jwt_audience,
-            options={'require': ['sub', 'exp', 'iat', 'iss', 'aud', 'nbf', 'jti']},
+            options={'require': ['sub', 'sid', 'exp', 'iat', 'iss', 'aud', 'nbf', 'jti']},
         )
         user_id = uuid.UUID(claims['sub'])
+        session_id = uuid.UUID(claims['sid'])
     except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
         raise _unauthorized() from exc
+    session = db.get(AuthSession, session_id)
+    if session is None or session.user_id != user_id:
+        raise _unauthorized()
+    expiration = session.expires_at
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    if expiration <= datetime.now(timezone.utc):
+        raise _unauthorized()
     user = db.get(User, user_id)
     if user is None:
         raise _unauthorized()
@@ -221,14 +231,15 @@ def login(body: LoginRequest, response: Response,
     if user is None or not valid:
         raise _unauthorized()
     secret = secrets.token_urlsafe(32)
-    db.add(AuthSession(
+    device_session = AuthSession(
         user_id=user.id,
         secret_hash=_refresh_hash(secret),
         expires_at=datetime.now(timezone.utc) + timedelta(seconds=REFRESH_SECONDS),
-    ))
+    )
+    db.add(device_session)
     db.commit()
     _set_refresh_cookie(response, secret)
-    return _create_access_token(user)
+    return _create_access_token(user, device_session)
 
 
 @router.post('/auth/refresh', response_model=AccessToken)
@@ -260,7 +271,7 @@ def refresh_access(request: Request, response: Response,
     session.expires_at = now + timedelta(seconds=REFRESH_SECONDS)
     db.commit()
     _set_refresh_cookie(response, secret)
-    return _create_access_token(user)
+    return _create_access_token(user, session)
 
 
 @router.post('/auth/logout', status_code=204)
