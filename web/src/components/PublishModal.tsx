@@ -250,8 +250,8 @@ export default function PublishModal({region,onClose,onDone}:Props){
             visibility==='unlisted'?'Solo será accesible mediante enlace.':
             'Se compartirá con la comunidad de AstroGram.'}</small>
           <div>
-            <button type="button" className="btn compose-cancel" onClick={onClose} disabled={busy||processing}>Cancelar</button>
-            <button type="submit" data-tour="publish-submit" className="btn p compose-submit"
+            <button type="button" data-sound="close" className="btn compose-cancel" onClick={onClose} disabled={busy||processing}>Cancelar</button>
+            <button type="submit" data-tour="publish-submit" data-sound="none" className="btn p compose-submit"
               disabled={busy||processing||!hasContent}>
               <Send size={17}/>{busy?'Publicando…':processing?'Preparando imágenes…':'Publicar'}
             </button>
