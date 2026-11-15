@@ -66,6 +66,13 @@ export type Observation = {
 export type ObservationParams = Pick<Observation, 'ra_deg' | 'dec_deg' | 'fov_arcmin'> & { detector: number };
 export type UserStats = { username: string; followers_count: number; following_count: number; is_following: boolean };
 export type Comment = { id: string; post_id: string; username: string; body: string; parent_id: string | null; created_at: string };
+export type AstroNotification = {
+  id:string;kind:'like'|'comment'|'reply'|'repost'|'follow';
+  actor_username:string;actor_display_name:string;
+  post_id:string|null;post_author_username:string|null;
+  comment_preview:string|null;created_at:string;read_at:string|null;
+};
+export type UnreadNotifications = {unread:number};
 export type Sia2Discovery = {
   method: 'sia2'; elapsed_ms:number; http_ms:number; parse_ms:number;
   attempts:number; retry_events:{attempt:number;elapsed_ms:number;failure:string}[];
@@ -265,6 +272,13 @@ export const api = {
   stats: (username: string) => get<UserStats>(`/v1/users/${encodeURIComponent(username)}/stats`, hasToken()),
   follow: (username: string) => write<void>('POST',`/v1/users/${encodeURIComponent(username)}/follow`),
   unfollow: (username: string) => write<void>('DELETE',`/v1/users/${encodeURIComponent(username)}/follow`),
+  unreadNotifications: () => get<UnreadNotifications>('/v1/users/me/notifications/count',true),
+  notifications: (limit=20,offset=0) => get<AstroNotification[]>(
+    `/v1/users/me/notifications?limit=${limit}&offset=${offset}`,true),
+  markNotificationRead: (id:string) =>
+    write<void>('POST',`/v1/users/me/notifications/${encodeURIComponent(id)}/read`),
+  markAllNotificationsRead: () =>
+    write<void>('POST','/v1/users/me/notifications/read-all'),
   feed: (limit = 20, offset = 0, tag?:string) => get<Post[]>(
     `/v1/feed?limit=${limit}&offset=${offset}${tag?`&tag=${encodeURIComponent(tag)}`:''}`,hasToken()),
   userPosts: (username: string) => get<Post[]>(`/v1/users/${encodeURIComponent(username)}/posts`,hasToken()),

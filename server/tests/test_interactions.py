@@ -331,3 +331,149 @@ def test_bookmark_status_is_loaded_from_database_across_all_post_views(env):
     saved = client.get('/v1/users/me/bookmarks', headers=headers['beta']).json()
     assert {item['id'] for item in saved} == {own_secret}
     assert saved[0]['bookmarked_by_me'] is True
+
+
+# -----------------------------------------------------------
+# Persistent social notification integration tests
+# -----------------------------------------------------------
+
+def inbox(client, headers, username):
+    response = client.get('/v1/users/me/notifications', headers=headers[username])
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def unread(client, headers, username):
+    response = client.get('/v1/users/me/notifications/count', headers=headers[username])
+    assert response.status_code == 200, response.text
+    return response.json()['unread']
+
+
+def test_notifications_only_from_new_real_actions_not_self_or_retries(env):
+    client, headers = env
+    post_id = new_post(client, headers)
+    url = f'/v1/posts/{post_id}/like'
+    assert client.get('/v1/users/me/notifications').status_code == 401
+    assert client.get('/v1/users/me/notifications/count').status_code == 401
+    assert client.post(url, headers=headers['alpha']).status_code == 204
+    assert unread(client, headers, 'alpha') == 0
+
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    notifications = inbox(client, headers, 'alpha')
+    assert len(notifications) == 1
+    assert notifications[0]['kind'] == 'like'
+    assert notifications[0]['actor_username'] == 'beta'
+    assert notifications[0]['post_id'] == post_id
+    assert notifications[0]['post_author_username'] == 'alpha'
+    assert notifications[0]['read_at'] is None
+    assert unread(client, headers, 'alpha') == 1
+    assert inbox(client, headers, 'beta') == []
+
+    assert client.delete(url, headers=headers['beta']).status_code == 204
+    assert inbox(client, headers, 'alpha') == []
+    assert unread(client, headers, 'alpha') == 0
+    assert client.post(url, headers=headers['beta']).status_code == 204
+    assert len(inbox(client, headers, 'alpha')) == 1
+    # Another actor causes a distinct event.
+    assert client.post(url, headers=headers['gamma']).status_code == 204
+    assert unread(client, headers, 'alpha') == 2
+
+
+def test_reposts_and_follows_create_and_undo_events_without_duplicates(env):
+    client, headers = env
+    post_id = new_post(client, headers)
+    repost=f'/v1/posts/{post_id}/repost'
+    follow='/v1/users/alpha/follow'
+    assert client.post(repost, headers=headers['beta']).status_code == 204
+    assert client.post(repost, headers=headers['beta']).status_code == 204
+    assert client.post(follow, headers=headers['beta']).status_code == 204
+    assert client.post(follow, headers=headers['beta']).status_code == 204
+    assert {n['kind'] for n in inbox(client, headers, 'alpha')} == {'repost','follow'}
+    assert unread(client, headers, 'alpha') == 2
+    assert client.delete(repost, headers=headers['beta']).status_code == 204
+    assert client.delete(follow, headers=headers['beta']).status_code == 204
+    assert unread(client, headers, 'alpha') == 0
+    assert client.post(follow, headers=headers['beta']).status_code == 204
+    assert len(inbox(client, headers, 'alpha')) == 1
+    assert inbox(client, headers, 'alpha')[0]['post_id'] is None
+    assert client.post('/v1/users/alpha/follow', headers=headers['alpha']).status_code == 400
+    assert inbox(client, headers, 'beta') == []
+
+
+def test_comments_and_replies_notify_correct_recipients_and_cascade_on_delete(env):
+    client, headers = env
+    post_id = new_post(client, headers)
+    url=f'/v1/posts/{post_id}/comments'
+    assert client.post(url, headers=headers['alpha'], json={'body':'Self comment'}).status_code == 201
+    assert unread(client, headers, 'alpha') == 0
+    comment=client.post(url, headers=headers['beta'], json={'body':'Great observation'}).json()
+    assert comment['id']
+    assert unread(client, headers, 'alpha') == 1
+    assert inbox(client, headers, 'alpha')[0]['comment_preview'] == 'Great observation'
+    reply=client.post(url, headers=headers['gamma'], json={
+        'body':'Reply to beta', 'parent_id':comment['id'],
+    }).json()
+    assert reply['id']
+    # Post owner receives a new comment, parent commenter receives the reply.
+    assert {n['kind'] for n in inbox(client, headers, 'alpha')} == {'comment'}
+    assert len(inbox(client, headers, 'alpha')) == 2
+    assert [n['kind'] for n in inbox(client, headers, 'beta')] == ['reply']
+    assert inbox(client, headers, 'beta')[0]['comment_preview'] == 'Reply to beta'
+    assert inbox(client, headers, 'gamma') == []
+    assert client.delete(f"/v1/posts/{post_id}/comments/{reply['id']}",
+                         headers=headers['gamma']).status_code == 204
+    assert inbox(client, headers, 'beta') == []
+    assert len(inbox(client, headers, 'alpha')) == 1
+    assert client.delete(f"/v1/posts/{post_id}/comments/{comment['id']}",
+                         headers=headers['beta']).status_code == 204
+    assert inbox(client, headers, 'alpha') == []
+
+
+def test_read_one_read_all_pagination_and_ownership(env):
+    client, headers = env
+    post_id = new_post(client, headers)
+    like=f'/v1/posts/{post_id}/like'
+    assert client.post(like,headers=headers['beta']).status_code == 204
+    assert client.post(like,headers=headers['gamma']).status_code == 204
+    assert unread(client, headers, 'alpha') == 2
+    page=client.get('/v1/users/me/notifications?limit=1&offset=0',
+                    headers=headers['alpha']).json()
+    assert len(page)==1
+    second=client.get('/v1/users/me/notifications?limit=1&offset=1',
+                      headers=headers['alpha']).json()
+    assert len(second)==1 and second[0]['id']!=page[0]['id']
+    one=page[0]['id']
+    endpoint=f'/v1/users/me/notifications/{one}/read'
+    assert client.post(endpoint).status_code==401
+    assert client.post(endpoint,headers=headers['beta']).status_code==404
+    assert client.post(endpoint,headers=headers['alpha']).status_code==204
+    assert client.post(endpoint,headers=headers['alpha']).status_code==204
+    assert unread(client,headers,'alpha')==1
+    assert client.post('/v1/users/me/notifications/read-all',
+                       headers=headers['alpha']).status_code==204
+    assert unread(client,headers,'alpha')==0
+    assert all(n['read_at'] is not None for n in inbox(client,headers,'alpha'))
+    assert client.get('/v1/users/me/notifications?unread_only=true',
+                      headers=headers['alpha']).json()==[]
+    assert client.get('/v1/users/me/notifications?limit=51',
+                      headers=headers['alpha']).status_code==422
+
+
+def test_notification_visibility_changes_hide_private_replies_and_deleted_posts(env):
+    client, headers = env
+    post_id=new_post(client, headers)
+    comments=f'/v1/posts/{post_id}/comments'
+    first=client.post(comments,headers=headers['beta'],json={'body':'First'}).json()
+    assert client.post(comments,headers=headers['gamma'],
+                       json={'body':'Reply','parent_id':first['id']}).status_code==201
+    assert unread(client,headers,'beta')==1
+    assert client.patch(f'/v1/posts/{post_id}',headers=headers['alpha'],
+                        json={'visibility':'private'}).status_code==200
+    assert inbox(client,headers,'beta')==[]
+    assert unread(client,headers,'beta')==0
+    # Owner can still read their own post-related notifications.
+    assert unread(client,headers,'alpha')==2
+    assert client.delete(f'/v1/posts/{post_id}',headers=headers['alpha']).status_code==204
+    assert inbox(client,headers,'alpha')==[]
+    assert inbox(client,headers,'beta')==[]

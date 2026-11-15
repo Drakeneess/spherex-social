@@ -6,7 +6,7 @@ without disclosing whether they exist; unlisted posts work by direct ID.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from .auth import current_user
 from .db import get_db
 from .models import Bookmark, Comment, Follow, Post, PostLike, PostRepost, User
+from .notifications import queue_notification, remove_notification
 from .posts import PostOut, bookmarked_ids, counts_by_post, optional_user, reposted_ids, post_extras, serialize
 
 router = APIRouter(prefix='/v1', tags=['interactions'])
@@ -39,11 +40,14 @@ def get_named_user(db: Session, username: str) -> User:
     return user
 
 
-def add_once(db: Session, row, model, key: tuple, target_exists) -> None:
-    """Composite primary keys enforce uniqueness even under concurrent requests."""
+def add_once(db: Session, row, model, key: tuple, target_exists,
+             on_insert: Callable[[], None] | None = None) -> None:
+    """Action and its notification commit atomically, without duplicate alerts."""
     if db.get(model, key) is not None:
         return
     db.add(row)
+    if on_insert is not None:
+        on_insert()
     try:
         db.commit()
     except IntegrityError as exc:
@@ -56,10 +60,13 @@ def add_once(db: Session, row, model, key: tuple, target_exists) -> None:
             raise HTTPException(status_code=409, detail='Concurrent write conflict') from exc
 
 
-def remove_if_present(db: Session, model, key: tuple) -> None:
+def remove_if_present(db: Session, model, key: tuple,
+                      on_remove: Callable[[], None] | None = None) -> None:
     row = db.get(model, key)
     if row is not None:
         db.delete(row)
+        if on_remove is not None:
+            on_remove()
         db.commit()
 
 
@@ -69,10 +76,13 @@ def like_post(
     user: Annotated[User, Depends(current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    get_visible_post(db, post_id, user)
+    post = get_visible_post(db, post_id, user)
     add_once(
         db, PostLike(post_id=post_id, user_id=user.id), PostLike, (user.id, post_id),
         lambda: db.get(Post, post_id) is not None,
+        on_insert=lambda: queue_notification(
+            db, kind='like', recipient_id=post.author_id,
+            actor_id=user.id, target_id=post_id, post_id=post_id),
     )
     return Response(status_code=204)
 
@@ -84,7 +94,11 @@ def unlike_post(
     db: Annotated[Session, Depends(get_db)],
 ):
     get_visible_post(db, post_id, user)
-    remove_if_present(db, PostLike, (user.id, post_id))
+    remove_if_present(
+        db, PostLike, (user.id, post_id),
+        on_remove=lambda: remove_notification(db,kind='like',
+                                              actor_id=user.id,target_id=post_id),
+    )
     return Response(status_code=204)
 
 
@@ -104,6 +118,9 @@ def repost_post(
         db, PostRepost(post_id=post_id, user_id=user.id), PostRepost,
         (user.id, post_id),
         lambda: (target := db.get(Post, post_id)) is not None and target.visibility == 'public',
+        on_insert=lambda: queue_notification(
+            db,kind='repost',recipient_id=post.author_id,
+            actor_id=user.id,target_id=post_id,post_id=post_id),
     )
     return Response(status_code=204)
 
@@ -115,7 +132,11 @@ def remove_repost(
     db: Annotated[Session, Depends(get_db)],
 ):
     # The repost remains removable even after its original becomes private.
-    remove_if_present(db, PostRepost, (user.id, post_id))
+    remove_if_present(
+        db, PostRepost, (user.id, post_id),
+        on_remove=lambda: remove_notification(db,kind='repost',
+                                              actor_id=user.id,target_id=post_id),
+    )
     return Response(status_code=204)
 
 
@@ -228,7 +249,8 @@ def comment_on_post(
     user: Annotated[User, Depends(current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    get_visible_post(db, post_id, user)
+    post = get_visible_post(db, post_id, user)
+    parent = None
     if body.parent_id is not None:
         parent = db.get(Comment, body.parent_id)
         if parent is None or parent.post_id != post_id:
@@ -236,6 +258,17 @@ def comment_on_post(
     comment = Comment(author_id=user.id, post_id=post_id, parent_id=body.parent_id,
                       body=body.body, created_at=datetime.now(timezone.utc))
     db.add(comment)
+    db.flush()
+    if parent is not None and parent.author_id != user.id:
+        queue_notification(
+            db,kind='reply',recipient_id=parent.author_id,actor_id=user.id,
+            target_id=comment.id,post_id=post_id,comment_id=comment.id)
+    if post.author_id != user.id and (
+        parent is None or parent.author_id != post.author_id
+    ):
+        queue_notification(
+            db,kind='comment',recipient_id=post.author_id,actor_id=user.id,
+            target_id=comment.id,post_id=post_id,comment_id=comment.id)
     db.commit()
     db.refresh(comment)
     return CommentOut(id=comment.id, post_id=post_id, username=user.username,
@@ -273,6 +306,9 @@ def follow_user(
     add_once(
         db, Follow(follower_id=user.id, following_id=target.id), Follow,
         (user.id, target.id), lambda: db.get(User, target.id) is not None,
+        on_insert=lambda: queue_notification(
+            db,kind='follow',recipient_id=target.id,actor_id=user.id,
+            target_id=target.id),
     )
     return Response(status_code=204)
 
@@ -286,7 +322,11 @@ def unfollow_user(
     target = get_named_user(db, username)
     if target.id == user.id:
         raise HTTPException(status_code=400, detail='You cannot unfollow yourself')
-    remove_if_present(db, Follow, (user.id, target.id))
+    remove_if_present(
+        db, Follow, (user.id, target.id),
+        on_remove=lambda: remove_notification(db,kind='follow',
+                                              actor_id=user.id,target_id=target.id),
+    )
     return Response(status_code=204)
 
 

@@ -642,3 +642,33 @@ de hashtags, e indexa también etiquetas presentes en publicaciones existentes.
 compositor. Los FITS científicos siguen entrando desde el explorador. Para
 producción a gran escala conviene incorporar moderación de archivos, cuotas por
 cuenta y limpieza periódica de objetos huérfanos si falla la eliminación S3.
+
+
+## Notificaciones sociales (campana)
+
+El panel **Notificaciones** muestra eventos reales, persistentes en PostgreSQL:
+cohetes recibidos, comentarios, respuestas, compartidos y nuevos seguidores.
+No se envían notificaciones por las propias acciones del usuario, ni por
+guardados privados. La campana muestra el número de eventos sin leer (99+
+como máximo visual), consulta el servidor periódicamente y actualiza al
+recuperar el foco de la pestaña. La bandeja se refresca cada 20 segundos
+mientras está abierta.
+
+Endpoints autenticados:
+- `GET /v1/users/me/notifications/count` → `{"unread": 0}`
+- `GET /v1/users/me/notifications?limit=20&offset=0` → página de eventos
+- `POST /v1/users/me/notifications/{id}/read` → marcar una como leída
+- `POST /v1/users/me/notifications/read-all` → marcar todas como leídas
+
+El servidor **crea cada aviso en la misma transacción** que la interacción.
+Los like, follow y repost repetidos no duplican avisos; deshacer la
+interacción los retira. Borrar una publicación, un comentario o una cuenta
+elimina automáticamente eventos dependientes mediante claves foráneas.
+Una publicación que pase a privada deja de aparecer en bandejas ajenas y
+de contribuir a sus contadores de no leídas.
+
+Se conservan los avisos a través de recargas y varias pestañas. Al pulsar
+una notificación de comentario se abre la conversación de la publicación;
+seguir a alguien abre su perfil. **No** hay Web Push, SMS, correo electrónico,
+solicitudes de amistad ni notificaciones simuladas en esta fase.
+
