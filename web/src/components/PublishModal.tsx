@@ -52,6 +52,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
   const [dragging,setDragging]=useState(false);
   const fileRef=useRef<HTMLInputElement>(null);
   const photoCounter=useRef(0);
+  const dialogRef=useRef<HTMLDivElement>(null);
   const tags=extractPostHashtags(caption);
   const hasContent=Boolean(caption.trim()||photos.length||(showLink&&link.trim())||(attach&&region));
 
@@ -61,8 +62,24 @@ export default function PublishModal({region,onClose,onDone}:Props){
     return()=>{document.body.style.overflow=previous;};
   },[]);
   useEffect(()=>{
+    const previous=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    document.getElementById('caption')?.focus({preventScroll:true});
+    return()=>previous?.focus({preventScroll:true});
+  },[]);
+  useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'&&!busy&&!processing)onClose();
+      if(event.key==='Escape'&&!busy&&!processing){event.preventDefault();onClose();return;}
+      if(event.key!=='Tab')return;
+      const controls=Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]'
+      )??[]).filter(element=>element.offsetParent!==null);
+      if(!controls.length)return;
+      const first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey&&(document.activeElement===first||!dialogRef.current?.contains(document.activeElement))){
+        event.preventDefault();last.focus();
+      }else if(!event.shiftKey&&(document.activeElement===last||!dialogRef.current?.contains(document.activeElement))){
+        event.preventDefault();first.focus();
+      }
     };
     window.addEventListener('keydown',handler);
     return()=>window.removeEventListener('keydown',handler);
@@ -129,7 +146,7 @@ export default function PublishModal({region,onClose,onDone}:Props){
 
   return <div className="modal compose-overlay" role="presentation"
     onMouseDown={event=>{if(event.target===event.currentTarget&&!busy&&!processing)onClose();}}>
-    <div className="compose-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-title">
+    <div ref={dialogRef} className="compose-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-title">
       <div className="compose-header">
         <div className="compose-icon"><AstroGlyph name="spark" size={26}/></div>
         <div>

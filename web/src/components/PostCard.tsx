@@ -110,7 +110,9 @@ export default function PostCard({post:initial,onProfile,onExplore,onRequireLogi
     <div className="post-head">
       <button className="avatar-button" type="button" onClick={()=>onProfile(post.username)}><Avatar name={post.username}/></button>
       <div className="who"><button className="who-link" onClick={()=>onProfile(post.username)}>{post.username}</button>
-        <small>{region ? `RA ${formatRa(region.ra_deg)} · Dec ${formatDec(region.dec_deg)}` : 'Sin coordenadas · publicación de texto'}</small>
+        <small>{region ? `RA ${formatRa(region.ra_deg)} · Dec ${formatDec(region.dec_deg)}` :
+          post.media?.length?'Fotografías de la comunidad':
+          post.link_url?'Recurso astronómico compartido':'Publicación de texto'}</small>
       </div>
       <span className="time">{ago(post.created_at)}</span>
     </div>
