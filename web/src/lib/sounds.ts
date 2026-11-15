@@ -10,7 +10,7 @@ export type UISound =
   | 'like' | 'unlike' | 'bookmark' | 'unbookmark'
   | 'comment' | 'repost' | 'unrepost' | 'follow' | 'unfollow'
   | 'publish' | 'search' | 'mark' | 'success' | 'error'
-  | 'game-win' | 'game-miss';
+  | 'game-win' | 'game-miss' | 'milestone';
 
 export type SoundSettings = { enabled: boolean; volume: number };
 export const SOUND_STORAGE_KEY = 'astrogram.sound.v1';
@@ -71,6 +71,16 @@ const PALETTE: Readonly<Record<UISound, readonly Voice[]>> = {
               {at:.095,hz:880,duration:.14,level:.35},
               {at:.20,hz:1320,duration:.22,level:.35}],
   'game-miss':[{hz:370,to:270,duration:.155,level:.19,type:'triangle'}],
+  // A gentle ascending six-note finale, under the existing global master level.
+  milestone: [
+    {hz:392,duration:.24,level:.24,type:'triangle'},
+    {at:.13,hz:493.88,duration:.27,level:.27,type:'triangle'},
+    {at:.27,hz:587.33,duration:.3,level:.29,type:'triangle'},
+    {at:.43,hz:783.99,duration:.35,level:.32,type:'triangle'},
+    {at:.62,hz:987.77,duration:.39,level:.29},
+    {at:.77,hz:1174.66,duration:.49,level:.28},
+    {at:.78,hz:587.33,duration:.46,level:.14,type:'triangle'},
+  ],
 };
 
 export function normalizeSoundSettings(value: unknown): SoundSettings {
