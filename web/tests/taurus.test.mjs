@@ -18,7 +18,7 @@ test('Taurus names stay off public navigation; DOB is required for the private a
   const explorer=readFileSync(new URL('../src/pages/ExplorerPage.tsx',import.meta.url),'utf8');
   assert.doesNotMatch(app,/resolveSkyName|Buscar personas, Tauro/);
   assert.doesNotMatch(explorer,/constellation-lookup|locateByName|Buscar constelación u objeto/);
-  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id==='taurus'/);
+  assert.match(app,/constellationForBirthday\(user\?\.birth_date\)\?\.id===route\.constellation/);
   assert.equal(findTaurusTarget('Aldebarán')?.id,'aldebaran');
 });
 
