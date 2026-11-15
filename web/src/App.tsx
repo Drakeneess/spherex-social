@@ -686,6 +686,12 @@ export default function App(){
       <GlobalSearch currentQuery={route.page==='search'?route.q:undefined}
         mobileOpen={mobileSearchOpen} onMobileOpenChange={setMobileSearchOpen}
         onNavigate={go}/>
+      <button className="navbar-search-trigger" type="button" data-global-search-toggle
+        aria-label={mobileSearchOpen?'Cerrar búsqueda':'Abrir búsqueda'}
+        aria-expanded={mobileSearchOpen} title="Buscar en AstroGram"
+        onClick={()=>setMobileSearchOpen(value=>!value)}>
+        <Search size={21}/>
+      </button>
       <nav className="nav" aria-label="Navegación principal">
         <button className="nav-search-mobile" type="button" data-global-search-toggle
           aria-label={mobileSearchOpen?'Cerrar búsqueda':'Abrir búsqueda'}
@@ -693,11 +699,11 @@ export default function App(){
           onClick={()=>setMobileSearchOpen(v=>!v)}>
           <Search size={19}/>
         </button>
-        <button data-tour="nav-home" className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio">
+        <button data-tour="nav-home" className={route.page==='home'?'on':''} onClick={()=>go('home')} title="Inicio" aria-label="Inicio">
           <AstroGlyph name="home" size={19}/><span className="t">Inicio</span></button>
-        <button data-tour="nav-explore" className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar">
+        <button data-tour="nav-explore" className={route.page==='explore'?'on':''} onClick={()=>go('explore')} title="Explorar" aria-label="Explorar">
           <AstroGlyph name="telescope" size={19}/><span className="t">Explorar</span></button>
-        <button data-tour="nav-game" className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego">
+        <button data-tour="nav-game" className={route.page==='game'?'on':''} onClick={()=>go('game')} title="Juego" aria-label="Juego">
           <AstroGlyph name="target" size={19}/><span className="t">Juego</span></button>
         {user&&<>
           <button className={route.page==='activity'?'on':''} onClick={()=>go('activity')}
@@ -706,12 +712,12 @@ export default function App(){
             {unreadCount>0&&<span className="notifications-nav-badge" aria-hidden="true">
               {unreadCount>99?'99+':unreadCount}</span>}
           </button>
-          <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
+          <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil" aria-label="Perfil">
             <Avatar name={user.username} version={user.avatar_version}
               colorStart={user.avatar_color_start} colorEnd={user.avatar_color_end} size={26}/><span className="t">Perfil</span></button>
-          <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
+          <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes" aria-label="Ajustes">
             <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
-          <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()}>
+          <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()} aria-label="Crear publicación" title="Publicar">
             <AstroGlyph name="spark" size={15}/><span className="t">Publicar</span></button>
         </>}
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
