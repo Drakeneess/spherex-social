@@ -615,7 +615,7 @@ export default function App(){
         observationId={explorerVisible?route.observationId:undefined}
         initialRa={explorerVisible?route.ra:undefined}
         initialDec={explorerVisible?route.dec:undefined}
-        constellation={explorerVisible&&constellationForBirthday(user?.birth_date)?.id==='taurus'
+        constellation={explorerVisible&&constellationForBirthday(user?.birth_date)?.id===route.constellation
           ?route.constellation:undefined}
         prefillOnly={explorerVisible&&Boolean(route.prefill)}
         active={explorerVisible}

@@ -7,8 +7,8 @@ import AstroGlyph from '../components/AstroGlyph';
 import SearchProgress, { type SearchTrace } from '../components/SearchProgress';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import RevealEditor from '../components/RevealEditor';
-import TaurusChart from '../components/TaurusChart';
-import { TAURUS_CENTER, type SkyPosition } from '../lib/taurus';
+import ZodiacChart from '../components/ZodiacChart';
+import { getZodiacAtlas, type SkyPoint } from '../lib/zodiacAtlas';
 
 const CURRENT_SKY_JOB = 'astrogram.sky.active.v1';
 const terminalStatuses = new Set(['complete', 'partial', 'empty', 'failed', 'cancelled']);
@@ -44,8 +44,9 @@ export default function ExplorerPage({
   const [detector, setDetector] = useState('2');
   const [epochs, setEpochs] = useState('12');
   const [demo, setDemo] = useState(false);
-  const [showTaurus,setShowTaurus] = useState(false);
-  const [selectedName,setSelectedName] = useState('Región de Tauro');
+  const [showAtlas,setShowAtlas] = useState(false);
+  const [selectedName,setSelectedName] = useState('Región del cielo');
+  const atlas=useMemo(()=>getZodiacAtlas(constellation??''),[constellation]);
   // The explorer uses the fast discovery method by default; TAP remains a backend fallback.
   const catalogMethod: 'sia2' | 'tap' = 'sia2';
 
@@ -298,17 +299,21 @@ export default function ExplorerPage({
 
   useEffect(() => {
     if(!active)return;
-    if(constellation!=='taurus'){
-      setShowTaurus(false);
+    if(!atlas){
+      setShowAtlas(false);
       return;
     }
-    setShowTaurus(true);
-    setRa(String(TAURUS_CENTER.ra));
-    setDec(String(TAURUS_CENTER.dec));
-    setSelectedName('Centro aproximado de Tauro');
+    setShowAtlas(true);
+    const nearest=atlas.targets.reduce((best,current)=>
+      Math.abs(current.ra-atlas.sign.anchor.ra)+Math.abs(current.dec-atlas.sign.anchor.dec) <
+      Math.abs(best.ra-atlas.sign.anchor.ra)+Math.abs(best.dec-atlas.sign.anchor.dec)
+        ?current:best,atlas.targets[0]);
+    setRa(String(nearest.ra));
+    setDec(String(nearest.dec));
+    setSelectedName(nearest.name);
     setDemo(false);
-    // Birthday unlock: never start a server job until the user presses Search.
-  },[active,constellation]);
+    // The easter egg prepares a field, but never submits IRSA work on open.
+  },[active,atlas]);
 
   useEffect(() => {
     if (!observationId) return;
@@ -383,7 +388,7 @@ export default function ExplorerPage({
     const params = readParams();
     if (params) void load(params);
   }
-  function selectTaurusPosition(point:SkyPosition,name:string){
+  function selectZodiacPosition(point:SkyPoint,name:string){
     setRa(String(Number(point.ra.toFixed(6))));
     setDec(String(Number(point.dec.toFixed(6))));
     setSelectedName(name);
@@ -466,10 +471,10 @@ export default function ExplorerPage({
     ? `RA ${formatRa(result.ra)} · Dec ${formatDec(result.dec)}`
     : '–';
   return <main className="wrap single epoch-explorer" aria-hidden={!active ? true : undefined}>
-    {showTaurus&&<TaurusChart
+    {showAtlas&&atlas&&<ZodiacChart atlas={atlas}
       selected={{ra:Number(ra),dec:Number(dec)}} selectedName={selectedName}
-      onSelect={selectTaurusPosition} onSearch={searchSelectedRegion}
-      loading={loading} onClose={()=>setShowTaurus(false)}/>}
+      onSelect={selectZodiacPosition} onSearch={searchSelectedRegion}
+      loading={loading} onClose={()=>setShowAtlas(false)}/>}
     <div className="xgrid epoch-grid">
       <section className="card epoch-viewer">
         <div className="card-h"><span><AstroGlyph name="telescope" size={17}/> Explorador de épocas</span><span className="chip">{badge}</span></div>
