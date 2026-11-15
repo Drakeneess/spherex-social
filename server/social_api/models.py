@@ -124,6 +124,36 @@ class PostHashtag(Base):
     __table_args__ = (Index('ix_post_hashtags_tag', 'tag'),)
 
 
+class Notification(Base):
+    """Private, durable social event for one recipient.
+
+    Cascading foreign keys hide deleted users/posts/comments rather than
+    leaving stale links or exposing content after it disappears.
+    """
+    __tablename__ = 'notifications'
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=new_uuid)
+    recipient_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(180), nullable=False, unique=True)
+    post_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('posts.id', ondelete='CASCADE'), nullable=True)
+    comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey('comments.id', ondelete='CASCADE'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        CheckConstraint("kind IN ('like','comment','reply','repost','follow')",
+                        name='ck_notifications_kind'),
+        CheckConstraint('recipient_id <> actor_id', name='ck_notifications_not_self'),
+        Index('ix_notifications_recipient_created', 'recipient_id', 'created_at'),
+        Index('ix_notifications_recipient_unread', 'recipient_id', 'read_at'),
+    )
+
+
 class PostLike(Base):
     __tablename__ = 'post_likes'
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
