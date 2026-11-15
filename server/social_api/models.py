@@ -3,9 +3,9 @@
 Scientific image data belongs in object storage, not in PostgreSQL bytea fields.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON,
+    Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, JSON,
     SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -28,8 +28,21 @@ class User(Base):
     website: Mapped[str | None] = mapped_column(String(300), nullable=True)
     avatar_version: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     cover_version: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    avatar_color_start: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    avatar_color_end: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    cover_color_start: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    cover_color_end: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    show_birthday: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (CheckConstraint("length(username) >= 3", name='ck_users_username_length'),)
+
+    @property
+    def birthday_public(self) -> str | None:
+        """Only month/day may be shared, on explicit opt-in; never expose year."""
+        if not self.show_birthday or self.birth_date is None:
+            return None
+        return f'{self.birth_date.month:02d}-{self.birth_date.day:02d}'
 
 
 class AuthSession(Base):

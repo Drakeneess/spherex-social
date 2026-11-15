@@ -3,9 +3,10 @@ import { Bookmark, Heart, Link2, MessageCircle, Repeat2, Telescope, ExternalLink
 import AstroGlyph from './AstroGlyph';
 import { signalTask, signalNudge } from '../lib/onboarding';
 import { formatRa, formatDec } from '../lib/coordinates';
-import { api, hasToken, type Comment, type Observation, type Post } from '../lib/api';
+import { api, hasToken, type Comment, type Observation, type Post, type Profile } from '../lib/api';
 import PostBlinkPreview from './PostBlinkPreview';
 import PostMediaGallery from './PostMediaGallery';
+import { fallbackAvatarColors, safeHexColor, themeGradient } from '../lib/profileTheme';
 
 const ago = (date:string) => {
   const value = new Date(date).getTime();
@@ -16,46 +17,71 @@ const ago = (date:string) => {
   if(mins < 1440) return `hace ${Math.floor(mins/60)} h`;
   return `hace ${Math.floor(mins/1440)} días`;
 };
-// One public profile lookup per unique author across cards; never fetch
-// missing-avatar media URLs or expose private bucket keys.
-const avatarCache=new Map<string,Promise<string|null>>();
-function cachedAvatarVersion(username:string):Promise<string|null>{
+// Cache the public visual identity per author so a long feed only fetches
+// each author's palette and picture version once per session.
+type AvatarIdentity={
+  version:string|null;
+  colorStart:string|null;
+  colorEnd:string|null;
+};
+const avatarCache=new Map<string,Promise<AvatarIdentity>>();
+const identityFromProfile=(p:Pick<Profile,'avatar_version'|'avatar_color_start'|'avatar_color_end'>):AvatarIdentity=>({
+  version:p.avatar_version,colorStart:p.avatar_color_start,colorEnd:p.avatar_color_end,
+});
+function cachedAvatarIdentity(username:string):Promise<AvatarIdentity>{
   const key=username.toLowerCase();
   let pending=avatarCache.get(key);
   if(!pending){
-    pending=api.user(key).then(profile=>profile.avatar_version).catch(()=>{
+    pending=api.user(key).then(identityFromProfile).catch(()=>{
       avatarCache.delete(key);
-      return null;
+      return {version:null,colorStart:null,colorEnd:null};
     });
     avatarCache.set(key,pending);
   }
   return pending;
 }
-export function updateAvatarCache(username:string,version:string|null){
-  avatarCache.set(username.toLowerCase(),Promise.resolve(version));
+export function updateAvatarCache(username:string,profile:Profile){
+  const identity=identityFromProfile(profile);
+  avatarCache.set(username.toLowerCase(),Promise.resolve(identity));
   window.dispatchEvent(new CustomEvent('astrogram:avatar-updated',{
-    detail:{username:username.toLowerCase(),version},
+    detail:{username:username.toLowerCase(),identity},
   }));
 }
-export function Avatar({name,size=36,version}:{name:string;size?:number;version?:string|null}) {
-  const [resolved,setResolved]=useState<string|null>(version??null);
+export function Avatar({name,size=36,version,colorStart,colorEnd}:{
+  name:string;size?:number;version?:string|null;
+  colorStart?:string|null;colorEnd?:string|null;
+}){
+  const ownIdentity={
+    version:version??null,
+    colorStart:colorStart??null,
+    colorEnd:colorEnd??null,
+  };
+  const [stored,setStored]=useState<AvatarIdentity>(ownIdentity);
   const [broken,setBroken]=useState(false);
   useEffect(()=>{
     setBroken(false);
-    if(version!==undefined){setResolved(version);return;}
+    if(version!==undefined && colorStart!==undefined && colorEnd!==undefined){
+      setStored({version,colorStart,colorEnd});return;
+    }
     let active=true;
-    void cachedAvatarVersion(name).then(value=>{if(active)setResolved(value);});
+    void cachedAvatarIdentity(name).then(value=>{if(active)setStored(value);});
     const listener=(event:Event)=>{
-      const data=(event as CustomEvent<{username:string;version:string|null}>).detail;
-      if(data?.username===name.toLowerCase()){setResolved(data.version);setBroken(false);}
+      const data=(event as CustomEvent<{username:string;identity:AvatarIdentity}>).detail;
+      if(data?.username===name.toLowerCase()){
+        setStored(data.identity);setBroken(false);
+      }
     };
     window.addEventListener('astrogram:avatar-updated',listener);
     return()=>{active=false;window.removeEventListener('astrogram:avatar-updated',listener);};
-  },[name,version]);
-  const hue=Array.from(name).reduce((sum,ch)=>sum+ch.charCodeAt(0)*17,0)%360;
-  const src=resolved&&!broken?api.profileMediaUrl(name,'avatar',resolved):null;
+  },[name,version,colorStart,colorEnd]);
+  const defaultColors=fallbackAvatarColors(name);
+  const src=stored.version&&!broken?api.profileMediaUrl(name,'avatar',stored.version):null;
+  const colors={
+    start:safeHexColor(stored.colorStart,defaultColors.start),
+    end:safeHexColor(stored.colorEnd,defaultColors.end),
+  };
   return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.34),
-    background:`linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue+70)%360} 76% 48%))`}}>
+    lineHeight:1,background:themeGradient(colors)}}>
     {src?<img src={src} alt="" loading="lazy" decoding="async"
       onError={()=>setBroken(true)}/>:name.slice(0,2).toUpperCase()}
   </span>;

@@ -10,7 +10,7 @@ import hashlib
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 import jwt
@@ -82,11 +82,18 @@ class PublicProfile(BaseModel):
     website: str | None
     avatar_version: uuid.UUID | None
     cover_version: uuid.UUID | None
+    avatar_color_start: str | None
+    avatar_color_end: str | None
+    cover_color_start: str | None
+    cover_color_end: str | None
+    birthday_public: str | None
     created_at: datetime
 
 
 class PrivateProfile(PublicProfile):
     email: EmailStr
+    birth_date: date | None
+    show_birthday: bool
 
 
 class ProfilePatch(BaseModel):
@@ -94,6 +101,28 @@ class ProfilePatch(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     bio: str | None = Field(default=None, max_length=500)
     website: str | None = Field(default=None, max_length=300)
+    avatar_color_start: str | None = None
+    avatar_color_end: str | None = None
+    cover_color_start: str | None = None
+    cover_color_end: str | None = None
+    birth_date: date | None = None
+    show_birthday: bool = False
+
+    @field_validator('avatar_color_start','avatar_color_end','cover_color_start','cover_color_end')
+    @classmethod
+    def valid_hex_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+            raise ValueError('Color inválido: se requiere #RRGGBB')
+        return value.lower()
+
+    @field_validator('birth_date')
+    @classmethod
+    def valid_birth_date(cls, value: date | None) -> date | None:
+        if value is not None and (value > datetime.now(timezone.utc).date() or value.year < 1900):
+            raise ValueError('La fecha de nacimiento debe ser válida y no puede estar en el futuro')
+        return value
 
     @field_validator('website')
     @classmethod
@@ -312,8 +341,16 @@ def patch_me(
     user: Annotated[User, Depends(current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    for key in body.model_fields_set:
+    fields = body.model_fields_set
+    # A public birthday can only exist when an actual date was supplied.
+    proposed_birth_date = body.birth_date if 'birth_date' in fields else user.birth_date
+    proposed_visible = body.show_birthday if 'show_birthday' in fields else user.show_birthday
+    if proposed_visible and proposed_birth_date is None:
+        raise HTTPException(status_code=422, detail='Añade una fecha antes de mostrar tu cumpleaños')
+    for key in fields:
         setattr(user, key, getattr(body, key))
+    if user.birth_date is None:
+        user.show_birthday = False
     db.commit()
     db.refresh(user)
     return user

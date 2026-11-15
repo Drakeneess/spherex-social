@@ -13,6 +13,7 @@ import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
 import NotificationsPage from './components/NotificationsPage';
 import PostDetailPage from './components/PostDetailPage';
+import { DEFAULT_COVER, safeHexColor, themeGradient } from './lib/profileTheme';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
 import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
@@ -195,7 +196,8 @@ function FeedPage({user,onProfile,onExplore,onLogin,onPublish,tasks,guideHidden,
         </ul>
       </section>
       <button className="card mini-profile" type="button" onClick={()=>onProfile(user.username)}>
-        <Avatar name={user.username} version={user.avatar_version} size={48}/>
+        <Avatar name={user.username} version={user.avatar_version}
+          colorStart={user.avatar_color_start} colorEnd={user.avatar_color_end} size={48}/>
         <span className="mini-profile-details"><b>{user.display_name}</b><small>@{user.username}</small></span>
       </button>
       <p className="feed-disclaimer">Las publicaciones con observación muestran vistas reales preliminares de SPHEREx cuando hay al menos dos épocas. El parpadeo no confirma por sí solo movimiento propio.</p>
@@ -244,10 +246,15 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           {person.cover_version
             ? <img src={api.profileMediaUrl(person.username,'cover',person.cover_version)}
                 alt="Portada del perfil" decoding="async"/>
-            : <div className="profile-cover-placeholder" aria-hidden="true"><AstroGlyph name="galaxy" size={54}/></div>}
+            : <div className="profile-cover-placeholder" aria-hidden="true"
+              style={{background:themeGradient({
+                start:safeHexColor(person.cover_color_start,DEFAULT_COVER.start),
+                end:safeHexColor(person.cover_color_end,DEFAULT_COVER.end),
+              })}}><AstroGlyph name="galaxy" size={54}/></div>}
         </div>
         <div className="profile-hero-content">
-          <div className="profile-avatar"><Avatar name={person.username} version={person.avatar_version} size={90}/></div>
+          <div className="profile-avatar"><Avatar name={person.username} version={person.avatar_version}
+            colorStart={person.avatar_color_start} colorEnd={person.avatar_color_end} size={90}/></div>
           <div className="profile-summary"><h1>{person.display_name}</h1><div className="un">@{person.username}</div>
         <p className={person.bio?'':'profile-bio-placeholder'}>{person.bio||(mine?'Añade una bio para contarle al universo quién eres.':'Sin bio todavía.')}</p>
         {person.website&&<a className="profile-website" href={person.website}
@@ -255,6 +262,11 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           <AstroGlyph name="spark" size={15}/>
           {(()=>{try{return new URL(person.website).hostname;}catch{return 'Enlace personal';}})()}
         </a>}
+        {person.birthday_public&&<div className="profile-birthday" aria-label="Cumpleaños público">
+          <span>🎂</span> Cumpleaños: {new Intl.DateTimeFormat('es',{
+            day:'numeric',month:'long',timeZone:'UTC',
+          }).format(new Date(`2000-${person.birthday_public}T12:00:00Z`))}
+        </div>}
         <div className="stats"><span><b>{posts.length}</b> publicaciones y compartidos</span><span><b>{stats?.followers_count??0}</b> seguidores</span>
           <span><b>{stats?.following_count??0}</b> siguiendo</span>
           <span><b>{new Date(person.created_at).toLocaleDateString('es',{month:'short',year:'numeric'})}</b> se unió</span></div>
@@ -581,7 +593,8 @@ export default function App(){
               {unreadCount>99?'99+':unreadCount}</span>}
           </button>
           <button data-tour="nav-profile" className={route.page==='profile'?'on':''} onClick={()=>navigateProfile(user.username)} title="Perfil">
-            <Avatar name={user.username} version={user.avatar_version} size={26}/><span className="t">Perfil</span></button>
+            <Avatar name={user.username} version={user.avatar_version}
+              colorStart={user.avatar_color_start} colorEnd={user.avatar_color_end} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes">
             <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
           <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()}>

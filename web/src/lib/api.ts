@@ -7,6 +7,13 @@ export type Profile = {
   website: string|null;
   avatar_version: string|null;
   cover_version: string|null;
+  avatar_color_start: string|null;
+  avatar_color_end: string|null;
+  cover_color_start: string|null;
+  cover_color_end: string|null;
+  birthday_public: string|null;
+  birth_date?: string|null;
+  show_birthday?: boolean;
   created_at: string;
   email?: string;
 };
@@ -270,7 +277,12 @@ export const api = {
     try{localStorage.setItem('astrogram.auth.logout',String(Date.now()));}catch{}
   },
   me: () => get<Profile>('/v1/users/me', true),
-  patchMe: (data: {display_name?:string;bio?:string|null;website?:string|null}) =>
+  patchMe: (data: {
+    display_name?:string;bio?:string|null;website?:string|null;
+    avatar_color_start?:string|null;avatar_color_end?:string|null;
+    cover_color_start?:string|null;cover_color_end?:string|null;
+    birth_date?:string|null;show_birthday?:boolean;
+  }) =>
     write<Profile>('PATCH','/v1/users/me',data),
   profileMediaUrl: (username:string,kind:'avatar'|'cover',version:string) =>
     `${BASE}/v1/users/${encodeURIComponent(username)}/media/${kind}?v=${encodeURIComponent(version)}`,
