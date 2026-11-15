@@ -12,6 +12,7 @@ import math
 import os
 import threading
 import time
+from functools import lru_cache
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,7 @@ from social_api.db import get_session_factory
 from social_api.models import SkySearchJob
 from sky_storage import get_preview, put_preview, put_science, get_science_pixels
 from sky_reveal import RevealRecipe, reveal_png
+from sky_candidate_search import analyze_motion
 
 router = APIRouter(prefix="/api/sky/jobs", tags=["persistent sky exploration"])
 logger = logging.getLogger("astrogram.sky.persistent")
@@ -145,6 +147,79 @@ def create_job(payload: SearchRequest):
 @router.get("/{job_id}")
 def get_job(job_id: uuid.UUID):
     return JSONResponse(_row(job_id), headers={"Cache-Control": "private, no-store"})
+
+
+# Candidate analysis is explicit and read-only. A bounded worker guard and an LRU
+# on immutable terminal jobs avoid expensive repeated S3 reads across visits.
+_candidate_slots = threading.BoundedSemaphore(2)
+
+
+@lru_cache(maxsize=24)
+def _analyze_terminal_job(job_id: uuid.UUID) -> dict:
+    with _factory()() as db:
+        job = db.get(SkySearchJob, job_id)
+        if job is None or job.status not in ("complete", "partial"):
+            raise HTTPException(status_code=409, detail="La búsqueda aún no terminó")
+        if job.demo or job.source == "simulated":
+            raise HTTPException(status_code=422, detail="Las imágenes simuladas no admiten análisis científico")
+        observations = (job.result_data or {}).get("observations", [])
+        timestamps = {
+            item["index"]: item.get("mjd")
+            for item in observations
+            if isinstance(item, dict) and isinstance(item.get("index"), int)
+        }
+        indices = [
+            item["index"]
+            for item in (job.frame_states or [])
+            if item.get("status") == "ready"
+            and (item.get("metadata") or {}).get("raw_available")
+            and isinstance(timestamps.get(item.get("index")), (int, float))
+        ]
+        query_ra, query_dec = job.ra, job.dec
+        total = len(job.frame_states or [])
+    frames = []
+    skipped = 0
+    for index in indices:
+        try:
+            pixels = get_science_pixels(job_id, index)
+            frames.append((index, float(timestamps[index]), pixels))
+        except Exception:
+            skipped += 1
+            logger.warning("Sky candidate search skipped unreadable FITS reprojection")
+    result = analyze_motion(frames, query_ra, query_dec)
+    return {
+        "job_id": str(job_id),
+        "method": "registered-FITS-temporal-tracklets-v1",
+        "frames_total": total,
+        "frames_skipped": skipped,
+        **result,
+        "limitations": [
+            "Solo señala trayectorias preliminares; no confirma objetos ni Planet X.",
+            "Sin ajuste de PSF, ruido instrumental ni respuesta espectral por época.",
+            "No compara con asteroides catalogados ni realiza ajuste orbital.",
+            "Una búsqueda sin candidatos no descarta movimientos débiles o lentos.",
+        ],
+    }
+
+
+@router.get("/{job_id}/candidates")
+def get_moving_candidates(job_id: uuid.UUID):
+    """Bounded, no-upload-on-read motion search using stored float FITS pixels."""
+    with _factory()() as db:
+        row = db.get(SkySearchJob, job_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="No se encontró la búsqueda")
+        if row.demo or row.source == "simulated":
+            raise HTTPException(status_code=422, detail="Se necesitan observaciones reales")
+        if row.status not in ("complete", "partial"):
+            raise HTTPException(status_code=409, detail="La búsqueda debe terminar antes de analizar movimiento")
+    if not _candidate_slots.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Hay análisis en curso. Inténtalo de nuevo.")
+    try:
+        output = _analyze_terminal_job(job_id)
+    finally:
+        _candidate_slots.release()
+    return JSONResponse(output, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/{job_id}/frames/{index}")
