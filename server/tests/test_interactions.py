@@ -500,4 +500,13 @@ def test_actual_railway_entrypoint_mounts_every_notification_endpoint():
             for route in entrypoint.routes
             for method in getattr(route, 'methods', ())
         }
-        assert expected.issubset(routes), f'Missing notification routes: {expected-routes}'
+        if not expected.issubset(routes):
+            import app as deployed_module
+            from social_api.notifications import router as notification_router
+            raise AssertionError(
+                f'Missing notification routes: {expected-routes}; '
+                f'app file={deployed_module.__file__!r}, '
+                f'entrypoint is production={entrypoint is deployed_module.app}; '
+                f'registered user routes={[p for p in sorted(routes) if p[1].startswith("/v1/users/")]}; '
+                f'notification router routes={[(r.path, list(getattr(r, "methods", []))) for r in notification_router.routes]}'
+            )
