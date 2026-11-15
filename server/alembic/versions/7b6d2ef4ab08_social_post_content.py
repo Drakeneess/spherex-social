@@ -4,6 +4,7 @@ Revision ID: 7b6d2ef4ab08
 Revises: 5c829df0a3e1
 """
 import re
+import uuid
 from alembic import op
 import sqlalchemy as sa
 
@@ -28,7 +29,7 @@ def upgrade():
         tags={t for match in regex.finditer(caption or '') if len(t:=match.group(1).casefold())<=30}
         if tags:
             connection.execute(table.insert(),[
-                {'post_id':post_id,'tag':tag} for tag in sorted(tags)][:12])
+                {'post_id':uuid.UUID(str(post_id)),'tag':tag} for tag in sorted(tags)][:12])
 
 
 def downgrade():

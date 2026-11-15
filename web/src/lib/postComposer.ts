@@ -1,6 +1,6 @@
 /** Hashtags in the caption are the source of truth, not a second hidden list. */
-const REGEX=/(?<![\w#])#([^\W_][\w]{1,29})/gu;
-const VALID=/^[^\W_][\w]{1,29}$/u;
+const REGEX=/(?<![\p{L}\p{N}_#])#([\p{L}\p{N}][\p{L}\p{N}_]{1,29})/gu;
+const VALID=/^[\p{L}\p{N}][\p{L}\p{N}_]{1,29}$/u;
 
 export function extractPostHashtags(value:string):string[]{
   return [...new Set([...value.matchAll(REGEX)]
