@@ -5,7 +5,7 @@ Scientific image data belongs in object storage, not in PostgreSQL bytea fields.
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON,
+    Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON,
     SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -129,3 +129,46 @@ class ProcessingJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     __table_args__ = (CheckConstraint("status IN ('pending','running','success','failed')", name='ck_jobs_status'),)
+
+
+class SkySearchJob(Base):
+    """Durable sky exploration, independent of short-lived login tokens.
+
+    Catalog data and per-frame status live in PostgreSQL. Rendered PNGs live
+    in S3 object storage, never in database BYTEA or process-local memory.
+    The random UUID is a capability: do not store account secrets here.
+    """
+
+    __tablename__ = 'sky_search_jobs'
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    ra: Mapped[float] = mapped_column(Float, nullable=False)
+    dec: Mapped[float] = mapped_column(Float, nullable=False)
+    size_arcmin: Mapped[float] = mapped_column(Float, nullable=False)
+    detector: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    max_frames: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='0')
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default='queued')
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default='sia2')
+    total_matches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    records_data: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    frame_states: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    discovery_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint('ra >= 0 AND ra < 360', name='ck_sky_search_ra'),
+        CheckConstraint('dec BETWEEN -90 AND 90', name='ck_sky_search_dec'),
+        CheckConstraint('size_arcmin BETWEEN 1 AND 12', name='ck_sky_search_size'),
+        CheckConstraint('detector BETWEEN 1 AND 6', name='ck_sky_search_detector'),
+        CheckConstraint('max_frames BETWEEN 2 AND 16', name='ck_sky_search_frames'),
+        CheckConstraint(
+            "status IN ('queued','catalog','frames','complete','partial','empty','failed','cancelled')",
+            name='ck_sky_search_status',
+        ),
+        Index('ix_sky_search_status_lease', 'status', 'lease_until'),
+    )

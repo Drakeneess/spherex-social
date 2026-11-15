@@ -926,3 +926,10 @@ def frame(search_id: str, index: int):
     with _lock:
         session.frames[index] = result
     return JSONResponse(result, headers={"Cache-Control": "private, max-age=600"})
+
+
+# Durable sky searches: PostgreSQL metadata + private S3 PNGs. Keep the
+# short-lived legacy /api/search session endpoints for existing consumers.
+from persistent_sky import router as persistent_sky_router, start_dispatcher  # noqa: E402
+app.include_router(persistent_sky_router)
+app.add_event_handler("startup", start_dispatcher)

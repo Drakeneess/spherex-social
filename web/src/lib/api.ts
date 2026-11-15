@@ -43,6 +43,19 @@ export type SkySearch = {
   ra: number; dec: number; detector: number;
   observations: {index: number;date: string;release: string;mjd: number}[];
 };
+export type PersistentSkyJob = {
+  job_id: string;
+  status: 'queued' | 'catalog' | 'frames' | 'complete' | 'partial' | 'empty' | 'failed' | 'cancelled';
+  source: 'sia2' | 'simulated';
+  created_at: string;
+  updated_at: string;
+  query: {ra:number;dec:number;size_arcmin:number;detector:number;max_frames:number;demo:boolean};
+  total_matches: number|null;
+  result: SkySearch|null;
+  discovery: {method:string;elapsed_ms?:number;attempts?:number;query_status?:string}|null;
+  frames: {index:number;status:'pending'|'loading'|'ready'|'failed';error?:string}[];
+  error: string|null;
+};
 export type TapTiming = {
   submit_ms: number;
   run_ms: number;
@@ -209,6 +222,22 @@ export const api = {
     get<{phase:string;result?:SkySearch;error?:string;warning?:string;retry_after_seconds?:number;attempt?:number;timing?:TapTiming}>(`/api/search/jobs/${encodeURIComponent(id)}`,false,signal),
   cancelSkyJob: (id:string) =>
     request<void>(`/api/search/jobs/${encodeURIComponent(id)}`,{method:'DELETE'}),
+  createPersistentSkyJob: (jobId:string,data: {
+    ra:number;dec:number;size:number;detector:number;frames:number;demo:boolean;
+  },signal?:AbortSignal) =>
+    request<PersistentSkyJob>('/api/sky/jobs',{
+      method:'POST',
+      body:JSON.stringify({
+        job_id:jobId, ra:data.ra,dec:data.dec,size_arcmin:data.size,
+        detector:data.detector,max_frames:data.frames,demo:data.demo,
+      }),
+    },false,signal),
+  getPersistentSkyJob: (jobId:string,signal?:AbortSignal) =>
+    get<PersistentSkyJob>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,false,signal),
+  getPersistentSkyFrame: (jobId:string,index:number,signal?:AbortSignal) =>
+    get<SkyFrame>(`/api/sky/jobs/${encodeURIComponent(jobId)}/frames/${index}`,false,signal),
+  cancelPersistentSkyJob: (jobId:string) =>
+    request<void>(`/api/sky/jobs/${encodeURIComponent(jobId)}`,{method:'DELETE'}),
   compareSia2: (searchId:string,signal?:AbortSignal) =>
     get<Sia2Comparison>(`/api/diagnostics/sia2/${encodeURIComponent(searchId)}`,false,signal),
   frame: (id:string,index:number,signal?:AbortSignal) =>

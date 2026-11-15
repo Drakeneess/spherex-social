@@ -14,3 +14,4 @@
 *.pyo
 *.sqlite3
 *.log
+**/.sky-frames
