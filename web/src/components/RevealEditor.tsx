@@ -139,7 +139,7 @@ export default function RevealEditor({
             <span>{loading?'Actualizando vista…':rawAvailable?'Edición disponible':'Esperando una época editable'}</span>
           </div>
         </div>
-        <button type="button" className="btn reveal-open" onClick={()=>{onOpen?.();setOpen(true);}}>
+        <button type="button" data-sound="none" className="btn reveal-open" onClick={()=>{onOpen?.();setOpen(true);}}>
           <SlidersHorizontal size={16}/> Abrir estudio <ChevronRight size={16}/>
         </button>
         <label className="reveal-compact-toggle">
@@ -172,7 +172,7 @@ export default function RevealEditor({
                   </option>)}
                 </select>
               </label>
-              <button type="button" className="reveal-studio-close"
+              <button type="button" data-sound="close" className="reveal-studio-close"
                 aria-label="Cerrar estudio de revelado" onClick={()=>setOpen(false)}>
                 <X size={21}/>
               </button>
