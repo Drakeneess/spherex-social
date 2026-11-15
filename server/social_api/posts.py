@@ -257,15 +257,62 @@ def create_post(
     ensure_observation(db, body.observation_id)
     checked_job = validate_blink_job(db, body.observation_id, body.sky_job_id)
     recipe = validate_reveal(db, checked_job, body.display_recipe)
+    # Decode and validate every image before writing anything to the database.
+    decoded = [decode_image(image.data_url) for image in body.images]
     post = Post(
-        author_id=user.id, caption=body.caption,
+        author_id=user.id, caption=body.caption, link_url=body.link_url,
         visibility=body.visibility, observation_id=body.observation_id,
         sky_job_id=checked_job, display_recipe=recipe,
     )
-    db.add(post)
-    db.commit()
+    stored = []
+    try:
+        db.add(post)
+        db.flush()
+        for position, data in enumerate(decoded):
+            media_id = uuid4()
+            key = put_post_image(media_id, data)
+            stored.append(key)
+            db.add(PostMedia(id=media_id,post_id=post.id,storage_key=key,
+                             media_type='image/webp',position=position))
+        for tag in extract_hashtags(body.caption):
+            db.add(PostHashtag(post_id=post.id,tag=tag))
+        db.commit()
+    except Exception:
+        db.rollback()
+        for key in stored:
+            try: delete_post_image(key)
+            except Exception: pass
+        raise
     db.refresh(post)
-    return serialize(post, user.username)
+    media,tags = post_extras(db,[post.id])
+    return serialize(post,user.username,media=media.get(post.id),
+                     hashtags=tags.get(post.id))
+
+
+@router.get('/posts/{post_id}/media/{media_id}')
+def read_post_media(
+    post_id: UUID, media_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User | None, Depends(optional_user)],
+):
+    """A post's visibility governs its photos, even with the media UUID known."""
+    post = db.get(Post, post_id)
+    if post is None or (post.visibility == 'private' and (
+        viewer is None or viewer.id != post.author_id)):
+        raise HTTPException(status_code=404,detail='Post not found')
+    media = db.get(PostMedia,media_id)
+    if media is None or media.post_id != post.id:
+        raise HTTPException(status_code=404,detail='Media not found')
+    try:
+        raw = get_post_image(media.storage_key)
+    except Exception:
+        raise HTTPException(status_code=503,detail='Imagen temporalmente no disponible')
+    return Response(
+        content='{"data_url":"data:image/webp;base64,'+
+                base64.b64encode(raw).decode('ascii')+'"}',
+        media_type='application/json',
+        headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'},
+    )
 
 
 @router.get('/posts/{post_id}', response_model=PostOut)
@@ -284,8 +331,10 @@ def get_post(
     if post.visibility == 'private' and (viewer is None or viewer.id != post.author_id):
         raise HTTPException(status_code=404, detail='Post not found')
     # Unlisted posts can be accessed via their direct link.
+    media,tags=post_extras(db,[post.id])
     return serialize(
         post, username, counts_by_post(db, [post.id]),
+        media=media.get(post.id),hashtags=tags.get(post.id),
         viewer_reposts=reposted_ids(db, viewer, [post.id]),
         viewer_bookmarks=bookmarked_ids(db, viewer, [post.id]),
     )
@@ -316,10 +365,24 @@ def update_post(
         post.display_recipe = None
     for key in body.model_fields_set - {'display_recipe'}:
         setattr(post, key, getattr(body, key))
+    if not post.caption and not post.observation_id and not post.link_url and not db.scalar(
+        select(PostMedia.id).where(PostMedia.post_id == post.id).limit(1)
+    ):
+        raise HTTPException(status_code=422,detail='La publicación necesita contenido')
+    tags_new=extract_hashtags(post.caption)
+    if len(tags_new)>12:
+        raise HTTPException(status_code=422,detail='Máximo 12 hashtags')
+    for previous in db.scalars(select(PostHashtag).where(PostHashtag.post_id==post.id)).all():
+        db.delete(previous)
+    db.flush()
+    for tag in tags_new:
+        db.add(PostHashtag(post_id=post.id,tag=tag))
     db.commit()
     db.refresh(post)
+    media,tags=post_extras(db,[post.id])
     return serialize(
         post, user.username, counts_by_post(db, [post.id]),
+        media=media.get(post.id),hashtags=tags.get(post.id),
         viewer_reposts=reposted_ids(db, user, [post.id]),
         viewer_bookmarks=bookmarked_ids(db, user, [post.id]),
     )
@@ -332,8 +395,12 @@ def delete_post(
     db: Annotated[Session, Depends(get_db)],
 ):
     post = owned_post(db, post_id, user)
+    media_keys=list(db.scalars(select(PostMedia.storage_key).where(PostMedia.post_id==post.id)))
     db.delete(post)
     db.commit()
+    for key in media_keys:
+        try: delete_post_image(key)
+        except Exception: pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -378,10 +445,12 @@ def user_posts(
     counts = counts_by_post(db, ids)
     viewer_reposts = reposted_ids(db, viewer, ids)
     viewer_bookmarks = bookmarked_ids(db, viewer, ids)
+    media,tags=post_extras(db,ids)
     return [
         serialize(
             post, author, counts, viewer_reposts=viewer_reposts,
             viewer_bookmarks=viewer_bookmarks,
+            media=media.get(post.id),hashtags=tags.get(post.id),
             reposted_by=owner.username if is_repost else None,
             reposted_at=activity_at if is_repost else None,
         )
