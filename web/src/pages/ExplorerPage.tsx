@@ -29,7 +29,7 @@ export default function ExplorerPage({
   initialDec?: number;
   onPublish: (region: ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe}) => void;
   onLogin: () => void;
-  onProgress: (status: {trace: SearchTrace | null;loading: boolean}) => void;
+  onProgress: (status: {trace: SearchTrace | null;loading: boolean;jobId?:string|null;restored?:boolean}) => void;
   onGoHome: () => void;
   active: boolean;
 }) {
