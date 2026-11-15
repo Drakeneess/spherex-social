@@ -60,6 +60,18 @@ html,body,#root,.astrogram-shell{min-inline-size:0}
  * Removing backdrop-filter on the mobile header prevents fixed descendants
  * from being positioned relative to the header instead of the viewport. */
 @media(max-width:680px){
+  /* Smooth keyboard focus on iOS without page-scale jumps or fixed skies. */
+  body{background-attachment:scroll}
+  .auth{min-height:100dvh;grid-template-columns:minmax(0,1fr)}
+  .authbox{width:min(420px,calc(100% - 28px));padding-block:clamp(20px,5dvh,46px)}
+  .authbox .field input,
+  .compose-main>textarea,.compose-optional input,.compose-tag-form input,
+  .profile-editor-fields .field input,.profile-editor-fields .field textarea,
+  .epoch-search-form .field input,.epoch-search-form .field select,
+  .comments .comment-form input,
+  .astrogram-shell .navbar .global-search .global-search-input-shell input{
+    font-size:16px;
+  }
   .astrogram-shell .navbar{
     display:grid;grid-template-columns:minmax(0,1fr) 44px;
     grid-template-rows:auto;align-items:center;
