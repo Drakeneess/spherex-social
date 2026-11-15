@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from social_api.auth import _create_access_token
 from social_api.db import Base, get_db
 from social_api.main import create_app
-from social_api.models import Observation, Post, SkySearchJob, User
+from social_api.models import AuthSession, Observation, Post, SkySearchJob, User
 
 
 @pytest.fixture
@@ -32,7 +32,20 @@ def env():
         db.refresh(first)
         db.refresh(second)
         first_id, second_id = first.id, second.id
-        token_a, token_b = _create_access_token(first).access_token, _create_access_token(second).access_token
+        devices = []
+        for user in (first, second):
+            device = AuthSession(
+                user_id=user.id, secret_hash=uuid4().hex + uuid4().hex,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            )
+            db.add(device)
+            db.flush()
+            devices.append(device)
+        token_a, token_b = (
+            _create_access_token(first, devices[0]).access_token,
+            _create_access_token(second, devices[1]).access_token,
+        )
+        db.commit()
 
     app = create_app()
     def override_db():

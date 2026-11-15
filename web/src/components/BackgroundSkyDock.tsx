@@ -4,6 +4,8 @@ import type { SearchTrace } from './SearchProgress';
 export type ExplorerBackgroundStatus = {
   trace: SearchTrace | null;
   loading: boolean;
+  jobId?: string|null;
+  restored?: boolean;
 };
 
 export function progressSummary(trace: SearchTrace) {

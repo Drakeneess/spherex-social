@@ -29,7 +29,7 @@ export default function ExplorerPage({
   initialDec?: number;
   onPublish: (region: ObservationParams & {sky_job_id?:string;display_recipe?:RevealRecipe}) => void;
   onLogin: () => void;
-  onProgress: (status: {trace: SearchTrace | null;loading: boolean}) => void;
+  onProgress: (status: {trace: SearchTrace | null;loading: boolean;jobId?:string|null;restored?:boolean}) => void;
   onGoHome: () => void;
   active: boolean;
 }) {
@@ -61,6 +61,7 @@ export default function ExplorerPage({
   const [revealRecipe,setRevealRecipe] = useState<RevealRecipe>({...DEFAULT_REVEAL});
   const [revealEnabled,setRevealEnabled] = useState(true);
   const [skyState,setSkyState] = useState<PersistentSkyJob|null>(null);
+  const [restoring,setRestoring] = useState(false);
 
   const controller = useRef<AbortController | null>(null);
   const activeJobId = useRef<string | null>(null);
@@ -81,8 +82,8 @@ export default function ExplorerPage({
   const revealPreviewIndex = playing ? (revealable[0] ?? position) : position;
 
   useEffect(() => {
-    onProgress({ trace, loading });
-  }, [trace, loading, onProgress]);
+    onProgress({ trace, loading, jobId:activeJobId.current,restored:restoring });
+  }, [trace, loading, restoring, onProgress]);
 
   // Cycle only through frames that are actually available, never empty indices.
   useEffect(() => {
@@ -96,7 +97,7 @@ export default function ExplorerPage({
   // Disconnecting a browser watcher never cancels the server-side job.
   useEffect(() => () => { controller.current?.abort(); }, []);
 
-  const watchSearch = useCallback((jobId: string, params: Params) => {
+  const watchSearch = useCallback((jobId: string, params: Params, restored=false) => {
     if (activeJobId.current === jobId && controller.current &&
         !controller.current.signal.aborted) return;
     controller.current?.abort();
@@ -105,10 +106,13 @@ export default function ExplorerPage({
     activeJobId.current = jobId;
     loadedFrames.current = {};
     inFlightFrames.current.clear();
+    setRestoring(restored);
     setLoading(true);
-    setTrace({
-      phase: 'catalog', startedAt: Date.now(),
-      source: params.demo ? 'simulated' : 'sia2', frames: [],
+    // A recovered job must not masquerade as a new search before its real
+    // PostgreSQL state has been read. In particular, no duplicate completion.
+    setTrace(restored?null:{
+      phase:'catalog',startedAt:Date.now(),
+      source:params.demo?'simulated':'sia2',frames:[],
     });
     setResult(null);
     setFrames({});
@@ -270,7 +274,7 @@ export default function ExplorerPage({
         if (typeof parsed.jobId !== 'string' ||
             !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(parsed.jobId) ||
             !parsed.params) return;
-        if (activeJobId.current !== parsed.jobId) watchSearch(parsed.jobId, parsed.params);
+        if (activeJobId.current !== parsed.jobId) watchSearch(parsed.jobId, parsed.params, true);
       } catch {
         // Older/malformed localStorage entries must not interrupt the app.
       }

@@ -9,6 +9,7 @@ import PostCard, { Avatar } from './components/PostCard';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import ExplorerPage from './pages/ExplorerPage';
 import BackgroundSkyDock, { type ExplorerBackgroundStatus } from './components/BackgroundSkyDock';
+import { isTerminalSkyPhase, shouldShowSkyDock } from './lib/skyDock';
 import GamePage from './pages/GamePage';
 import HeroStarfield from './components/HeroStarfield';
 import OnboardingTour from './components/OnboardingTour';
@@ -369,7 +370,7 @@ function ActivityPage(){
 export default function App(){
   const [route,setRoute]=useState<Route>(parseRoute);
   const [user,setUser]=useState<Profile|null>(null);
-  const [checking,setChecking]=useState(hasToken());
+  const [checking,setChecking]=useState(true);
   const [publish,setPublish]=useState(false);
   const [feedVersion,setFeedVersion]=useState(0);
   const [publishRegion,setPublishRegion]=useState<PublishRegion|null>(null);
@@ -389,13 +390,45 @@ export default function App(){
   const [tourRevision,setTourRevision]=useState(0);
   const [onboardingNotice,setOnboardingNotice]=useState('');
   const [celebrate,setCelebrate]=useState(false);
-  useEffect(()=>{setDockDismissed(false)},[backgroundStatus?.trace?.startedAt]);
+  // Notifications belong to a job, not to its repeatedly hydrated trace.
+  // Resuming an already finished job is not a new completion event.
+  useEffect(()=>{setDockDismissed(false);},[backgroundStatus?.jobId]);
+  useEffect(()=>{
+    const status=backgroundStatus;
+    const phase=status?.trace?.phase;
+    if(!phase)return;
+    const finished=isTerminalSkyPhase(phase);
+    if(!finished)return;
+    if(status?.restored || route.page==='explore'){
+      setDockDismissed(true);
+      return;
+    }
+    // Show a genuine background completion briefly, never indefinitely.
+    const timer=window.setTimeout(()=>setDockDismissed(true),6500);
+    return()=>window.clearTimeout(timer);
+  },[backgroundStatus?.jobId,backgroundStatus?.trace?.phase,
+      backgroundStatus?.restored,route.page]);
   useEffect(()=>{const listener=()=>setRoute(parseRoute());window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
+  useEffect(()=>{
+    const otherTabLogout=(event:StorageEvent)=>{
+      if(event.key!=='astrogram.auth.logout')return;
+      api.clearLocalSession();
+      setUser(null);setPublish(false);setTour(null);go('home');
+    };
+    window.addEventListener('storage',otherTabLogout);
+    return()=>window.removeEventListener('storage',otherTabLogout);
+  },[]);
   // Previous route state must never leave the auth page panned horizontally.
   useEffect(()=>{window.scrollTo(0,0)},[route.page,route.username,route.observationId,user?.id]);
-  useEffect(()=>{if(!hasToken()){setChecking(false);return;}let active=true;
-    api.me().then(p=>{if(active)setUser(p)}).catch(()=>{if(active){api.logout();setUser(null)}}).finally(()=>{if(active)setChecking(false)});
-    return()=>{active=false};},[]);
+  useEffect(()=>{
+    let active=true;
+    api.restoreSession()
+      .then(restored=>restored?api.me():null)
+      .then(profile=>{if(active)setUser(profile);})
+      .catch(()=>{if(active)setUser(null);})
+      .finally(()=>{if(active)setChecking(false);});
+    return()=>{active=false;};
+  },[]);
   useEffect(()=>{
     if(!user){setMissions({});setGuideHidden(false);setTour(null);return;}
     const id=user.id;
@@ -517,7 +550,11 @@ export default function App(){
   function openPublish(region:PublishRegion|null=null){
     if(!user){loginRequired();return;}setPublishRegion(region);setPublish(true);
   }
-  function logout(){api.logout();setToast('');setTour(null);setUser(null);setPublish(false);go('home');}
+  async function logout(){
+    try{await api.logout();}
+    catch{setToast('No se pudo cerrar sesión en el servidor. Revisa la conexión.');return;}
+    setToast('');setTour(null);setUser(null);setPublish(false);go('home');
+  }
   function doSearch(event:FormEvent){event.preventDefault();const term=search.trim();if(!term)return;
     const coord=term.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
     if(coord)go(`explore?ra=${coord[1]}&dec=${coord[2]}`);
@@ -587,8 +624,9 @@ export default function App(){
         <AstroGlyph name={i%2===0?'spark':'ship'} size={20}/>
       </span>)}</div>}
     {tour&&user&&<OnboardingTour key={tour.key} spec={tour} onClose={closeTour}/>}
-    {!explorerVisible && !dockDismissed && backgroundStatus?.trace &&
-      <BackgroundSkyDock status={backgroundStatus} onOpen={()=>go('explore')}
-        onDismiss={()=>setDockDismissed(true)}/>}
+    {shouldShowSkyDock(backgroundStatus,explorerVisible,dockDismissed) &&
+      <BackgroundSkyDock status={backgroundStatus} onOpen={()=>{
+          setDockDismissed(true);go('explore');
+        }} onDismiss={()=>setDockDismissed(true)}/>}
   </div>;
 }
