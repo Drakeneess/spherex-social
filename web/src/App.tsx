@@ -11,6 +11,8 @@ import { api, hasToken, type FeedMode, type Post, type Profile, type UserStats }
 import { startRealtime, subscribeRealtime, REALTIME_EVENT } from './lib/realtime';
 import PostCard, { Avatar, updateAvatarCache } from './components/PostCard';
 import ProfileEditor from './components/ProfileEditor';
+import SoundSettingsPanel from './components/SoundSettingsPanel';
+import { playSound } from './lib/sounds';
 import PostBlinkPreview from './components/PostBlinkPreview';
 import PostMediaGallery from './components/PostMediaGallery';
 import NotificationsPage from './components/NotificationsPage';
@@ -330,7 +332,9 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
     if(!hasToken()){onLogin();return;}
     if(!stats)return;setBusy(true);
     try{
-      if(stats.is_following)await api.unfollow(username);else await api.follow(username);
+      const wasFollowing=stats.is_following;
+      if(wasFollowing)await api.unfollow(username);else await api.follow(username);
+      playSound(wasFollowing?'unfollow':'follow');
       setStats(await api.stats(username));
     }catch(e){setError(message(e))}finally{setBusy(false)}
   }
@@ -367,7 +371,7 @@ function ProfilePage({username,current,onExplore,onLogin}:{username:string;curre
           <span><b>{stats?.following_count??0}</b> siguiendo</span>
           <span><b>{new Date(person.created_at).toLocaleDateString('es',{month:'short',year:'numeric'})}</b> se unió</span></div>
         <div className="profile-buttons">{mine?<><button className="btn sm" onClick={()=>go('settings')}><Settings size={15}/> Editar perfil</button><button className="btn sm" onClick={()=>go('saved')}><Bookmark size={15}/> Guardados</button></>:
-          <button className="btn p sm" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
+          <button className="btn p sm" data-sound="none" disabled={busy} onClick={()=>void follow()}><Users size={15}/> {stats?.is_following?'Siguiendo':'Seguir'}</button>}</div>
       </div></div></div>
       <div className="profile-observation-heading card-h"><span>Observaciones y compartidos</span><span className="chip">{posts.length}</span></div>
       <div className="profile-posts">
@@ -436,6 +440,7 @@ function SettingsPage({user,onUpdate,onLogout,onReplayTour,onShowGuide}:{
   return <main className="wrap narrow settings-page">
     <div className="card"><div className="card-h"><span><AstroGlyph name="gear" size={17}/> Ajustes</span><span className="chip">@{user.username}</span></div>
       <ProfileEditor user={user} onUpdate={onUpdate}/>
+      <SoundSettingsPanel/>
       <div className="sec onboarding-settings">
         <h3>Aprender AstroGram</h3>
         <p>Puedes repetir la guía de bienvenida o recuperar las misiones que ocultaste.
@@ -717,7 +722,7 @@ export default function App(){
               colorStart={user.avatar_color_start} colorEnd={user.avatar_color_end} size={26}/><span className="t">Perfil</span></button>
           <button className={route.page==='settings'?'on':''} onClick={()=>go('settings')} title="Ajustes" aria-label="Ajustes">
             <AstroGlyph name="gear" size={19}/><span className="t">Ajustes</span></button>
-          <button data-tour="nav-publish" className="btn p sm newpost" onClick={()=>openPublish()} aria-label="Crear publicación" title="Publicar">
+          <button data-tour="nav-publish" data-sound="open" className="btn p sm newpost" onClick={()=>openPublish()} aria-label="Crear publicación" title="Publicar">
             <AstroGlyph name="spark" size={15}/><span className="t">Publicar</span></button>
         </>}
         {!user&&<button className="btn p sm" onClick={()=>go('home')}>Entrar</button>}
@@ -757,7 +762,7 @@ export default function App(){
     {toast&&!authOnly&&<div role="status" className="toast show" onClick={()=>setToast('')}>{toast}</div>}
     {publish&&!authOnly&&<PublishModal region={publishRegion} onClose={()=>setPublish(false)} onDone={()=>{if(user)writeFlag(user.id,'publish');
       setTour(null);setPublish(false);setFeedVersion(n=>n+1);
-      setToast('Publicación creada en AstroGram');go('home');}}/>}
+      playSound('publish');setToast('Publicación creada en AstroGram');go('home');}}/>}
     {!authOnly&&<footer className="app-footer">AstroGram · Visualización experimental independiente · Datos SPHEREx: NASA/IPAC/IRSA · No afiliado ni respaldado por NASA.</footer>}
     {onboardingNotice&&user&&<div className="ag-onboard-toast" role="status" aria-live="polite">
       <Check size={17}/> {onboardingNotice}</div>}
